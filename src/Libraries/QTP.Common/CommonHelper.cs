@@ -53,6 +53,22 @@ namespace QTP.Common
             return TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(Random.Shared.Next(-30, 31));
         }
 
+
+        /// <summary>
+        /// 随机生成一个满足百分比的数字
+        /// </summary>
+        /// <param name="probability"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentOutOfRangeException"></exception>
+        public static bool IsEventOccurring(double probability)
+        {
+            if (probability < 0 || probability > 1)
+                throw new ArgumentOutOfRangeException(nameof(probability), "Probability must be between 0 and 1");
+            double randomValue = Random.Shared.NextDouble();
+            return randomValue < probability;
+        }
+
+
         public static string HmacSha1Sign(byte[] input, byte[] key)
         {
             HMACSHA1 myhmacsha1 = new HMACSHA1(key);

@@ -3,15 +3,18 @@ using Newtonsoft.Json.Linq;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Common.Models;
-
+using System;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Web;
 
 
 namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
-        private static uint GetStableHash(string s)
+        public static uint GetStableHash(string s)
         {
             unchecked
             {
@@ -45,16 +48,16 @@ namespace QTP.Plugins
             _nameGenerator = nameGenerator;
         }
 
-        private static Task<bool> IsPageTop(IPage page)
+        public static Task<bool> IsPageTop(IPage page)
         {
             return page.EvaluateAsync<bool>("window.pageYOffset == 0;");
         }
 
-        private static Task<bool> IsPageEnd(IPage page)
+        public static Task<bool> IsPageEnd(IPage page)
         {
             return page.EvaluateAsync<bool>("(window.innerHeight + window.pageYOffset) >= document.body.offsetHeight || Math.abs((window.innerHeight + window.pageYOffset) - document.body.offsetHeight) < 10;");
         }
-        private static async Task<bool> IsElementInViewportAsync(ILocator locator)
+        public static async Task<bool> IsElementInViewportAsync(ILocator locator)
         {
             if (!await locator.IsVisibleAsync())
             {
@@ -70,7 +73,7 @@ namespace QTP.Plugins
              }");
         }
 
-        private static async Task<List<ILocator>> GetVisibleElementsAsync(ILocator locator)
+        public static async Task<List<ILocator>> GetVisibleElementsAsync(ILocator locator)
         {
             var result = new List<ILocator>();
 
@@ -87,6 +90,7 @@ namespace QTP.Plugins
             }
             return result;
         }
+
 
         /// <summary>
         /// 触摸滑动
@@ -541,15 +545,13 @@ namespace QTP.Plugins
         }
 
 
-
-
-        private async Task CloseBrowserProcess(string uniqueId)
+        public async Task CloseBrowserProcess(string uniqueId)
         {
             await _processManager.CloseAsync(uniqueId);
         }
 
 
-        private async Task ScrollWithTimeoutAsync(IPage page, CDPSessionManager cdpManager, int durationMs)
+        public async Task ScrollWithTimeoutAsync(IPage page, CDPSessionManager cdpManager, int durationMs)
         {
             var cdpSession = await cdpManager.GetOrCreateSessionAsync(page);
             //1:创建 CancellationTokenSource,durationMs 到期自动取消
@@ -576,7 +578,6 @@ namespace QTP.Plugins
 
             }
         }
-
 
 
         private static async Task<IBrowser?> ConnectOverCDPWithRetryAsync(
@@ -776,32 +777,24 @@ namespace QTP.Plugins
                 });
             }
             //await context.GrantPermissionsAsync(new[] { "geolocation" });
-
             browser.Disconnected += (sender, e) =>
             {
                 try
                 {
                     LogWriteLine("浏览器已关闭或断开连接！");
-                    LogWriteLine($"Cancel before: {linkedCts.IsCancellationRequested}");
-
                     if (!linkedCts.IsCancellationRequested)
                         linkedCts.Cancel();
-
-                    LogWriteLine($"Cancel after: {linkedCts.IsCancellationRequested}");
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    Debug.WriteLine(ex.Message);
+
+
                 }
             };
 
 
-
             try
             {
-
-
-
                 var cdpManager = new CDPSessionManager(context);
                 int trigger_download_sign = 0;
                 context.Page += async (_, newPage) =>
@@ -2478,18 +2471,6 @@ namespace QTP.Plugins
                     return (true, page_trigger_click, page_ads_count);
                 }
             }
-            catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Microsoft.Playwright.PlaywrightException pe)
-            {
-                LogWriteLine(pe.Message);
-            }
             catch (Exception ex)
             {
                 LogWriteLine(ex.Message);
@@ -2506,7 +2487,5 @@ namespace QTP.Plugins
             }
             return (false, page_trigger_click, page_ads_count);
         }
-
-
     }
 }
