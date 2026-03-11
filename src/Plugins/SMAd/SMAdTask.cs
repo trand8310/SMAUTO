@@ -3,18 +3,15 @@ using Newtonsoft.Json.Linq;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Common.Models;
-using System;
+
 using System.Diagnostics;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Web;
 
 
 namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
-        public static uint GetStableHash(string s)
+        private static uint GetStableHash(string s)
         {
             unchecked
             {
@@ -26,8 +23,6 @@ namespace QTP.Plugins
                 return hash;
             }
         }
-
-
         public static QTPPlugin GetInfo()
         {
             return new QTPPlugin()
@@ -50,30 +45,16 @@ namespace QTP.Plugins
             _nameGenerator = nameGenerator;
         }
 
-        /// <summary>
-        /// 随机生成一个满足百分比的数字
-        /// </summary>
-        /// <param name="probability"></param>
-        /// <returns></returns>
-        /// <exception cref="ArgumentOutOfRangeException"></exception>
-        public static bool IsEventOccurring(double probability)
-        {
-            if (probability < 0 || probability > 1)
-                throw new ArgumentOutOfRangeException(nameof(probability), "Probability must be between 0 and 1");
-            double randomValue = Random.Shared.NextDouble();
-            return randomValue < probability;
-        }
-
-        public static Task<bool> IsPageTop(IPage page)
+        private static Task<bool> IsPageTop(IPage page)
         {
             return page.EvaluateAsync<bool>("window.pageYOffset == 0;");
         }
 
-        public static Task<bool> IsPageEnd(IPage page)
+        private static Task<bool> IsPageEnd(IPage page)
         {
             return page.EvaluateAsync<bool>("(window.innerHeight + window.pageYOffset) >= document.body.offsetHeight || Math.abs((window.innerHeight + window.pageYOffset) - document.body.offsetHeight) < 10;");
         }
-        public static async Task<bool> IsElementInViewportAsync(ILocator locator)
+        private static async Task<bool> IsElementInViewportAsync(ILocator locator)
         {
             if (!await locator.IsVisibleAsync())
             {
@@ -89,7 +70,7 @@ namespace QTP.Plugins
              }");
         }
 
-        public static async Task<List<ILocator>> GetVisibleElementsAsync(ILocator locator)
+        private static async Task<List<ILocator>> GetVisibleElementsAsync(ILocator locator)
         {
             var result = new List<ILocator>();
 
@@ -106,7 +87,6 @@ namespace QTP.Plugins
             }
             return result;
         }
-
 
         /// <summary>
         /// 触摸滑动
@@ -561,22 +541,15 @@ namespace QTP.Plugins
         }
 
 
-        //private IBrowserContext context;
-        //private IBrowser Browser;
-
-        //private IntPtr BrowserMainWindow = IntPtr.Zero;
-        //private PROCESS_INFORMATION pi;
-        //private Process BrowserProcess;
 
 
-        public override async Task<bool> CloseBrowserProcess(string uniqueId)
+        private async Task CloseBrowserProcess(string uniqueId)
         {
             await _processManager.CloseAsync(uniqueId);
-            return true;
         }
 
 
-        public async Task ScrollWithTimeoutAsync(IPage page, CDPSessionManager cdpManager, int durationMs)
+        private async Task ScrollWithTimeoutAsync(IPage page, CDPSessionManager cdpManager, int durationMs)
         {
             var cdpSession = await cdpManager.GetOrCreateSessionAsync(page);
             //1:创建 CancellationTokenSource,durationMs 到期自动取消
@@ -603,53 +576,6 @@ namespace QTP.Plugins
 
             }
         }
-
-        public static void StartAutoCloseQuarkModal(
-            IPage page,
-            CDPSessionManager cdpManager)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    while (!page.IsClosed)
-                    {
-                        try
-                        {
-                            var modals = page.Locator("div.quark-download-modal");
-                            var count = await modals.CountAsync();
-                            if (count > 0)
-                            {
-                                for (int i = 0; i < count; i++)
-                                {
-                                    var modal = modals.Nth(i);
-                                    var closeBtn = modal.Locator("img.close");
-                                    if (await closeBtn.CountAsync() == 0)
-                                        continue;
-                                    var btn = closeBtn.First;
-                                    if (!await btn.IsVisibleAsync())
-                                        continue;
-                                    var cdpSession = await cdpManager.GetOrCreateSessionAsync(page);
-                                    await CDPHelper.MouseClickAsync(page, cdpSession, btn);
-                                    break;
-                                }
-                            }
-                        }
-                        catch
-                        {
-                        }
-                        await Task.Delay(2000);
-                    }
-                }
-                catch (Exception)
-                {
-
-
-                }
-
-            });
-        }
-
 
 
 
@@ -850,24 +776,32 @@ namespace QTP.Plugins
                 });
             }
             //await context.GrantPermissionsAsync(new[] { "geolocation" });
+
             browser.Disconnected += (sender, e) =>
             {
                 try
                 {
                     LogWriteLine("浏览器已关闭或断开连接！");
+                    LogWriteLine($"Cancel before: {linkedCts.IsCancellationRequested}");
+
                     if (!linkedCts.IsCancellationRequested)
                         linkedCts.Cancel();
+
+                    LogWriteLine($"Cancel after: {linkedCts.IsCancellationRequested}");
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-
-
+                    Debug.WriteLine(ex.Message);
                 }
             };
 
 
+
             try
             {
+
+
+
                 var cdpManager = new CDPSessionManager(context);
                 int trigger_download_sign = 0;
                 context.Page += async (_, newPage) =>
@@ -2544,6 +2478,18 @@ namespace QTP.Plugins
                     return (true, page_trigger_click, page_ads_count);
                 }
             }
+            catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Microsoft.Playwright.PlaywrightException pe)
+            {
+                LogWriteLine(pe.Message);
+            }
             catch (Exception ex)
             {
                 LogWriteLine(ex.Message);
@@ -2560,5 +2506,7 @@ namespace QTP.Plugins
             }
             return (false, page_trigger_click, page_ads_count);
         }
+
+
     }
 }

@@ -6,7 +6,6 @@ namespace QTP.Common
 {
     public interface IQTPService
     {
-        Task CloseBrowserProcess(string uniqueId);
         string Title { get; }
         Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationTokenSource linkedCts);
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;

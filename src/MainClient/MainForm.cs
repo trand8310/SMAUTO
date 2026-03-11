@@ -1,6 +1,7 @@
 ﻿using MainClient.Common;
 using MainClient.Logging;
 using MainClient.LogViewer;
+using MainClient.Models;
 using MainClient.UiTask;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -948,7 +949,7 @@ namespace MainClient
             }
         }
 
-        private async Task ConsumerAsync(int consumerId, JToken task, CancellationToken token)
+        private async Task ConsumerAsync2(int consumerId, JToken task, CancellationToken token)
         {
             //LogWriteLine($"{consumerId},取出任务");
             try
@@ -1482,6 +1483,646 @@ namespace MainClient
                 _logger.LogError(ex, "ConsumerAsync failed");
             }
         }
+
+
+        private async Task ConsumerAsync(int consumerId, JToken task, CancellationToken token)
+        {
+            try
+            {
+                token.ThrowIfCancellationRequested();
+
+                var parseResult = ParseTask(task);
+                if (!parseResult.Success)
+                {
+                    _logger.LogWarning("ConsumerAsync skip malformed task: {Task}", task?.ToString(Newtonsoft.Json.Formatting.None));
+                    return;
+                }
+
+                var ctx = parseResult.Context!;
+                ApplyUvPvOverrides(ctx);
+
+                await PrepareProxyContextAsync(ctx, task, token);
+
+                for (int uvIndex = 0; uvIndex < ctx.TotalUV; uvIndex++)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        _aggregator.Enqueue(new TaskEvent(ctx.TaskId, StateType.Request, 1));
+
+                        var dev = await GetDeviceForTaskAsync(ctx.OS, ctx.TaskId, uvIndex, token);
+                        if (dev == null)
+                            continue;
+
+                        NormalizeDevice(dev, ctx.OS);
+
+                        var pluginArgs = BuildPluginArgs(ctx, task, dev, consumerId, uvIndex);
+
+                        bool stopRemainingUv = await ExecutePluginOnceAsync(
+                            ctx,
+                            pluginArgs,
+                            consumerId,
+                            uvIndex,
+                            token);
+
+                        if (stopRemainingUv)
+                            break;
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex,
+                            "ConsumerAsync uv failed. taskId={TaskId}, uv={Uv}, consumer={ConsumerId}",
+                            ctx.TaskId, uvIndex + 1, consumerId);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ConsumerAsync failed");
+            }
+        }
+
+
+
+        /// <summary>
+        /// 解析任务
+        /// </summary>
+        /// <param name="task"></param>
+        /// <returns></returns>
+        private ParseTaskResult ParseTask(JToken task)
+        {
+            if (task is not JObject taskObj)
+                return new ParseTaskResult { Success = false };
+
+            var taskIdToken = taskObj["id"];
+            var url = taskObj["url"]?.Value<string>();
+            var totalUvToken = taskObj["uv"];
+            var totalPvToken = taskObj["pv"];
+
+            if (taskIdToken == null || totalUvToken == null || totalPvToken == null || string.IsNullOrWhiteSpace(url))
+                return new ParseTaskResult { Success = false };
+
+            var devClientId = taskObj["client"]?.Value<string>()?
+                .Split(new[] { "|" }, StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault() ?? "0";
+
+            var ctx = new ConsumerTaskContext
+            {
+                TaskId = taskIdToken.Value<int>(),
+                Url = url,
+                TotalUV = Math.Max(1, totalUvToken.Value<int>()),
+                TotalPV = Math.Max(1, totalPvToken.Value<int>()),
+                DevClientId = devClientId,
+                OS = _adeHelper.GetOS(devClientId),
+                TaskTitle = taskObj["title"]?.Value<string>() ?? string.Empty,
+                StartTime = DateTime.Now
+            };
+
+            return new ParseTaskResult
+            {
+                Success = true,
+                Context = ctx
+            };
+        }
+        /// <summary>
+        /// 应用 UV / PV 覆盖配置
+        /// </summary>
+        /// <param name="ctx"></param>
+        private void ApplyUvPvOverrides(ConsumerTaskContext ctx)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_appSettings.UVOverride))
+                {
+                    var uvValues = _appSettings.UVOverride.Split(
+                        '-',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                    if (uvValues.Length > 1 &&
+                        int.TryParse(uvValues[0], out var minUv) &&
+                        int.TryParse(uvValues[1], out var maxUv) &&
+                        maxUv >= minUv)
+                    {
+                        ctx.TotalUV = CommonHelper.RandomRange(minUv, maxUv + 1);
+                    }
+                    else if (uvValues.Length == 1 && int.TryParse(uvValues[0], out var uvExact))
+                    {
+                        ctx.TotalUV = uvExact;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(_appSettings.PVOverride))
+                {
+                    var pvValues = _appSettings.PVOverride.Split(
+                        '-',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                    if (pvValues.Length > 1 &&
+                        int.TryParse(pvValues[0], out var minPv) &&
+                        int.TryParse(pvValues[1], out var maxPv) &&
+                        maxPv >= minPv)
+                    {
+                        ctx.TotalPV = CommonHelper.RandomRange(minPv, maxPv + 1);
+                        if (ctx.TotalUV == 2)
+                            ctx.TotalPV = minPv;
+                    }
+                    else if (pvValues.Length == 1 && int.TryParse(pvValues[0], out var pvExact))
+                    {
+                        ctx.TotalPV = pvExact;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "ConsumerAsync override parse failed, fallback to task values. taskId={TaskId}",
+                    ctx.TaskId);
+            }
+
+            ctx.TotalUV = Math.Max(1, ctx.TotalUV);
+            ctx.TotalPV = Math.Max(1, ctx.TotalPV);
+        }
+
+        #region 代理 / IP 信息
+        /// <summary>
+        /// 准备代理 / IP 信息
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="task"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        private async Task PrepareProxyContextAsync(ConsumerTaskContext ctx, JToken task, CancellationToken token)
+        {
+            ctx.ProxyServer = null;
+            ctx.RealIp = string.Empty;
+            ctx.IpInfo = null;
+
+            if (_appSettings.IsProxyMode)
+            {
+                if (!string.IsNullOrWhiteSpace(_appSettings.ProxyIpUrl))
+                {
+                    await PrepareRemoteProxyAsync(ctx, task, token);
+                }
+                else
+                {
+                    await PrepareLocalProxyAsync(ctx, token);
+                }
+            }
+            else
+            {
+                await PrepareDirectNetworkIpInfoAsync(ctx, token);
+            }
+        }
+        /// <summary>
+        /// 远程代理模式
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="task"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        private async Task PrepareRemoteProxyAsync(ConsumerTaskContext ctx, JToken task, CancellationToken token)
+        {
+            const int maxRetry = 10;
+
+            for (int retry = 1; retry <= maxRetry; retry++)
+            {
+                token.ThrowIfCancellationRequested();
+
+                try
+                {
+                    _aggregator.EnqueueProxyIpFetched(ctx.TaskId, 1);
+
+                    var ipEntity = await _ipHelper.GetProxyIpAsync(task);
+                    if (ipEntity == null)
+                    {
+                        LogWriteLine("获取IP错误");
+                        await Task.Delay(Random.Shared.Next(100, 200), token);
+                        continue;
+                    }
+
+                    FillProxyServerFromEntity(ctx, ipEntity);
+
+                    if (string.IsNullOrWhiteSpace(ctx.ProxyServer) || !IsValidProxyServer(ctx.ProxyServer))
+                    {
+                        LogWriteLine($"IP异常,{ctx.ProxyServer}");
+                        await Task.Delay(Random.Shared.Next(100, 200), token);
+                        continue;
+                    }
+
+                    if (_appSettings.GetIpInfo || _appSettings.IsRealIp || _appSettings.IsIpDuplicate)
+                    {
+                        var ok = await TryFillIpInfoAsync(ctx, token);
+                        if (!ok)
+                        {
+                            LogWriteLine($"无法获取IP信息,{ctx.ProxyServer}");
+                            await Task.Delay(Random.Shared.Next(100, 200), token);
+                            continue;
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(ctx.RealIp))
+                    {
+                        _aggregator.EnqueueProxyIpConsumed(ctx.TaskId, ctx.RealIp, 1);
+                    }
+
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    LogWriteLine($"IP异常,{ex.Message}");
+
+                    if (ex.Message.Contains("没有满足您选择的条件IP"))
+                        await Task.Delay(Random.Shared.Next(2000, 3000), token);
+
+                    await Task.Delay(Random.Shared.Next(300, 500), token);
+                }
+            }
+
+            throw new InvalidOperationException($"获取代理 IP 失败，taskId={ctx.TaskId}");
+        }
+        /// <summary>
+        /// 本地代理模式
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        private async Task PrepareLocalProxyAsync(ConsumerTaskContext ctx, CancellationToken token)
+        {
+            ctx.ProxyServer = "127.0.0.1:7890";
+
+            var result = await _ipTester.TestAsync(ctx.ProxyServer);
+            if (!result.IsValid)
+            {
+                LogWriteLine($"无法获取IP信息,{ctx.ProxyServer}");
+                throw new InvalidOperationException($"无法获取IP信息,{ctx.ProxyServer}");
+            }
+
+            ApplyIpTestResult(ctx, result);
+        }
+        /// <summary>
+        /// 非代理模式
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        private async Task PrepareDirectNetworkIpInfoAsync(ConsumerTaskContext ctx, CancellationToken token)
+        {
+            if (!_appSettings.GetIpInfo && !_appSettings.IsRealIp)
+                return;
+
+            var result = await _ipTester.TestAsync(ctx.ProxyServer);
+            if (!result.IsValid)
+            {
+                LogWriteLine($"无法获取IP信息,{ctx.ProxyServer}");
+                throw new InvalidOperationException($"无法获取IP信息,{ctx.ProxyServer}");
+            }
+
+            ApplyIpTestResult(ctx, result);
+        }
+        #endregion
+
+        #region 辅助方法：填代理 / 验证代理 / 填 IP 结果
+        /// <summary>
+        /// 辅助方法：填代理 / 验证代理 / 填 IP 结果
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="ipEntity"></param>
+        private void FillProxyServerFromEntity(ConsumerTaskContext ctx, dynamic ipEntity)
+        {
+            if (ipEntity.format == IPFormat.JSON)
+            {
+                ctx.ProxyServer = $"{ipEntity.json["ip"]}:{ipEntity.json["port"]}";
+
+                if (_appSettings.IsRealIp)
+                {
+                    ctx.RealIp =
+                        ipEntity.json["rip"]?.Value<string>() ??
+                        ipEntity.json["real_ip"]?.Value<string>() ??
+                        ipEntity.json["realIp"]?.Value<string>() ??
+                        string.Empty;
+                }
+            }
+            else
+            {
+                ctx.ProxyServer = ipEntity.value;
+                if (_appSettings.IsRealIp)
+                    ctx.RealIp = ctx.ProxyServer ?? string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// 验证代理1
+        /// </summary>
+        /// <param name="proxyServer"></param>
+        /// <returns></returns>
+        private bool IsValidProxyServer(string proxyServer)
+        {
+            const string pattern = @"(?:(?:[0,1]?\d?\d|2[0-4]\d|25[0-5])\.){3}(?:[0,1]?\d?\d|2[0-4]\d|25[0-5]):\d{1,5}";
+            return Regex.IsMatch(proxyServer, pattern);
+        }
+
+        /// <summary>
+        /// 验证代理2
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        private async Task<bool> TryFillIpInfoAsync(ConsumerTaskContext ctx, CancellationToken token)
+        {
+            var result = await _ipTester.TestAsync(ctx.ProxyServer);
+            if (!result.IsValid)
+                return false;
+
+            ApplyIpTestResult(ctx, result);
+            return true;
+        }
+        /// <summary>
+        /// 验证代理3
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="result"></param>
+
+        private void ApplyIpTestResult(ConsumerTaskContext ctx, dynamic result)
+        {
+            if (result.SuccessUrl.Equals("http://ip-api.com/json") ||
+                result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
+            {
+                ctx.IpInfo = JObject.Parse(result.Data);
+                ctx.RealIp = ctx.IpInfo["query"]?.Value<string>() ?? string.Empty;
+            }
+            else
+            {
+                var ipJson = JObject.Parse(result.Data);
+
+                if (ipJson.ContainsKey("query"))
+                    ctx.RealIp = ipJson["query"]?.Value<string>() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(ctx.RealIp) && ipJson.ContainsKey("ip"))
+                    ctx.RealIp = ipJson["ip"]?.Value<string>() ?? string.Empty;
+
+                ctx.IpInfo = new JObject
+                {
+                    ["query"] = ctx.RealIp
+                };
+            }
+        }
+        #endregion
+
+        /// <summary>
+        /// 获取设备
+        /// </summary>
+        /// <param name="os"></param>
+        /// <param name="taskId"></param>
+        /// <param name="uvIndex"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        private async Task<JToken?> GetDeviceForTaskAsync(OSType os, int taskId, int uvIndex, CancellationToken token)
+        {
+            for (int retry = 0; retry < 5; retry++)
+            {
+                token.ThrowIfCancellationRequested();
+
+                var dev = await _adeHelper.GetDeviceAsync(os, 100);
+                if (dev != null)
+                    return dev;
+            }
+
+            _logger.LogWarning(
+                "ConsumerAsync get device failed after retries. taskId={TaskId}, uv={Uv}",
+                taskId, uvIndex + 1);
+
+            return null;
+        }
+
+        /// <summary>
+        /// 标准化设备信息
+        /// </summary>
+        /// <param name="dev"></param>
+        /// <param name="os"></param>
+        private void NormalizeDevice(JToken dev, OSType os)
+        {
+            var ua = dev["ua"]?.Value<string>() ?? string.Empty;
+
+            if (os == OSType.ANDROID)
+            {
+                var m1 = Regex.Match(ua, @"(?<=Android\s+)([\d.]+);([\S\s]+)(?=Build)");
+                if (m1.Success && m1.Groups.Count == 3)
+                {
+                    var model = m1.Groups[2].Value.Trim();
+                    model = Regex.Replace(model, "^.*?;\\s*", "");
+
+                    dev["osv"] = m1.Groups[1].Value.Trim();
+                    dev["model"] = model.Trim();
+                }
+                else
+                {
+                    dev["osv"] = "13";
+                }
+
+                var m2 = Regex.Match(ua, @"Chrome/([\d.]+)");
+                dev["full_version"] = m2.Success && m2.Groups.Count == 2
+                    ? m2.Groups[1].Value.Trim()
+                    : "132.0.6834.186";
+            }
+            else if (os == OSType.IOS)
+            {
+                dev["full_version"] = dev["osv"];
+            }
+            else
+            {
+                if ((dev["width"]?.Value<int>() ?? 0) < 1920)
+                {
+                    dev["width"] = 1920;
+                    dev["height"] = 1080;
+                }
+
+                dev["full_version"] =
+                    dev["fullVersionList"]?
+                        .FirstOrDefault(p => p["brand"]?.Value<string>() == "Chromium")?["version"]?.Value<string>()
+                    ?? "132.0.6834.186";
+            }
+        }
+
+        /// <summary>
+        /// 构造插件参数
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="task"></param>
+        /// <param name="dev"></param>
+        /// <param name="consumerId"></param>
+        /// <param name="uvIndex"></param>
+        /// <returns></returns>
+        private JObject BuildPluginArgs(ConsumerTaskContext ctx, JToken task, JToken dev, int consumerId, int uvIndex)
+        {
+            var cacheName = $"s{consumerId}_{uvIndex + 1}";
+
+            var args = new JObject
+            {
+                ["task"] = task,
+                ["dev"] = dev,
+                ["ipInfo"] = ctx.IpInfo,
+                ["isProxyMode"] = _appSettings.IsProxyMode,
+                ["proxy_server"] = ctx.ProxyServer,
+                ["realIp"] = ctx.RealIp,
+                ["isHiddenMode"] = _appSettings.IsHiddenMode,
+                ["cacheName"] = cacheName,
+                ["processIndex"] = consumerId,
+                ["totalPV"] = ctx.TotalPV,
+                ["currentUV"] = uvIndex + 1,
+                ["pageLoadingTimeout"] = _appSettings.PageLoadingTimeout,
+                ["pageloadedDelay"] = _appSettings.PageloadedDelay,
+                ["hompageTrigger"] = _appSettings.HompageTrigger,
+                ["os"] = (int)ctx.OS,
+                ["isLocalAdWord"] = _appSettings.UseLocalWord,
+                ["priorityNon1688"] = _appSettings.PriorityNon1688,
+                ["pvsTriggerOne"] = _appSettings.PVsTriggerOne,
+                ["isTest"] = _appSettings.IsTest,
+                ["kernelVersion"] = _appSettings.KernelVersion,
+                ["incognito"] = _appSettings.Incognito,
+                ["wordname"] = _appSettings.WordName,
+                ["noTrigger1688"] = _appSettings.NoTrigger1688,
+                ["cleaningWords"] = _appSettings.CleaningWords,
+                ["notTriggerDownload"] = _appSettings.NotTriggerDownload
+            };
+
+            return args;
+        }
+
+        /// <summary>
+        /// 执行插件
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="args"></param>
+        /// <param name="consumerId"></param>
+        /// <param name="uvIndex"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        private async Task<bool> ExecutePluginOnceAsync(
+        ConsumerTaskContext ctx,
+        JObject args,
+        int consumerId,
+        int uvIndex,
+        CancellationToken token)
+        {
+            if (!allPlugins.TryGetValue(_appSettings.QTPName, out var plugin) || plugin.type == null)
+            {
+                _logger.LogError("ConsumerAsync plugin not found: {PluginName}", _appSettings.QTPName);
+                return false;
+            }
+
+            var pluginInstance = Activator.CreateInstance(
+                plugin.type,
+                new object[] { _aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
+
+            if (pluginInstance is not IQTPService pluginService)
+            {
+                _logger.LogWarning("ConsumerAsync plugin instance invalid. plugin={PluginName}", _appSettings.QTPName);
+                return false;
+            }
+
+            var uniqueId = Guid.NewGuid().ToString("D");
+
+            EventHandler<PluginLogEventArgs>? logHandler = null;
+            EventHandler<TaskStateChangedEventArgs>? stateChangedHandler = null;
+            EventHandler<TaskAdWordEventArgs>? adWordHandler = null;
+
+            try
+            {
+                logHandler = (s, e) => LogWriteLine(e);
+                stateChangedHandler = (s, e) =>
+                {
+                    _aggregator.Enqueue(new TaskEvent(e.Id, e.Type, e.Count, e.Data));
+                };
+                adWordHandler = (s, e) =>
+                {
+                    _aggregator.EnqueueAdWord(e.Type, e.Word);
+                };
+
+                pluginService.OnLogEventHandler += logHandler;
+                pluginService.OnStateChangedEventHandler += stateChangedHandler;
+                pluginService.OnTaskAdWordEventHandler += adWordHandler;
+
+                LogWriteLine(
+                    $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
+
+                var ipTtl = Math.Max(10, _appSettings.IpTtl - (DateTime.Now - ctx.StartTime).TotalSeconds);
+
+                using var ctsTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(ipTtl));
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, ctsTimeout.Token);
+
+                try
+                {
+                    var (_, isPageTriggerClick, _) =
+                        await pluginService.ExecuteWorkerAsync(uniqueId, args, linkedCts);
+
+                    if (ctx.TotalUV > 1 && isPageTriggerClick && _appSettings.UVsTriggerOne)
+                        return true;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException) when (ctsTimeout.IsCancellationRequested)
+                {
+                    LogWriteLine($"插件 {uniqueId} 执行超时");
+                    return true;
+                }
+                catch (OperationCanceledException)
+                {
+                    LogWriteLine($"浏览器关闭,插件 {uniqueId} 被取消");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "ConsumerAsync plugin execute failed. taskId={TaskId}, consumer={ConsumerId}",
+                        ctx.TaskId, consumerId);
+                }
+
+                return false;
+            }
+            finally
+            {
+                if (logHandler != null) pluginService.OnLogEventHandler -= logHandler;
+                if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
+                if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
+
+                try
+                {
+                    await _processManager.CloseAsync(uniqueId).WaitAsync(TimeSpan.FromSeconds(15), token);
+                }
+                catch (TimeoutException ex)
+                {
+                    _logger.LogWarning(ex, "Close browser timeout. uniqueId={UniqueId}", uniqueId);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Close browser failed. uniqueId={UniqueId}", uniqueId);
+                }
+            }
+        }
+
+
+
+
         private void InitPipelineRunner()
         {
             int capacity = Math.Max(1, _appSettings.Multiple * _appSettings.MaximumConcurrency);
