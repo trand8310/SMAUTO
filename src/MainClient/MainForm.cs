@@ -247,7 +247,7 @@ namespace MainClient
             }
             catch (Exception ex)
             {
-                Debug.WriteLine(ex.Message);
+                _logger.LogError(ex, "ReloadWordNames failed");
             }
         }
 
@@ -886,60 +886,63 @@ namespace MainClient
                 while (!token.IsCancellationRequested)
                 {
                     var url = $"{_appSettings.TaskApiUrl}?type=1&action=getTask&name={_appSettings.TaskName}&_t={DateTime.Now.Ticks}";
-                    var res = await this._adeHelper.GetTaskAsync(url);
+                    var res = await _adeHelper.GetTaskAsync(url);
                     if (string.IsNullOrWhiteSpace(res))
                     {
-                        LogWriteLine($"读取任务异常");
+                        LogWriteLine("读取任务异常");
                         await Task.Delay(_appSettings.FetchTaskInterval, token);
                         continue;
                     }
+
+                    JArray? data;
                     try
                     {
                         var json = JObject.Parse(res);
-                        var data = json["data"] as JArray;
-
-                        if (data == null || data.Count == 0)
-                        {
-                            LogWriteLine($"暂无任务");
-                            await Task.Delay(_appSettings.FetchTaskInterval, token);
-                            continue;
-                        }
-                        // 多倍重复写入
-                        for (int i = 0; i < _appSettings.Multiple; i++)
-                        {
-                            foreach (var item in data)
-                            {
-                                // 如果取消或者 writer 无法写，安全退出整个循环
-                                if (!await writer.WaitToWriteAsync(token) || token.IsCancellationRequested)
-                                {
-                                    writer.TryComplete();
-                                    return; // 退出整个方法
-                                }
-                                await writer.WriteAsync(item, token);
-                                LogWriteLine($"新增{data.Count}条任务");
-                                await Task.Delay(_appSettings.FetchTaskInterval, token);
-                            }
-                        }
+                        data = json["data"] as JArray;
                     }
-                    catch (JsonReaderException ex)
+                    catch (JsonReaderException)
                     {
-                        _logger.LogError($"ProducerAsync failed: {res}");
+                        _logger.LogError("ProducerAsync json parse failed: {Response}", res);
+                        await Task.Delay(_appSettings.FetchTaskInterval, token);
                         continue;
                     }
 
+                    if (data == null || data.Count == 0)
+                    {
+                        LogWriteLine("暂无任务");
+                        await Task.Delay(_appSettings.FetchTaskInterval, token);
+                        continue;
+                    }
 
+                    int multiple = Math.Max(1, _appSettings.Multiple);
+                    int totalEnqueued = 0;
+                    for (int i = 0; i < multiple; i++)
+                    {
+                        foreach (var item in data)
+                        {
+                            if (!await writer.WaitToWriteAsync(token))
+                                return;
+
+                            await writer.WriteAsync(item, token);
+                            totalEnqueued++;
+                        }
+                    }
+
+                    LogWriteLine($"新增{totalEnqueued}条任务");
+                    await Task.Delay(_appSettings.FetchTaskInterval, token);
                 }
-
-                writer.TryComplete();
             }
             catch (OperationCanceledException)
             {
-                writer.TryComplete();
             }
             catch (Exception ex)
             {
                 writer.TryComplete(ex);
                 throw;
+            }
+            finally
+            {
+                writer.TryComplete();
             }
         }
 
@@ -999,7 +1002,7 @@ namespace MainClient
                         int redo_max_getip_count = 10;
                     redo_getip:
                         redo_getip_count++;
-                        if (redo_getip_count++ > redo_max_getip_count)
+                        if (redo_getip_count > redo_max_getip_count)
                         {
                             return;
                         }
@@ -1010,7 +1013,7 @@ namespace MainClient
                             if (ipEntity == null)
                             {
                                 LogWriteLine($"获取IP错误");
-                                await Task.Delay(new Random().Next(100, 200));
+                                await Task.Delay(Random.Shared.Next(100, 200), token);
                                 goto redo_getip;
                             }
                             //_aggregator.Enqueue(new TaskEvent(task["id"].Value<int>(), StateType.Request, 1));
@@ -1035,7 +1038,7 @@ namespace MainClient
                             if (!Regex.IsMatch(proxy_server, pattern))
                             {
                                 LogWriteLine($"IP异常,{proxy_server}");
-                                await Task.Delay(new Random().Next(100, 200));
+                                await Task.Delay(Random.Shared.Next(100, 200), token);
                                 goto redo_getip;
                             }
 
@@ -1065,7 +1068,7 @@ namespace MainClient
                                     else
                                     {
                                         LogWriteLine($"无法获取IP信息,{proxy_server}");
-                                        await Task.Delay(new Random().Next(100, 200));
+                                        await Task.Delay(Random.Shared.Next(100, 200), token);
                                         goto redo_getip;
                                     }
 
@@ -1074,7 +1077,7 @@ namespace MainClient
                                 catch (Exception)
                                 {
                                     LogWriteLine($"无法获取IP信息,{proxy_server}");
-                                    await Task.Delay(new Random().Next(100, 200));
+                                    await Task.Delay(Random.Shared.Next(100, 200), token);
                                     goto redo_getip;
                                 }
                             }
@@ -1104,7 +1107,7 @@ namespace MainClient
                                 else
                                 {
                                     LogWriteLine($"无法获取真实IP,{proxy_server}");
-                                    await Task.Delay(new Random().Next(100, 200));
+                                    await Task.Delay(Random.Shared.Next(100, 200), token);
                                     goto redo_getip;
                                 }
                             }
@@ -1135,7 +1138,7 @@ namespace MainClient
                                     else
                                     {
                                         LogWriteLine($"无法获取真实IP,{proxy_server}");
-                                        await Task.Delay(new Random().Next(100, 200));
+                                        await Task.Delay(Random.Shared.Next(100, 200), token);
                                         goto redo_getip;
                                     }
 
@@ -1413,14 +1416,13 @@ namespace MainClient
             }
             catch (Exception ex)
             {
-                Debug.WriteLine(ex.Message);
+                _logger.LogError(ex, "ConsumerAsync failed");
             }
         }
-
         private void InitPipelineRunner()
         {
-            int capacity = _appSettings.Multiple * _appSettings.MaximumConcurrency;
-            int consumerCount = _appSettings.MaximumConcurrency;
+            int capacity = Math.Max(1, _appSettings.Multiple * _appSettings.MaximumConcurrency);
+            int consumerCount = Math.Max(1, _appSettings.MaximumConcurrency);
 
             _pipeline = new PipelineRunner<JToken>(
                 capacity,
@@ -1429,77 +1431,86 @@ namespace MainClient
                 ConsumerAsync
             );
 
-            _pipeline.ProgressChanged += count =>
+            _pipeline.ProgressChanged += _ =>
             {
-                this.BeginInvoke(() =>
-                {
-                    //progressBar.Value = (int)Math.Min(count, progressBar.Maximum);
-                });
+                if (IsDisposed || Disposing)
+                    return;
             };
 
-            _pipeline.Started += () => this.BeginInvoke((Delegate)(() => lblStatus.Text = $"任务状态：Running"));
-            _pipeline.Completed += () => this.BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Completed"));
-            _pipeline.Canceled += () => this.BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Canceled"));
-            _pipeline.Faulted += ex => _logger.LogError(ex, ex.Message);
-
+            _pipeline.Started += () =>
+            {
+                if (IsDisposed || Disposing || !IsHandleCreated) return;
+                BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Running"));
+            };
+            _pipeline.Completed += () =>
+            {
+                if (IsDisposed || Disposing || !IsHandleCreated) return;
+                BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Completed"));
+            };
+            _pipeline.Canceled += () =>
+            {
+                if (IsDisposed || Disposing || !IsHandleCreated) return;
+                BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Canceled"));
+            };
+            _pipeline.Faulted += ex => _logger.LogError(ex, "Pipeline faulted");
         }
-
         private async void btnStartStop_Click(object sender, EventArgs e)
         {
-            string version = comboBox_KernelVersion.Text;
-            var chromeDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", version, version);
-            if (!System.IO.Directory.Exists(chromeDir))
-            {
-                btnStartStop.Enabled = false;
-                await DownloadBrowserAsync(version).ContinueWith(t =>
-                {
-                    this.InvokeOnUiThreadIfRequired(() =>
-                    {
-                        btnStartStop.Enabled = true;
-                    });
-                });
-            }
-
-
-            if (_uiRunner != null && _uiRunner.State == RunnerState.Running)
-            {
-                btnStartStop.Enabled = false;
-                // 停止任务
-                await _uiRunner.StopAsync();
-                _appAutoRestart?.Stop();
-                btnStartStop.Enabled = true;
+            if (btnStartStop.Enabled == false)
                 return;
-            }
 
-            // 初始化 Pipeline
-            InitPipelineRunner();
-
-            // 初始化 UiTaskRunner
-            _uiRunner = new UiTaskRunner(token => _pipeline!.RunAsync(token));
-
-            // 状态绑定按钮和 Label
-            _uiRunner.StateChanged += state =>
+            btnStartStop.Enabled = false;
+            try
             {
-                this.BeginInvoke((Delegate)(() =>
+                string version = comboBox_KernelVersion.Text;
+                var chromeDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", version, version);
+                if (!Directory.Exists(chromeDir))
                 {
-                    lblStatus.Text = $"任务状态：{state}";
-                    btnStartStop.Text = state == RunnerState.Running ? "停止" : "开始";
-                }));
-            };
+                    await DownloadBrowserAsync(version);
+                    if (!Directory.Exists(chromeDir))
+                    {
+                        _logger.LogWarning("Chrome kernel missing after download: {ChromeDir}", chromeDir);
+                        MessageBox.Show("浏览器内核缺失，请检查下载配置后重试。");
+                        return;
+                    }
+                }
 
-            // 记录调度器崩溃事件
-            _uiRunner.Faulted += ex =>
-            {
-                _logger.LogError(ex, ex.Message);
-            };
+                if (_uiRunner != null && _uiRunner.State is RunnerState.Running or RunnerState.Stopping)
+                {
+                    await _uiRunner.StopAsync();
+                    _appAutoRestart?.Stop();
+                    return;
+                }
 
-            // 更新任务状态
-            _uiRunner.SetPeriodicAction(
-                TimeSpan.FromSeconds(1), async () =>
+                InitPipelineRunner();
+
+                _uiRunner = new UiTaskRunner(token => _pipeline!.RunAsync(token));
+
+                _uiRunner.StateChanged += state =>
+                {
+                    if (IsDisposed || Disposing || !IsHandleCreated)
+                        return;
+
+                    BeginInvoke((Delegate)(() =>
+                    {
+                        lblStatus.Text = $"任务状态：{state}";
+                        btnStartStop.Text = state == RunnerState.Running ? "停止" : "开始";
+                    }));
+                };
+
+                _uiRunner.Faulted += ex =>
+                {
+                    _logger.LogError(ex, "UiTaskRunner faulted");
+                };
+
+                _uiRunner.SetPeriodicAction(TimeSpan.FromSeconds(1), async () =>
                 {
                     var elapsed = _uiRunner.RunElapsed;
                     var totalStats = _aggregator.GetTotalStats();
-                    this.InvokeOnUiThreadIfRequired(() =>
+                    if (IsDisposed || Disposing)
+                        return;
+
+                    InvokeOnUiThreadIfRequired(() =>
                     {
                         label5.Text = $"提交数量:{totalStats.Request}";
                         label6.Text = $"执行数量:{totalStats.Start}";
@@ -1507,40 +1518,44 @@ namespace MainClient
                         label8.Text = $"点击数量:{totalStats.Clickthrough}";
                         label9.Text = $"成功数量:{totalStats.Success}";
 
-                        toolStripStatusLabel4.Text = $"执行总量：{this.QTPTotalStartCount + totalStats.Start}";
-                        toolStripStatusLabel5.Text = $"曝光总量：{this.QTPTotalDspCount + totalStats.DSP}";
-                        toolStripStatusLabel6.Text = $"点击总量：{this.QTPTotalClickthroughCount + totalStats.Clickthrough}";
-
+                        toolStripStatusLabel4.Text = $"执行总量：{QTPTotalStartCount + totalStats.Start}";
+                        toolStripStatusLabel5.Text = $"曝光总量：{QTPTotalDspCount + totalStats.DSP}";
+                        toolStripStatusLabel6.Text = $"点击总量：{QTPTotalClickthroughCount + totalStats.Clickthrough}";
                         label12.Text = $"运行时长:{elapsed:hh\\:mm\\:ss}";
                     });
 
                     await Task.CompletedTask;
-                }
-            );
+                });
 
-            // 定时检测应用状态
-            _uiRunner.SetPeriodicAction(TimeSpan.FromSeconds(10), async () =>
+                _uiRunner.SetPeriodicAction(TimeSpan.FromSeconds(10), async () =>
+                {
+                    CommonHelper.ClearErrorMsgDialog("node.exe - 应用程序错误");
+                    CommonHelper.ClearErrorMsgDialog("chrome.exe - 应用程序错误");
+                    CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
+                    CommonHelper.ClearProcesses(new string[] { "WerFault" });
+                    await Task.CompletedTask;
+                });
+
+                _uiRunner.Start();
+
+                var restartInterval = CommonHelper.GetRandomizedInterval(_appSettings.MainResetTimeout, 30);
+                _appAutoRestart = new AppAutoRestart(
+                    restartInterval,
+                    () => _uiRunner != null && _uiRunner.State == RunnerState.Running
+                );
+                _appAutoRestart.Start();
+            }
+            catch (Exception ex)
             {
-                CommonHelper.ClearErrorMsgDialog("node.exe - 应用程序错误");
-                CommonHelper.ClearErrorMsgDialog("chrome.exe - 应用程序错误");
-                CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
-                CommonHelper.ClearProcesses(new string[] { "WerFault" });
-                await Task.CompletedTask;
-            });
-
-
-            // 启动任务
-            _uiRunner.Start();
-
-            // 初始化自动重启（60分钟 ±30秒示例，可修改）
-            var restartInterval = CommonHelper.GetRandomizedInterval(_appSettings.MainResetTimeout, 30);
-            _appAutoRestart = new AppAutoRestart(
-                restartInterval,
-                () => _uiRunner != null && _uiRunner.State == RunnerState.Running
-            );
-            _appAutoRestart.Start();
+                _logger.LogError(ex, "btnStartStop_Click failed");
+                MessageBox.Show($"启动/停止任务失败: {ex.Message}");
+            }
+            finally
+            {
+                if (!IsDisposed && !Disposing)
+                    btnStartStop.Enabled = true;
+            }
         }
-
 
         private Task DownloadBrowserAsync(string version)
         {

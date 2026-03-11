@@ -4,58 +4,105 @@ namespace MainClient.UiTask
 {
     public class UiTaskRunner
     {
-        private readonly List<(PeriodicTimer timer, Func<Task> onTick)> _periodicActions = new();
-        private readonly List<CancellationTokenSource> _timerCtsList = new();
+        private readonly List<(TimeSpan interval, Func<Task> onTick)> _periodicDefinitions = new();
+        private readonly List<(PeriodicTimer timer, CancellationTokenSource cts, Task loopTask)> _periodicLoops = new();
 
-        /// <summary>
-        /// 运行时间统计
-        /// </summary>
         private readonly Stopwatch _stopwatch = new();
-
         private readonly Func<CancellationToken, Task> _runTask;
+        private readonly object _sync = new();
+
         private CancellationTokenSource? _cts;
+        private Task? _runLoopTask;
 
         public event Action<RunnerState>? StateChanged;
         public event Action<Exception>? Faulted;
 
         public RunnerState State { get; private set; } = RunnerState.Stopped;
-
-        /// <summary>
-        /// 程序已运行时长
-        /// </summary>
         public TimeSpan RunElapsed => _stopwatch.Elapsed;
 
         public UiTaskRunner(Func<CancellationToken, Task> runTask)
         {
-            _runTask = runTask;
+            _runTask = runTask ?? throw new ArgumentNullException(nameof(runTask));
         }
 
         public void Start()
         {
-            if (State == RunnerState.Running) return;
-
-            _stopwatch.Reset();
-            _stopwatch.Start();
-
-            _cts = new CancellationTokenSource();
-
-            State = RunnerState.Running;
-            StateChanged?.Invoke(State);
-
-            // 启动所有定时任务
-            foreach (var action in _periodicActions)
+            lock (_sync)
             {
-                var timer = action.timer;
-                var onTick = action.onTick;
+                if (State is RunnerState.Running or RunnerState.Stopping)
+                    return;
 
-                var timerCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-                _timerCtsList.Add(timerCts);
+                _stopwatch.Reset();
+                _stopwatch.Start();
 
-                _ = Task.Run(async () =>
+                _cts = new CancellationTokenSource();
+                var rootToken = _cts.Token;
+
+                ChangeState(RunnerState.Running);
+                StartPeriodicLoops(rootToken);
+
+                _runLoopTask = Task.Run(async () =>
                 {
                     try
                     {
-                        while (await timer.WaitForNextTickAsync(timerCts.Token))
+                        await _runTask(rootToken);
+                        ChangeState(RunnerState.Stopped);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        ChangeState(RunnerState.Stopped);
+                    }
+                    catch (Exception ex)
+                    {
+                        ChangeState(RunnerState.Faulted);
+                        Faulted?.Invoke(ex);
+                    }
+                    finally
+                    {
+                        await StopInternalAsync();
+                    }
+                });
+            }
+        }
+
+        public async Task StopAsync()
+        {
+            Task? runnerTask;
+            lock (_sync)
+            {
+                if (State == RunnerState.Stopped)
+                    return;
+
+                ChangeState(RunnerState.Stopping);
+                _cts?.Cancel();
+                runnerTask = _runLoopTask;
+            }
+
+            if (runnerTask != null)
+            {
+                try
+                {
+                    await runnerTask;
+                }
+                catch
+                {
+                    // 异常已在 runner 内部处理并通过事件上报
+                }
+            }
+        }
+
+        private void StartPeriodicLoops(CancellationToken rootToken)
+        {
+            foreach (var (interval, onTick) in _periodicDefinitions)
+            {
+                var timer = new PeriodicTimer(interval);
+                var cts = CancellationTokenSource.CreateLinkedTokenSource(rootToken);
+
+                var loopTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        while (await timer.WaitForNextTickAsync(cts.Token))
                         {
                             await onTick();
                         }
@@ -67,74 +114,61 @@ namespace MainClient.UiTask
                     {
                         Faulted?.Invoke(ex);
                     }
-                });
-            }
+                }, cts.Token);
 
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _runTask(_cts.Token);
-
-                    State = RunnerState.Stopped;
-                    StateChanged?.Invoke(State);
-                }
-                catch (OperationCanceledException)
-                {
-                    State = RunnerState.Stopped;
-                    StateChanged?.Invoke(State);
-                }
-                catch (Exception ex)
-                {
-                    State = RunnerState.Faulted;
-                    StateChanged?.Invoke(State);
-                    Faulted?.Invoke(ex);
-                }
-                finally
-                {
-                    StopInternal();
-                }
-            });
-        }
-
-        public async Task StopAsync()
-        {
-            if (State != RunnerState.Running) return;
-
-            _cts?.Cancel();
-
-            while (State == RunnerState.Running)
-            {
-                await Task.Delay(50);
+                _periodicLoops.Add((timer, cts, loopTask));
             }
         }
 
-        private void StopInternal()
+        private async Task StopInternalAsync()
         {
             if (_stopwatch.IsRunning)
                 _stopwatch.Stop();
 
-            foreach (var cts in _timerCtsList)
+            foreach (var (_, cts, _) in _periodicLoops)
             {
                 try { cts.Cancel(); } catch { }
             }
 
-            foreach (var item in _periodicActions)
+            var allLoopTasks = _periodicLoops.Select(x => x.loopTask).ToArray();
+            try
             {
-                item.timer.Dispose();
+                await Task.WhenAll(allLoopTasks);
+            }
+            catch
+            {
             }
 
-            _timerCtsList.Clear();
-            _periodicActions.Clear();
+            foreach (var (timer, cts, _) in _periodicLoops)
+            {
+                timer.Dispose();
+                cts.Dispose();
+            }
+
+            _periodicLoops.Clear();
+
+            _cts?.Dispose();
+            _cts = null;
+            _runLoopTask = null;
+
+            if (State == RunnerState.Stopping)
+                ChangeState(RunnerState.Stopped);
         }
 
-        /// <summary>
-        /// 增加一个定时任务
-        /// </summary>
         public void SetPeriodicAction(TimeSpan interval, Func<Task> onTick)
         {
-            var timer = new PeriodicTimer(interval);
-            _periodicActions.Add((timer, onTick));
+            if (interval <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(interval));
+            if (onTick == null)
+                throw new ArgumentNullException(nameof(onTick));
+
+            _periodicDefinitions.Add((interval, onTick));
+        }
+
+        private void ChangeState(RunnerState state)
+        {
+            State = state;
+            StateChanged?.Invoke(state);
         }
     }
 }
