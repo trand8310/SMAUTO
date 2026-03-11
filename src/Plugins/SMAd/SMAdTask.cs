@@ -683,18 +683,6 @@ namespace QTP.Plugins
 
         public override async Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationTokenSource linkedCts)
         {
-            if (linkedCts == null)
-                throw new ArgumentNullException(nameof(linkedCts));
-
-            var token = linkedCts.Token;
-            token.ThrowIfCancellationRequested();
-            using var cancelReg = token.Register(() =>
-            {
-                _ = Task.Run(async () =>
-                {
-                    try { await CloseBrowserProcess(uniqueId); } catch { }
-                });
-            });
 
             #region 任务参数设置
             var st = System.DateTime.Now;
@@ -847,7 +835,7 @@ namespace QTP.Plugins
             var chromePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", kernelVersion, "chrome.exe");
             var session = await _processManager.StartChromium(uniqueId, chromePath, userDataDir, TimeSpan.FromSeconds(180), $"about:blank  {string.Join(" ", args)}", proxyServer);
             var endpoint = $"http://localhost:{session.DebugPort}";
-            await using var browser = await ConnectOverCDPWithRetryAsync(playwright, endpoint, token: token);
+            await using var browser = await ConnectOverCDPWithRetryAsync(playwright, endpoint);
             if (browser == null)
             {
                 return (false, false, 0);
@@ -960,18 +948,16 @@ namespace QTP.Plugins
                     Interlocked.Increment(ref trigger_download_sign);
                     try
                     {
-                token.ThrowIfCancellationRequested();
-                        await Task.Delay(TimeSpan.FromSeconds(30), token);
+                        await download.CancelAsync(); // 取消下载
                     }
-                        await Task.Delay(CommonHelper.RandomRange(100, 200), token);
-                    token.ThrowIfCancellationRequested();
+                    catch (Exception)
                     {
 
 
                     }
-                await Task.Delay(delayMs, token);
-                    //await Task.Delay(TimeSpan.FromSeconds(5), token);
-                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                };
+                await page.SetViewportSizeAsync(sw, sh);
+                var cdpSession = await cdpManager.GetOrCreateSessionAsync(page);
                 await cdpSession.SendAsync("Page.enable");
                 cdpSession.Event("Page.downloadWillBegin").OnEvent += (s, e) =>
                 {
@@ -1118,11 +1104,11 @@ namespace QTP.Plugins
                                     });
                                 }");
 
-                                        await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-                    await Task.Delay(TimeSpan.FromSeconds(150), token);
-                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
-                        await Task.Delay(CommonHelper.RandomRange(5000, 8000), token);
+                                // 转换成 Locator
+                                var props = await clickableHandles.GetPropertiesAsync();
+                                var elements = new List<IElementHandle>();
+                                foreach (var prop in props.Values)
+                                {
                                     var handle = prop.AsElement();
                                     if (handle != null)
                                         elements.Add(handle);
@@ -1372,7 +1358,7 @@ namespace QTP.Plugins
                         {
                             var sponsored = priorityNon1688 ? sortedList.Values[sponsored_index] : sponsoreds.Nth(sponsored_index);
                             await SwipeEmulator.SwipeToElementAsync(page, cdpSession, sponsored);
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                            await Task.Delay(CommonHelper.RandomRange(800, 1200));
                             try
                             {
                                 pagesCount = context.Pages.Count;
@@ -1434,18 +1420,18 @@ namespace QTP.Plugins
                                 var box = await sponsored_el.BoundingBoxAsync();
                                 if (box != null)
                                 {
-                                await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-                                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                    await Task.Delay(CommonHelper.RandomRange(1500, 2500), token);
-                                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                            await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                    LogWriteLine($"触发广告位:{sponsored_text}:({box.X},{box.Y},{box.Width},{box.Height})");
+                                }
+                                else
+                                {
+                                    LogWriteLine($"触发广告位:{sponsored_text}");
+                                }
+                                await CDPHelper.MouseClickAsync(page, cdpSession, sponsored_el);
+                                await Task.Delay(CommonHelper.RandomRange(50, 100));
+                                await page.WaitForURLAsync(url => !url.Equals(current_page_url), new PageWaitForURLOptions() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 10000 });
+                                await Task.Delay(CommonHelper.RandomRange(2000, 3000));
+                            }
+                            catch (TimeoutException)
                             {
 
                             }
@@ -1663,24 +1649,24 @@ namespace QTP.Plugins
                                                     if (handle != null)
                                                         elements.Add(handle);
                                                 }
-                                                            await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-                                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                                await Task.Delay(1500, token);
-                                                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                                // 随机点击一个
+                                                if (elements.Count > 0)
+                                                {
+                                                    List<int> elements_range = Enumerable.Range(0, elements.Count).OrderBy(o => Guid.NewGuid()).ToList();
+                                                    foreach (var target_index in elements_range)
                                                     {
-                                                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                    await Task.Delay(CommonHelper.RandomRange(100, 200), token);
-                                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                                        try
+                                                        {
+                                                            var target = elements[target_index];
+                                                            pagesCount = context.Pages.Count;
+                                                            current_page_url = page.Url;
+                                                            await CDPHelper.MouseClickAsync(page, cdpSession, target);
+                                                            await Task.Delay(CommonHelper.RandomRange(50, 100));
+                                                            await page.WaitForURLAsync(url => !url.Equals(current_page_url), new PageWaitForURLOptions() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 10000 });
 
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                                        }
+                                                        catch (TimeoutException)
+                                                        {
                                                         }
                                                         if ((context.Pages.Count > pagesCount || !page.Url.StartsWith(current_page_url)))
                                                         {
@@ -1970,7 +1956,7 @@ namespace QTP.Plugins
                                                             });
                                                          }");
 
-                                                                await Task.Delay(CommonHelper.RandomRange(50, 100), token);
+                                                        // 转换成 Locator
                                                         var props = await clickableHandles.GetPropertiesAsync();
                                                         var elements = new List<IElementHandle>();
                                                         foreach (var prop in props.Values)
@@ -2046,7 +2032,7 @@ namespace QTP.Plugins
                                                     if (jd_redo_count++ < 3)
                                                     {
                                                         await TouchPageScroll(page, cdpSession, CommonHelper.RandomRange(0, 3), 1);
-                                                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                                        await Task.Delay(CommonHelper.RandomRange(800, 1200));
                                                         var clickableHandles = await page.EvaluateHandleAsync(@"() => {
                                                             const all = Array.from(document.querySelectorAll('*'));
                                                             const visible = all.filter(el => {
@@ -2060,7 +2046,7 @@ namespace QTP.Plugins
                                                                        rect.right <= window.innerWidth;
                                                             });
 
-                                                                await Task.Delay(CommonHelper.RandomRange(50, 100), token);
+                                                            // 判断是否可点击且不被覆盖
                                                             return visible.filter(el => {
                                                                 const rect = el.getBoundingClientRect();
                                                                 const x = rect.left + rect.width / 2;
@@ -2150,7 +2136,7 @@ namespace QTP.Plugins
                                         {
 
                                             await TouchPageScroll(page, cdpSession, CommonHelper.RandomRange(0, 3), 1);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                            await Task.Delay(CommonHelper.RandomRange(800, 1200));
                                             //.product,
                                             //a.goods,a.product
                                             //offer_items = page.Locator("//div[contains(@class,'feeds-product-container')]");
@@ -2172,7 +2158,7 @@ namespace QTP.Plugins
                                                 var offer_item = offer_items.Nth(CommonHelper.RandomRange(0, offer_items_count));
                                                 await SwipeEmulator.SwipeToElementAsync(page, cdpSession, offer_item);
                                                 //await offer_item.ScrollIntoViewIfNeededAsync();
-                                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                                await Task.Delay(CommonHelper.RandomRange(800, 1200));
                                                 try
                                                 {
                                                     pagesCount = context.Pages.Count;
@@ -2194,7 +2180,7 @@ namespace QTP.Plugins
                                                         await CDPHelper.InitCDPSession(cdpSession, maxTouchPoints);
                                                     }
                                                     ProcessingPageElementTask(page, cdpSession);
-                                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000));
                                                 }
                                             }
 
@@ -2217,7 +2203,7 @@ namespace QTP.Plugins
                                                 foreach (var link in clickableLinks)
                                                 {
                                                     await link.ScrollIntoViewIfNeededAsync();
-                                                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                                    await Task.Delay(CommonHelper.RandomRange(800, 1200));
                                                     try
                                                     {
                                                         pagesCount = context.Pages.Count;
@@ -2273,17 +2259,17 @@ namespace QTP.Plugins
                             var metrics = _aggregator.GetLocalMetrics(taskid, "dsp_rfq1688", "dsp_rfq1688_click");
                             if (metrics["dsp_rfq1688"] > 0)
                             {
-                                await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                                        await Task.Delay(new Random().Next(800, 1200), token);
-                                        await Task.Delay(new Random().Next(50, 100), token);
-                                        await Task.Delay(new Random().Next(1500, 2000), token);
-                                            await Task.Delay(new Random().Next(1500, 2000), token);
-                                                await Task.Delay(new Random().Next(50, 100), token);
-                                                await Task.Delay(new Random().Next(1500, 2000), token);
-                                                await Task.Delay(new Random().Next(2000, 3000), token);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                            await Task.Delay(CommonHelper.RandomRange(100, 200), token);
-                                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                LogWriteLine($"1688询价比率:{(metrics["dsp_rfq1688_click"] / (double)metrics["dsp_rfq1688"] * 100):N2}%");
+                            }
+                            if (_appSettings.Rfq1688Rate == 100 || metrics["dsp_rfq1688_click"] == 0 || ((metrics["dsp_rfq1688_click"] / (double)metrics["dsp_rfq1688"]) * 100 < _appSettings.Rfq1688Rate))
+                            {
+                                await Task.Delay(CommonHelper.RandomRange(3000, 5000));
+
+
+                                var el = page.Locator("#od_xst_phone_input_val_new,#new_od_xst_phone_input_val_new");
+                                if (await el.CountAsync() == 0)
+                                {
+                                    var queryBtn = page.Locator(".queryBtnTitleTop");
                                     if (await queryBtn.CountAsync() == 0)
                                     {
                                         queryBtn = page.GetByText("立即询价");
@@ -2430,22 +2416,17 @@ namespace QTP.Plugins
                             if (!string.IsNullOrWhiteSpace(phoneNumber))
                             {
                                 var surname = _nameGenerator.GetDisplayName(phoneNumber);
-                                await Task.Delay(CommonHelper.RandomRange(300, 500), token);
-                                //await Task.Delay(CommonHelper.RandomRange(300, 500), token);
+                                var input = page.Locator("input[placeholder='请输入您的称呼']").First;
+                                if (await input.CountAsync() > 0)
                                 {
-                                    await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                        await Task.Delay(new Random().Next(3000, 5000), token);
-                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        await Task.Delay(new Random().Next(3000, 5000), token);
-                        await Task.Delay(new Random().Next(1000, 2000), token);
-                        await Task.Delay(new Random().Next(2000, 3000), token);
-                                await Task.Delay(new Random().Next(1000, 2000), token);
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                LogWriteLine($"{this.Title}:ExecuteWorker canceled by linked token");
-                throw;
-            }
+                                    await input.FillAsync("");
+                                    await input.PressSequentiallyAsync(surname);
+                                }
+                                await Task.Delay(CommonHelper.RandomRange(300, 500));
+                                var input2 = page.Locator("input[placeholder='请输入手机号']").First;
+                                if (await input2.CountAsync() > 0)
+                                {
+                                    await input2.FillAsync("");
                                     await input2.PressSequentiallyAsync(phoneNumber);
                                 }
                                 var radio1 = page.Locator(".phone-agrement-container .phone-agrement-radio");

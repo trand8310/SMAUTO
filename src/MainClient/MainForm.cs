@@ -1573,7 +1573,7 @@ namespace MainClient
                     if (IsDisposed || Disposing)
                         return;
 
-                    InvokeOnUiThreadIfRequired(() =>
+                    this.InvokeOnUiThreadIfRequired(() =>
                     {
                         label5.Text = $"提交数量:{totalStats.Request}";
                         label6.Text = $"执行数量:{totalStats.Start}";
