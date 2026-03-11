@@ -1290,14 +1290,17 @@ namespace MainClient
                         break;
                     }
 
-                    _aggregator.Enqueue(new TaskEvent(taskid, StateType.Request, 1));
+                    try
+                    {
+                        _aggregator.Enqueue(new TaskEvent(taskid, StateType.Request, 1));
 
                     JToken dev = null;
                     int redo_dev_count = 0;
                 redo_dev:
                     if (redo_dev_count++ > 5)
                     {
-                        break;
+                        _logger.LogWarning("ConsumerAsync get device failed after retries. taskId={TaskId}, uv={Uv}", taskid, uv + 1);
+                        continue;
                     }
                     dev = await _adeHelper.GetDeviceAsync(os, 100);
                     if (dev == null)
@@ -1305,7 +1308,7 @@ namespace MainClient
                         goto redo_dev;
                     }
 
-                    var ua = dev["ua"].Value<string>();
+                    var ua = dev["ua"]?.Value<string>() ?? string.Empty;
                     if (os == OSType.ANDROID)
                     {
                         var m1 = Regex.Match(ua, @"(?<=Android\s+)([\d.]+);([\S\s]+)(?=Build)");
@@ -1338,12 +1341,12 @@ namespace MainClient
                     }
                     else
                     {
-                        if (dev["width"].Value<int>() < 1920)
+                        if ((dev["width"]?.Value<int>() ?? 0) < 1920)
                         {
                             dev["width"] = 1920;
                             dev["height"] = 1080;
                         }
-                        dev["full_version"] = dev["fullVersionList"].FirstOrDefault(p => p["brand"].Value<string>().Equals("Chromium"))?["version"]?.Value<string>() ?? "132.0.6834.186";
+                        dev["full_version"] = dev["fullVersionList"]?.FirstOrDefault(p => p["brand"]?.Value<string>() == "Chromium")?["version"]?.Value<string>() ?? "132.0.6834.186";
                     }
 
 
@@ -1378,7 +1381,7 @@ namespace MainClient
                     if (!allPlugins.TryGetValue(_appSettings.QTPName, out var plugin) || plugin.type == null)
                     {
                         _logger.LogError("ConsumerAsync plugin not found: {PluginName}", _appSettings.QTPName);
-                        return;
+                        continue;
                     }
 
                     var plugin_instance = Activator.CreateInstance(plugin.type, new object[] { this._aggregator, this._processManager, this._adeHelper, this._nameGenerator, this._appSettings });
@@ -1435,13 +1438,44 @@ namespace MainClient
                         }
                         finally
                         {
-                            await _processManager.CloseAsync(uniqueId);
+                            try
+                            {
+                                await _processManager.CloseAsync(uniqueId).WaitAsync(TimeSpan.FromSeconds(15), token);
+                            }
+                            catch (TimeoutException ex)
+                            {
+                                _logger.LogWarning(ex, "Close browser timeout. uniqueId={UniqueId}", uniqueId);
+                            }
+                            catch (OperationCanceledException) when (token.IsCancellationRequested)
+                            {
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Close browser failed. uniqueId={UniqueId}", uniqueId);
+                            }
                         }
 
                     }
-
+                    else
+                    {
+                        _logger.LogWarning("ConsumerAsync plugin instance invalid. plugin={PluginName}", _appSettings.QTPName);
+                        continue;
+                    }
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "ConsumerAsync uv failed. taskId={TaskId}, uv={Uv}, consumer={ConsumerId}", taskid, uv + 1, consumerId);
+                        continue;
+                    }
 
                 }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
             }
             catch (Exception ex)
             {
