@@ -881,6 +881,8 @@ namespace MainClient
         /// <returns></returns>
         private async Task ProducerAsync(ChannelWriter<JToken> writer, CancellationToken token)
         {
+            Exception? completionError = null;
+
             try
             {
                 while (!token.IsCancellationRequested)
@@ -937,12 +939,12 @@ namespace MainClient
             }
             catch (Exception ex)
             {
-                writer.TryComplete(ex);
+                completionError = ex;
                 throw;
             }
             finally
             {
-                writer.TryComplete();
+                writer.TryComplete(completionError);
             }
         }
 

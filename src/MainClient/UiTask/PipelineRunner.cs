@@ -72,13 +72,8 @@ namespace MainClient.UiTask
             catch (Exception ex)
             {
                 linkedCts.Cancel();
-                _channel.Writer.TryComplete(ex);
                 Faulted?.Invoke(ex);
                 throw;
-            }
-            finally
-            {
-                _channel.Writer.TryComplete();
             }
         }
     }
