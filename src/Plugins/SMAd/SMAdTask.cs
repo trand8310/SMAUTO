@@ -11,6 +11,8 @@ namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
+        private const int ScrollDirectionDownFlag = -1;
+
         private static uint GetStableHash(string s)
         {
             unchecked
@@ -97,56 +99,44 @@ namespace QTP.Plugins
         /// <param name="direction">1:向上滑动,2:向下滑动</param>
         /// <param name="predexp"></param>
         /// <returns></returns>
+        private static int ResolveDelay(int timeDelay)
+        {
+            return timeDelay == 0 ? CommonHelper.RandomRange(500, 2000) : timeDelay;
+        }
+
+        private static ScrollDirection ResolveScrollDirection(int direction)
+        {
+            return direction == ScrollDirectionDownFlag ? ScrollDirection.Down : ScrollDirection.Up;
+        }
+
+        private static string ResolveScrollDirectionText(int direction)
+        {
+            return direction == ScrollDirectionDownFlag ? "Down" : "Up";
+        }
+
         private async Task TouchPageScroll(IPage page, ICDPSession client, int scrollCount, int direction, Func<IPage, Task<bool>>? predexp = null, int time_delay = 0)
         {
             try
             {
-                if (direction == -1)
-                {
-                    LogWriteLine($"TouchScrollDown:{scrollCount}次");
-                }
-                else
-                {
-                    LogWriteLine($"TouchScrollUp:{scrollCount}次");
-                }
+                var scrollDirection = ResolveScrollDirection(direction);
+                LogWriteLine($"TouchScroll{ResolveScrollDirectionText(direction)}:{scrollCount}次");
 
                 for (int i = 0; i < scrollCount; i++)
                 {
-                    if (direction == -1)
-                    {
-                        await SwipeEmulator.SwipeMultipleAsync(
-                                    page, client,
-                                    1,
-                                    direction: ScrollDirection.Down,
-                                    steps: RandomUtil.NextInt(15, 30),
-                                    delayMs: RandomUtil.NextInt(10, 18),
-                                    jitter: (float)RandomUtil.NextDouble(1, 3));
+                    await SwipeEmulator.SwipeMultipleAsync(
+                                page, client,
+                                1,
+                                direction: scrollDirection,
+                                steps: RandomUtil.NextInt(15, 30),
+                                delayMs: RandomUtil.NextInt(10, 18),
+                                jitter: (float)RandomUtil.NextDouble(1, 3));
 
-                        if (time_delay == 0)
-                            time_delay = CommonHelper.RandomRange(500, 2000);
-                        await Task.Delay(time_delay);
-                        if (predexp != null && await predexp(page))
-                        {
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        await SwipeEmulator.SwipeMultipleAsync(
-                                    page, client,
-                                    1,
-                                    direction: ScrollDirection.Up,
-                                    steps: RandomUtil.NextInt(15, 30),
-                                    delayMs: RandomUtil.NextInt(10, 18),
-                                    jitter: (float)RandomUtil.NextDouble(1, 3));
-                        if (time_delay == 0)
-                            time_delay = CommonHelper.RandomRange(500, 2000);
-                        await Task.Delay(time_delay);
+                    time_delay = ResolveDelay(time_delay);
+                    await Task.Delay(time_delay);
 
-                        if (predexp != null && await predexp(page))
-                        {
-                            break;
-                        }
+                    if (predexp != null && await predexp(page))
+                    {
+                        break;
                     }
                 }
             }
@@ -606,6 +596,33 @@ namespace QTP.Plugins
             return null;
         }
 
+        private static int ResolveIntRangeValue(string rangeText, int defaultValue, int multiplier = 1)
+        {
+            if (string.IsNullOrWhiteSpace(rangeText))
+            {
+                return defaultValue;
+            }
+
+            if (rangeText.Contains("-"))
+            {
+                var values = rangeText
+                    .Split('-', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => Convert.ToInt32(s))
+                    .ToArray();
+
+                if (values.Length == 2)
+                {
+                    return CommonHelper.RandomRange(values[0] * multiplier, values[1] * multiplier);
+                }
+            }
+            else if (int.TryParse(rangeText, out var singleValue))
+            {
+                return singleValue * multiplier;
+            }
+
+            return defaultValue;
+        }
+
 
         public override async Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationTokenSource linkedCts)
         {
@@ -617,17 +634,7 @@ namespace QTP.Plugins
             var sleep = CommonHelper.RandomRange(8, 15);
             if (taskArgs.SelectToken("task.sleep") != null)
             {
-                var task_sleep = taskArgs.SelectToken("task.sleep").Value<string>();
-                if (task_sleep.Contains("-"))
-                {
-                    var values = task_sleep.Split('-', StringSplitOptions.RemoveEmptyEntries).Select(s => Convert.ToInt32(s)).ToArray();
-                    if (values.Length == 2)
-                        sleep = CommonHelper.RandomRange(values[0], values[1]);
-                }
-                else if (int.TryParse(task_sleep, out var _))
-                {
-                    sleep = Convert.ToInt32(task_sleep);
-                }
+                sleep = ResolveIntRangeValue(taskArgs.SelectToken("task.sleep").Value<string>(), sleep);
             }
             var isLocalAdWord = taskArgs.SelectToken("isLocalAdWord")?.Value<bool>() ?? false;
             int pageLoadingTimeout = taskArgs.SelectToken("pageLoadingTimeout")?.Value<int>() * 1000 ?? 30000;
@@ -635,16 +642,7 @@ namespace QTP.Plugins
             if (taskArgs.ContainsKey("pageloadedDelay") && !string.IsNullOrWhiteSpace(taskArgs.SelectToken("pageloadedDelay").Value<string>()))
             {
                 var tmpStr = taskArgs["pageloadedDelay"].ToString();
-                if (tmpStr.Contains("-"))
-                {
-                    var values = tmpStr.Split('-', StringSplitOptions.RemoveEmptyEntries).Select(s => Convert.ToInt32(s)).ToArray();
-                    if (values.Length == 2)
-                        pageloadedDelay = CommonHelper.RandomRange(values[0] * 1000, values[1] * 1000);
-                }
-                else
-                {
-                    pageloadedDelay = Convert.ToInt32(tmpStr) * 1000;
-                }
+                pageloadedDelay = ResolveIntRangeValue(tmpStr, pageloadedDelay, 1000);
             }
             int hompageTrigger = taskArgs.SelectToken("hompageTrigger")?.Value<int>() ?? 0;
             //非1688优先
