@@ -1,0 +1,1656 @@
+﻿using MainClient.Common;
+using MainClient.Logging;
+using MainClient.LogViewer;
+using MainClient.UiTask;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using QTP;
+using QTP.Common;
+using QTP.Common.Infrastructure;
+using QTP.Common.Models;
+using QTP.Common.Plugins;
+using QTP.Extensions;
+using QTP.Models;
+using Serilog.Events;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Management;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Threading.Channels;
+
+
+
+
+
+namespace MainClient
+{
+    public partial class MainForm : Form
+    {
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger _logger;
+        private readonly AppSettings _appSettings;
+        private readonly IpHelper _ipHelper;
+        private readonly AdeHelper _adeHelper;
+        private readonly FileUpdater _fileUpdater;
+        private ProxyTester _ipTester = new ProxyTester();
+        private readonly ChromiumSessionManager _processManager;
+        private readonly TaskStatsAggregator _aggregator;
+        private readonly ChineseNameGenerator _nameGenerator;
+
+        #region 任务调度
+        private PipelineRunner<JToken>? _pipeline;
+        private UiTaskRunner? _uiRunner;
+        private AppAutoRestart? _appAutoRestart;
+        #endregion
+
+        #region 任务计数属性
+        /// <summary>
+        /// 执行总量
+        /// </summary>
+        private int QTPTotalStartCount = 0;
+        /// <summary>
+        /// 曝光总量
+        /// </summary>
+        private int QTPTotalDspCount = 0;
+        /// <summary>
+        /// 点击总量
+        /// </summary>
+        private int QTPTotalClickthroughCount = 0;
+
+
+        #endregion
+
+
+
+        #region LogWrite
+
+        private readonly ConcurrentQueue<UiLogItem> _uiLogBuffer = new();
+        private readonly System.Windows.Forms.Timer _uiTimer = new();
+        private CancellationTokenSource _uiLogCts = new();
+        private int _flushing = 0;
+        private const int MaxFlushCount = 500;
+        // 新控件
+        private LogViewerUltra logViewer;
+        private void StartLogConsumer()
+        {
+            // 初始化新控件
+            logViewer = new LogViewerUltra()
+            {
+                Dock = DockStyle.Fill
+            };
+            groupBox33.Controls.Add(logViewer);
+
+            // 后台读取日志
+            Task.Run(async () =>
+            {
+                var reader = UiLogChannel.Channel.Reader;
+
+                try
+                {
+                    await foreach (var item in reader.ReadAllAsync(_uiLogCts.Token))
+                    {
+                        if (_uiLogCts.IsCancellationRequested)
+                            break;
+
+                        _uiLogBuffer.Enqueue(item);
+                    }
+                }
+                catch (OperationCanceledException) { }
+
+            }, _uiLogCts.Token);
+
+            // UI Timer
+            _uiTimer.Interval = 200;
+            _uiTimer.Tick += (_, __) =>
+            {
+                if (Interlocked.Exchange(ref _flushing, 1) == 1)
+                    return;
+
+                try
+                {
+                    FlushLogsToUi();
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _flushing, 0);
+                }
+            };
+            _uiTimer.Start();
+
+            this.FormClosing += (s, e) =>
+            {
+                try
+                {
+                    _uiTimer.Stop();
+                    _uiLogCts.Cancel();
+                    UiLogChannel.Channel.Writer.TryComplete();
+                }
+                catch { }
+            };
+        }
+        private void FlushLogsToUi()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            if (!IsHandleCreated || logViewer.IsDisposed)
+                return;
+
+            if (_uiLogBuffer.IsEmpty)
+                return;
+
+            int count = 0;
+
+            while (_uiLogBuffer.TryDequeue(out var item))
+            {
+                logViewer.WriteLog(item.Message, ConvertLevel(item.Level));
+
+                if (++count >= MaxFlushCount)
+                    break;
+            }
+        }
+        // 日志级别映射
+        private LogLevel ConvertLevel(LogEventLevel level) => level switch
+        {
+            LogEventLevel.Verbose => LogLevel.Trace,
+            LogEventLevel.Debug => LogLevel.Debug,
+            LogEventLevel.Information => LogLevel.Information,
+            LogEventLevel.Warning => LogLevel.Warning,
+            LogEventLevel.Error => LogLevel.Error,
+            _ => LogLevel.Information
+        };
+
+
+
+        public void LogWriteLine(string message)
+        {
+            _logger.LogInformation(message);
+        }
+        public void LogWriteLine(PluginLogEventArgs e)
+        {
+            switch (e.Level)
+            {
+                case LogLevel.Trace: _logger.LogTrace(e.Message); break;
+                case LogLevel.Debug: _logger.LogDebug(e.Message); break;
+                case LogLevel.Information: _logger.LogInformation(e.Message); break;
+                case LogLevel.Warning: _logger.LogWarning(e.Message); break;
+                case LogLevel.Error: _logger.LogError(e.Message); break;
+            }
+        }
+
+        #endregion
+
+
+
+
+
+
+
+        private Dictionary<string, QTPPlugin> allPlugins = new Dictionary<string, QTPPlugin>();
+        private void LoadQTPPlugins()
+        {
+            DirectoryInfo d = new DirectoryInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins"));
+            d.GetFiles().ToList().ForEach(x =>
+             {
+                 var assembly = System.Reflection.Assembly.LoadFile(x.FullName);
+                 if (assembly != null)
+                 {
+                     var typeName = System.IO.Path.GetFileNameWithoutExtension(x.FullName);
+                     Type type = assembly.GetType($"QTP.Plugins.{typeName}Task");
+                     if (type != null)
+                     {
+                         System.Reflection.MethodInfo methodInfo = type.GetMethod("GetInfo");
+                         object result = methodInfo.Invoke(null, null);
+                         if (result != null && result is QTPPlugin)
+                         {
+                             var plugin = (QTPPlugin)result;
+                             plugin.type = type;
+                             allPlugins.Add(plugin.Name, plugin);
+                         }
+                     }
+                 }
+             });
+        }
+
+        public async Task ReloadWordNames(string category)
+        {
+            this.BeginInvoke(() =>
+            {
+                this.comboBox_DynamicWordName.Items.Clear();
+                this.comboBox_DynamicWordName.Items.Add("不使用采集库");
+            });
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
+                HttpResponseMessage response = await client.GetAsync($"http://117.21.200.221/api/spider/get_word_names.php?category={category}");
+                response.EnsureSuccessStatusCode();
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = JObject.Parse(await response.Content.ReadAsStringAsync());
+                    if (json != null && json.ContainsKey("data"))
+                    {
+                        foreach (var f in json["data"])
+                        {
+                            this.BeginInvoke(() =>
+                            {
+                                this.comboBox_DynamicWordName.Items.Add(f.ToString());
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex.Message);
+            }
+        }
+
+
+        public async Task InitFileVersionListAsync()
+        {
+            try
+            {
+                var versionList = await _fileUpdater.GetVersionListAsync(_appSettings.TaskApiUrl);
+                if (versionList != null && versionList.Success)
+                {
+                    var _fileList = versionList.Data;
+
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        comboBox_VersionList.DataSource = _fileList;
+                        comboBox_VersionList.DisplayMember = "Text";
+                        comboBox_VersionList.ValueMember = "File";
+                        if (_fileList.Count > 0)
+                            comboBox_VersionList.SelectedIndex = 0;
+                    });
+                }
+
+                string historyDir = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "history");
+                var historyVersionList = _fileUpdater.GetHistoryVersions(historyDir);
+                string currentVersion = $"v{AppConsts.AppVertion}";
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    comboBox_HistoryVersionList.Items.Clear();
+                    foreach (var version in historyVersionList)
+                    {
+                        comboBox_HistoryVersionList.Items.Add(version);
+                    }
+                    if (historyVersionList.Contains(currentVersion))
+                    {
+                        comboBox_HistoryVersionList.SelectedItem = currentVersion;
+                    }
+                    else if (historyVersionList.Count > 0)
+                    {
+                        comboBox_HistoryVersionList.SelectedIndex = 0;
+                    }
+                });
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"InitFileVersionListAsync failed: {ex.Message}");
+            }
+        }
+        public async Task InitBrowserVersionListAsync()
+        {
+            try
+            {
+                var versionList = await _fileUpdater.GetBrowserVersionListAsync(_appSettings.TaskApiUrl);
+                if (versionList != null && versionList.Success)
+                {
+
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        foreach (var version in versionList.Data)
+                        {
+                            if (comboBox_KernelVersion.Items.IndexOf(version) == -1)
+                                comboBox_KernelVersion.Items.Add(version);
+                        }
+
+                        if (versionList.Data.Count > 0)
+                        {
+                            if (!string.IsNullOrWhiteSpace(_appSettings.KernelVersion) && comboBox_KernelVersion.SelectedIndex == -1)
+                            {
+                                comboBox_KernelVersion.SelectedIndex = comboBox_KernelVersion.Items.IndexOf(_appSettings.KernelVersion);
+                            }
+                            if (comboBox_KernelVersion.SelectedIndex == -1)
+                                comboBox_KernelVersion.SelectedIndex = 0;
+
+                        }
+
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"InitBrowserVersionListAsync failed: {ex.Message}");
+            }
+        }
+
+
+        public void InitKernelVersion()
+        {
+            try
+            {
+
+                string fileDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win");
+                if (!System.IO.Directory.Exists(fileDir))
+                    System.IO.Directory.CreateDirectory(fileDir);
+
+                var versionList = Directory.GetDirectories(fileDir)
+                                           .Select(Path.GetFileName)
+                                           .OrderByDescending(v => v)
+                                           .ToList();
+
+                foreach (var version in versionList)
+                {
+                    comboBox_KernelVersion.Items.Add(version);
+                }
+
+                if (versionList.Count > 0)
+                {
+                    if (!string.IsNullOrWhiteSpace(_appSettings.KernelVersion) && comboBox_KernelVersion.SelectedIndex == -1)
+                    {
+                        comboBox_KernelVersion.SelectedIndex = comboBox_KernelVersion.Items.IndexOf(_appSettings.KernelVersion);
+                    }
+
+                    if (comboBox_KernelVersion.SelectedIndex == -1)
+                        comboBox_KernelVersion.SelectedIndex = 0;
+                }
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"InitKernelVersion failed: {ex.Message}");
+            }
+        }
+
+        public MainForm(
+            TaskStatsAggregator aggregator,
+            AdeHelper adeHelper,
+            ChineseNameGenerator nameGenerator,
+            FileUpdater fileUpdater,
+            IpHelper ipHelper,
+            ChromiumSessionManager processManager,
+            AppSettings appSettings,
+            IHttpClientFactory httpClientFactory,
+            ILogger<MainForm> logger)
+        {
+            InitializeComponent();
+
+
+
+
+
+            this._aggregator = aggregator;
+            this._adeHelper = adeHelper;
+            this._nameGenerator = nameGenerator;
+            this._fileUpdater = fileUpdater;
+            this._ipHelper = ipHelper;
+            this._appSettings = appSettings;
+            this._processManager = processManager;
+            this._logger = logger;
+            this._httpClientFactory = httpClientFactory;
+            this.Text += $"{AppConsts.AppVertion}";
+            LoadQTPPlugins();
+            foreach (var p in allPlugins)
+            {
+                comboBox_QTPName.Items.Add(p.Key);
+            }
+            InitKernelVersion();
+            LoadAppSetting();
+            #region 数据初始化
+            foreach (var item in new ManagementObjectSearcher("Select * from Win32_ComputerSystem").Get())
+            {
+                toolStripStatusLabel1.Text = $"CPU:{item["NumberOfLogicalProcessors"]}";
+            }
+            #endregion
+
+        }
+        public async Task InitGlobalStatus()
+        {
+            try
+            {
+                var resp = await _adeHelper.GetHostTodayStatusAsync();
+                if (resp != null && resp.SelectToken("data") != null)
+                {
+                    this.QTPTotalStartCount = resp.SelectToken("data.start")?.Value<int>() ?? 0;
+                    this.QTPTotalDspCount = resp.SelectToken("data.dsp")?.Value<int>() ?? 0;
+                    this.QTPTotalClickthroughCount = resp.SelectToken("data.click")?.Value<int>() ?? 0;
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        toolStripStatusLabel4.Text = $"执行总量：{this.QTPTotalStartCount}";
+                        toolStripStatusLabel5.Text = $"曝光总量：{this.QTPTotalDspCount}";
+                        toolStripStatusLabel6.Text = $"点击总量：{this.QTPTotalClickthroughCount}";
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "InitGlobalStatus failed");
+
+            }
+
+
+        }
+        public async Task InitCloudNames()
+        {
+            this.InvokeOnUiThreadIfRequired(() =>
+            {
+                this.comboBox_WordName.Items.Clear();
+            });
+            var wordNames = await this._adeHelper.GetWordNamesAsync("get_cloud_names");
+            if (wordNames.Count() > 0)
+            {
+                foreach (var word in wordNames)
+                {
+                    this.BeginInvoke(() => { this.comboBox_WordName.Items.Add(word); });
+                }
+            }
+        }
+        public async Task InitSpiderNames(string category)
+        {
+            this.InvokeOnUiThreadIfRequired(() =>
+            {
+                this.comboBox_DynamicWordName.Items.Clear();
+                this.comboBox_DynamicWordName.Items.Add("不使用采集库");
+            });
+            var wordNames = await this._adeHelper.GetWordNamesAsync("get_spider_names", category);
+            if (wordNames.Count() > 0)
+            {
+                foreach (var word in wordNames)
+                {
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        this.comboBox_DynamicWordName.Items.Add(word);
+                    });
+                }
+            }
+        }
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            StartLogConsumer();
+            _logger.LogInformation("应用已启动");
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    CommonHelper.ClearLocalChromeProcesses();
+                    await InitFileVersionListAsync();
+                    await InitBrowserVersionListAsync();
+                    await InitSpiderNames(_appSettings.WordType);
+                    await InitCloudNames();
+                    await InitGlobalStatus();
+
+                    string downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                    CommonHelper.DeleteDownloadDir(downloadsPath, new string[] { ".apk", ".crdownload", ".pdf" });
+                    string tempPath = Path.GetTempPath();
+                    CommonHelper.DeletePlaywrightDirs(tempPath, "playwright-");
+                    CommonHelper.DeleteCacheFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Temp", "Chrome", _appSettings.KernelVersion, "User_Data"));
+                }
+                catch (Exception)
+                {
+
+
+                }
+
+                var isRestart = System.Environment.GetCommandLineArgs().Any(p => p.StartsWith("restart"));
+                if (isRestart)
+                {
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        btnStartStop.PerformClick();
+                    });
+                }
+
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+
+                    #region 控件初始化
+                    var controls = new List<Control>() { tabPage1, groupBox1, groupBox6 };
+                    foreach (var control in controls)
+                    {
+                        foreach (var c in control.Controls)
+                        {
+                            if (c is NumericUpDown)
+                            {
+                                (c as NumericUpDown).ValueChanged += (s, e) =>
+                                {
+                                    UpdateAppSetting();
+                                };
+                            }
+                            else if (c is TextBox)
+                            {
+                                (c as TextBox).TextChanged += (s, e) =>
+                                {
+                                    UpdateAppSetting();
+                                };
+                            }
+                            else if (c is CheckBox)
+                            {
+                                (c as CheckBox).Click += (s, e) =>
+                                {
+                                    UpdateAppSetting();
+                                };
+                            }
+                            else if (c is RadioButton)
+                            {
+                                (c as RadioButton).Click += (s, e) =>
+                                {
+                                    UpdateAppSetting();
+                                };
+                            }
+                            else if (c is ComboBox)
+                            {
+                                (c as ComboBox).SelectedIndexChanged += (s, e) =>
+                                {
+                                    //if ((c as ComboBox).Name.Equals("comboBox_WordType"))
+                                    //{
+                                    //    var _value = (c as ComboBox).Text;
+                                    //    Task.Run(async () =>
+                                    //    {
+                                    //        await ReloadWordNames(_value);
+                                    //        this.BeginInvoke(() =>
+                                    //        {
+                                    //            this.comboBox_DynamicWordName.Text = _appSettings.DynamicWordName;
+                                    //        });
+                                    //    });
+
+                                    //}
+                                    UpdateAppSetting();
+                                };
+                            }
+                        }
+                    }
+                    #endregion
+
+                });
+            });
+
+        }
+
+        #region 应用设置
+        private void LoadAppSetting()
+        {
+            comboBox_QTPName.Text = _appSettings.QTPName;
+            textBox_ProxyIpUrl.Text = _appSettings.ProxyIpUrl;
+            textBox_TaskApiUrl.Text = _appSettings.TaskApiUrl;
+            textBox_DevApiUrl.Text = _appSettings.DevApiUrl;
+            numericUpDown_FetchTaskInterval.Value = _appSettings.FetchTaskInterval;
+            numericUpDown_MaximumConcurrency.Value = _appSettings.MaximumConcurrency;
+            numericUpDown_PageLoadingTimeout.Value = _appSettings.PageLoadingTimeout;
+            textBox_TaskName.Text = _appSettings.TaskName;
+            numericUpDown_Multiple.Value = _appSettings.Multiple;
+            numericUpDown_MainResetTimeout.Value = _appSettings.MainResetTimeout;
+            checkBox_IsHiddenMode.Checked = _appSettings.IsHiddenMode;
+            checkBox_IsProxyMode.Checked = _appSettings.IsProxyMode;
+            checkBox_IsRealIp.Checked = _appSettings.IsRealIp;
+            checkBox_GetIpInfo.Checked = _appSettings.GetIpInfo;
+            textBox_PageloadedDelay.Text = _appSettings.PageloadedDelay;
+            var usingDevIndex = _appSettings.UsingDevIndex;
+            if (usingDevIndex == 2)
+                radioButton_UseLocalDev.Checked = true;
+            else
+                radioButton_UseSystemDev.Checked = true;
+            checkBox_IsDetailLog.Checked = _appSettings.IsDetailLog;
+            checkBox_UseLocalWord.Checked = _appSettings.UseLocalWord;
+            textBox_UVOverride.Text = _appSettings.UVOverride;
+            textBox_PVOverride.Text = _appSettings.PVOverride;
+            numericUpDown_IpTtl.Value = _appSettings.IpTtl;
+            numericUpDown_HompageTrigger.Value = _appSettings.HompageTrigger;
+            comboBox_WordName.Text = _appSettings.WordName;
+            checkBox_PriorityNon1688.Checked = _appSettings.PriorityNon1688;
+            checkBox_UVsTriggerOne.Checked = _appSettings.UVsTriggerOne;
+            checkBox_PVsTriggerOne.Checked = _appSettings.PVsTriggerOne;
+            comboBox_KernelVersion.Text = _appSettings.KernelVersion;
+            checkBox_Incognito.Checked = _appSettings.Incognito;
+            checkBox_NoTrigger1688.Checked = _appSettings.NoTrigger1688;
+            checkBox_CleaningWords.Checked = _appSettings.CleaningWords;
+            checkBox_UseDynamicWord.Checked = _appSettings.UseDynamicWord;
+            comboBox_WordType.Text = _appSettings.WordType;
+            numericUpDown_FetchRecently.Value = _appSettings.FetchRecently;
+            checkBox_NotTriggerDownload.Checked = _appSettings.NotTriggerDownload;
+            comboBox_DynamicWordName.Text = _appSettings.DynamicWordName;
+            checkBox_DistinctByHour.Checked = _appSettings.DistinctByHour;
+            textBox_ExcludeWords.Text = _appSettings.ExcludeWords;
+            checkBox_IsTest.Checked = _appSettings.IsTest;
+            checkBox_Rfq1688.Checked = _appSettings.Rfq1688;
+            numericUpDown_Rfq1688Rate.Value = _appSettings.Rfq1688Rate;
+            checkBox_p4psearch.Checked = _appSettings.p4psearch;
+            numericUpDown_p4psearchRate.Value = _appSettings.p4psearchRate;
+
+        }
+        private static object lock_config = new object();
+        private void UpdateAppSetting()
+        {
+            lock (lock_config)
+            {
+                _appSettings.QTPName = comboBox_QTPName.Text;
+                _appSettings.ProxyIpUrl = textBox_ProxyIpUrl.Text;
+                _appSettings.TaskApiUrl = textBox_TaskApiUrl.Text;
+                _appSettings.DevApiUrl = textBox_DevApiUrl.Text;
+                _appSettings.FetchTaskInterval = (int)numericUpDown_FetchTaskInterval.Value;
+                _appSettings.MaximumConcurrency = (int)numericUpDown_MaximumConcurrency.Value;
+                _appSettings.PageLoadingTimeout = (int)numericUpDown_PageLoadingTimeout.Value;
+                _appSettings.TaskName = textBox_TaskName.Text;
+                _appSettings.Multiple = (int)numericUpDown_Multiple.Value;
+                _appSettings.MainResetTimeout = (int)numericUpDown_MainResetTimeout.Value;
+                _appSettings.IsHiddenMode = checkBox_IsHiddenMode.Checked;
+                _appSettings.IsProxyMode = checkBox_IsProxyMode.Checked;
+                _appSettings.IsRealIp = checkBox_IsRealIp.Checked;
+                _appSettings.GetIpInfo = checkBox_GetIpInfo.Checked;
+                _appSettings.PageloadedDelay = textBox_PageloadedDelay.Text;
+                if (radioButton_UseLocalDev.Checked)
+                    _appSettings.UsingDevIndex = 2;
+                else
+                    _appSettings.UsingDevIndex = 1;
+                _appSettings.IsDetailLog = checkBox_IsDetailLog.Checked;
+                _appSettings.UseLocalWord = checkBox_UseLocalWord.Checked;
+                _appSettings.UVOverride = textBox_UVOverride.Text;
+                _appSettings.PVOverride = textBox_PVOverride.Text;
+                _appSettings.IpTtl = (int)numericUpDown_IpTtl.Value;
+                _appSettings.HompageTrigger = (int)numericUpDown_HompageTrigger.Value;
+                _appSettings.WordName = comboBox_WordName.Text;
+                _appSettings.PriorityNon1688 = checkBox_PriorityNon1688.Checked;
+                _appSettings.UVsTriggerOne = checkBox_UVsTriggerOne.Checked;
+                _appSettings.PVsTriggerOne = checkBox_PVsTriggerOne.Checked;
+                _appSettings.KernelVersion = comboBox_KernelVersion.Text;
+                _appSettings.Incognito = checkBox_Incognito.Checked;
+                _appSettings.NoTrigger1688 = checkBox_NoTrigger1688.Checked;
+                _appSettings.CleaningWords = checkBox_CleaningWords.Checked;
+                _appSettings.UseDynamicWord = checkBox_UseDynamicWord.Checked;
+                _appSettings.WordType = comboBox_WordType.Text;
+                _appSettings.FetchRecently = (int)numericUpDown_FetchRecently.Value;
+                _appSettings.NotTriggerDownload = checkBox_NotTriggerDownload.Checked;
+                _appSettings.DynamicWordName = comboBox_DynamicWordName.Text;
+                _appSettings.DistinctByHour = checkBox_DistinctByHour.Checked;
+                _appSettings.ExcludeWords = textBox_ExcludeWords.Text;
+                _appSettings.IsTest = checkBox_IsTest.Checked;
+
+                _appSettings.Rfq1688 = checkBox_Rfq1688.Checked;
+                _appSettings.Rfq1688Rate = (int)numericUpDown_Rfq1688Rate.Value;
+                _appSettings.p4psearch = checkBox_p4psearch.Checked;
+                _appSettings.p4psearchRate = (int)numericUpDown_p4psearchRate.Value;
+
+
+                UserConfigService.Save("AppSettings", _appSettings);
+            }
+
+        }
+        #endregion
+
+        private void buttonClear_Click(object sender, EventArgs e)
+        {
+
+            buttonClear.Enabled = false;
+            btnStartStop.Enabled = false;
+            Task.Factory.StartNew(() =>
+            {
+                CommonHelper.KillAllChromeProcess();
+                string downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                CommonHelper.DeleteDownloadDir(downloadsPath, new string[] { ".apk", ".crdownload" });
+                string tempPath = Path.GetTempPath();
+                CommonHelper.DeletePlaywrightDirs(tempPath, "playwright-");
+                CommonHelper.DeleteCacheFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Temp", "Chrome"));
+
+            }).ContinueWith(t =>
+            {
+                this.BeginInvoke(new MethodInvoker(() =>
+                {
+                    btnStartStop.Enabled = true;
+                    buttonClear.Enabled = true;
+                }));
+
+            });
+        }
+
+        private void linkLabel1_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            System.IO.DirectoryInfo dir = new DirectoryInfo(Environment.GetFolderPath(Environment.SpecialFolder.Startup));
+            foreach (System.IO.FileInfo file in dir.GetFiles())
+                file.Delete();
+            Process.Start(new ProcessStartInfo { FileName = Environment.GetFolderPath(Environment.SpecialFolder.Startup), UseShellExecute = true });
+            AppHelper.CreateShortcut("神马广告");
+        }
+
+
+
+
+        private void linkLabel2_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            string currentDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            //Console.WriteLine(currentDirectory);
+            //System.IO.DirectoryInfo dir = new DirectoryInfo(Environment.GetFolderPath(Assembly.GetExecutingAssembly().Location));
+            Process.Start(new ProcessStartInfo { FileName = currentDirectory, UseShellExecute = true });
+
+        }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            button4.Enabled = false;
+            Task.Run(async () =>
+            {
+                await ReloadWordNames(_appSettings.WordType);
+
+                this.BeginInvoke(() =>
+                {
+                    button4.Enabled = true;
+                });
+            });
+        }
+
+        private void label9_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void btnUpdate_Click(object sender, EventArgs e)
+        {
+            if (comboBox_VersionList.Items.Count == 0)
+            {
+                _logger.LogInformation("无可用的更新版本！");
+                return;
+            }
+            if (comboBox_VersionList.SelectedItem == null)
+            {
+                _logger.LogInformation("请先选择要更新的版本！");
+                return;
+            }
+            var selectedFile = comboBox_VersionList.SelectedItem as FileVersionInfo;
+            if (selectedFile == null)
+            {
+                _logger.LogInformation("请先选择要更新的版本！");
+                return;
+            }
+            btnUpdate.Enabled = false;
+            toolStripProgressBarDownload.AutoSize = false;
+            toolStripProgressBarDownload.Width = 300;
+            toolStripProgressBarDownload.Visible = true;
+            Task.Run(async () =>
+            {
+
+                double _lastReportedProgress = 0;
+                double MinProgressStep = 1;
+                DateTime _lastProgressUpdate = System.DateTime.Now;
+                double ProgressUpdateIntervalMs = 1000;
+                EventHandler<ProgressEventArgs> handler = (s, e) =>
+                {
+                    bool isProgressTooSmall = Math.Abs(e.Progress - _lastReportedProgress) < MinProgressStep;
+                    bool isTooSoon = (DateTime.Now - _lastProgressUpdate).TotalMilliseconds < ProgressUpdateIntervalMs;
+                    bool notFinished = e.Progress < 100;
+
+                    if (isProgressTooSmall && isTooSoon && notFinished)
+                    {
+                        return;
+                    }
+                    _lastReportedProgress = e.Progress;
+                    _lastProgressUpdate = DateTime.Now;
+                    _logger.LogInformation(e.Message);
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        toolStripProgressBarDownload.Value = (int)Math.Min(Math.Max(e.Progress, 0), 100);
+                    });
+                };
+                _fileUpdater.ProgressChanged -= handler;
+                _fileUpdater.ProgressChanged += handler;
+                var zipFilePath = await _fileUpdater.DownloadFileAsync(_appSettings.TaskApiUrl, selectedFile);
+                string updaterPath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "smaide.exe");
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = updaterPath,
+                        Arguments = $"--update-version \"{Process.GetCurrentProcess().MainModule?.FileName}\" \"{zipFilePath}\" \"v{AppConsts.AppVertion}\" \"{selectedFile.Text}\"",
+                        WorkingDirectory = Path.GetDirectoryName(updaterPath),
+                        UseShellExecute = false,
+
+                    });
+                    Application.Exit();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex.Message);
+                }
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    btnUpdate.Enabled = true;
+                    toolStripProgressBarDownload.Width = 60;
+                    toolStripProgressBarDownload.Visible = false;
+                });
+            });
+        }
+
+        private void button5_Click(object sender, EventArgs e)
+        {
+
+            if (comboBox_HistoryVersionList.Items.Count == 0)
+            {
+                MessageBox.Show("无可用的历史版本！");
+                return;
+            }
+            if (comboBox_HistoryVersionList.SelectedItem == null)
+            {
+                MessageBox.Show("请先选择要回滚的版本！");
+                return;
+            }
+            var selectedFile = comboBox_HistoryVersionList.Text;
+            if (selectedFile.Equals($"v{AppConsts.AppVertion}"))
+            {
+                MessageBox.Show("版本一至无须切换！");
+                return;
+            }
+
+            button5.Enabled = false;
+            string updaterPath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "smaide.exe");
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = updaterPath,
+                    Arguments = $"--switch-version \"{Process.GetCurrentProcess().MainModule?.FileName}\"  \"v{AppConsts.AppVertion}\" \"{selectedFile}\"",
+                    WorkingDirectory = Path.GetDirectoryName(updaterPath),
+                    UseShellExecute = false,
+
+
+                });
+                Application.Exit();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+            }
+            button5.Enabled = true;
+        }
+
+
+
+
+
+        /// <summary>
+        /// 获取任务
+        /// </summary>
+        /// <param name="writer"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        private async Task ProducerAsync(ChannelWriter<JToken> writer, CancellationToken token)
+        {
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    var url = $"{_appSettings.TaskApiUrl}?type=1&action=getTask&name={_appSettings.TaskName}&_t={DateTime.Now.Ticks}";
+                    var res = await this._adeHelper.GetTaskAsync(url);
+                    if (string.IsNullOrWhiteSpace(res))
+                    {
+                        LogWriteLine($"读取任务异常");
+                        await Task.Delay(_appSettings.FetchTaskInterval, token);
+                        continue;
+                    }
+                    try
+                    {
+                        var json = JObject.Parse(res);
+                        var data = json["data"] as JArray;
+
+                        if (data == null || data.Count == 0)
+                        {
+                            LogWriteLine($"暂无任务");
+                            await Task.Delay(_appSettings.FetchTaskInterval, token);
+                            continue;
+                        }
+                        // 多倍重复写入
+                        for (int i = 0; i < _appSettings.Multiple; i++)
+                        {
+                            foreach (var item in data)
+                            {
+                                // 如果取消或者 writer 无法写，安全退出整个循环
+                                if (!await writer.WaitToWriteAsync(token) || token.IsCancellationRequested)
+                                {
+                                    writer.TryComplete();
+                                    return; // 退出整个方法
+                                }
+                                await writer.WriteAsync(item, token);
+                                LogWriteLine($"新增{data.Count}条任务");
+                                await Task.Delay(_appSettings.FetchTaskInterval, token);
+                            }
+                        }
+                    }
+                    catch (JsonReaderException ex)
+                    {
+                        _logger.LogError($"ProducerAsync failed: {res}");
+                        continue;
+                    }
+
+
+                }
+
+                writer.TryComplete();
+            }
+            catch (OperationCanceledException)
+            {
+                writer.TryComplete();
+            }
+            catch (Exception ex)
+            {
+                writer.TryComplete(ex);
+                throw;
+            }
+        }
+
+        private async Task ConsumerAsync(int consumerId, JToken task, CancellationToken token)
+        {
+            //LogWriteLine($"{consumerId},取出任务");
+            try
+            {
+                int taskid = task["id"].Value<int>();
+                var url = task["url"].Value<string>();
+                var totalUV = task["uv"].Value<int>();
+                int totalPV = task["pv"].Value<int>();
+                if (totalPV == 0)
+                    totalPV = 1;
+
+                if (!string.IsNullOrWhiteSpace(_appSettings.UVOverride))
+                {
+                    var uv_values = _appSettings.UVOverride.Split('-');
+                    if (uv_values.Length > 1)
+                    {
+                        totalUV = CommonHelper.RandomRange(int.Parse(uv_values[0]), int.Parse(uv_values[1]) + 1);
+                    }
+                    else
+                    {
+                        totalUV = Convert.ToInt32(_appSettings.UVOverride);
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(_appSettings.PVOverride))
+                {
+                    var pv_values = _appSettings.PVOverride.Split('-');
+                    if (pv_values.Length > 1)
+                    {
+                        totalPV = CommonHelper.RandomRange(int.Parse(pv_values[0]), int.Parse(pv_values[1]) + 1);
+                        if (totalUV == 2)
+                        {
+                            totalPV = int.Parse(pv_values[0]);
+                        }
+                    }
+                    else
+                    {
+                        totalPV = Convert.ToInt32(_appSettings.PVOverride);
+                    }
+                }
+
+
+
+                string dev_client_id = task["client"]?.Value<string>().Split(new String[] { "|" }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                string proxy_server = null;
+                string realIp = string.Empty;
+                JObject ipInfo = null;
+
+                if (this._appSettings.IsProxyMode)
+                {
+                    if (!string.IsNullOrWhiteSpace(this._appSettings.ProxyIpUrl))
+                    {
+                        int redo_getip_count = 0;
+                        int redo_max_getip_count = 10;
+                    redo_getip:
+                        redo_getip_count++;
+                        if (redo_getip_count++ > redo_max_getip_count)
+                        {
+                            return;
+                        }
+                        try
+                        {
+                            _aggregator.EnqueueProxyIpFetched(taskid, 1);
+                            var ipEntity = await _ipHelper.GetProxyIpAsync(task);
+                            if (ipEntity == null)
+                            {
+                                LogWriteLine($"获取IP错误");
+                                await Task.Delay(new Random().Next(100, 200));
+                                goto redo_getip;
+                            }
+                            //_aggregator.Enqueue(new TaskEvent(task["id"].Value<int>(), StateType.Request, 1));
+                            //await _ipHelper.ProxyIpStatAsync(task["id"].Value<int>(), _appSettings.ProxyIpUrl);
+
+                            if (ipEntity.format == IPFormat.JSON)
+                            {
+                                proxy_server = $"{ipEntity.json["ip"]}:{ipEntity.json["port"]}";
+                                if (this._appSettings.IsRealIp)
+                                {
+
+                                    realIp = ipEntity.json["rip"]?.Value<string>() ?? ipEntity.json["real_ip"]?.Value<string>() ?? ipEntity.json["realIp"]?.Value<string>();
+                                }
+                            }
+                            else
+                            {
+                                proxy_server = ipEntity.value;
+                                if (this._appSettings.IsRealIp)
+                                    realIp = proxy_server;
+                            }
+                            string pattern = @"(?:(?:[0,1]?\d?\d|2[0-4]\d|25[0-5])\.){3}(?:[0,1]?\d?\d|2[0-4]\d|25[0-5]):\d{0,5}";
+                            if (!Regex.IsMatch(proxy_server, pattern))
+                            {
+                                LogWriteLine($"IP异常,{proxy_server}");
+                                await Task.Delay(new Random().Next(100, 200));
+                                goto redo_getip;
+                            }
+
+                            if (_appSettings.GetIpInfo)
+                            {
+                                try
+                                {
+                                    var result = await _ipTester.TestAsync(proxy_server);
+                                    if (result.IsValid)
+                                    {
+                                        if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
+                                        {
+                                            ipInfo = JObject.Parse(result.Data);
+                                            realIp = ipInfo["query"].Value<string>();
+                                        }
+                                        else
+                                        {
+                                            var ip_json = JObject.Parse(result.Data);
+                                            if (ip_json.ContainsKey("query"))
+                                                realIp = ip_json["query"].Value<string>();
+                                            if (ip_json.ContainsKey("ip"))
+                                                realIp = ip_json["ip"].Value<string>();
+                                            ipInfo = new JObject();
+                                            ipInfo["query"] = realIp;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        LogWriteLine($"无法获取IP信息,{proxy_server}");
+                                        await Task.Delay(new Random().Next(100, 200));
+                                        goto redo_getip;
+                                    }
+
+
+                                }
+                                catch (Exception)
+                                {
+                                    LogWriteLine($"无法获取IP信息,{proxy_server}");
+                                    await Task.Delay(new Random().Next(100, 200));
+                                    goto redo_getip;
+                                }
+                            }
+
+                            if (_appSettings.IsRealIp && string.IsNullOrWhiteSpace(realIp))
+                            {
+
+                                var result = await _ipTester.TestAsync(proxy_server);
+                                if (result.IsValid)
+                                {
+                                    if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
+                                    {
+                                        ipInfo = JObject.Parse(result.Data);
+                                        realIp = ipInfo["query"].Value<string>();
+                                    }
+                                    else
+                                    {
+                                        var ip_json = JObject.Parse(result.Data);
+                                        if (ip_json.ContainsKey("query"))
+                                            realIp = ip_json["query"].Value<string>();
+                                        if (ip_json.ContainsKey("ip"))
+                                            realIp = ip_json["ip"].Value<string>();
+                                        ipInfo = new JObject();
+                                        ipInfo["query"] = realIp;
+                                    }
+                                }
+                                else
+                                {
+                                    LogWriteLine($"无法获取真实IP,{proxy_server}");
+                                    await Task.Delay(new Random().Next(100, 200));
+                                    goto redo_getip;
+                                }
+                            }
+
+                            if (_appSettings.IsIpDuplicate)
+                            {
+                                if (string.IsNullOrWhiteSpace(realIp))
+                                {
+                                    var result = await _ipTester.TestAsync(proxy_server);
+                                    if (result.IsValid)
+                                    {
+                                        if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
+                                        {
+                                            ipInfo = JObject.Parse(result.Data);
+                                            realIp = ipInfo["query"].Value<string>();
+                                        }
+                                        else
+                                        {
+                                            var ip_json = JObject.Parse(result.Data);
+                                            if (ip_json.ContainsKey("query"))
+                                                realIp = ip_json["query"].Value<string>();
+                                            if (ip_json.ContainsKey("ip"))
+                                                realIp = ip_json["ip"].Value<string>();
+                                            ipInfo = new JObject();
+                                            ipInfo["query"] = realIp;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        LogWriteLine($"无法获取真实IP,{proxy_server}");
+                                        await Task.Delay(new Random().Next(100, 200));
+                                        goto redo_getip;
+                                    }
+
+                                }
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(realIp))
+                            {
+                                _aggregator.EnqueueProxyIpConsumed(taskid, realIp, 1);
+                                //await _ipHelper.UpdateProxyIpStatAsync(task["id"].Value<int>(), _appSettings.ProxyIpUrl, realIp);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogWriteLine($"IP异常,{ex.Message}");
+                            if (ex.Message.Contains("没有满足您选择的条件IP"))
+                            {
+                                await Task.Delay(new Random().Next(2000, 3000));
+                            }
+                            await Task.Delay(new Random().Next(300, 500));
+                            goto redo_getip;
+                        }
+                    }
+                    else
+                    {
+                        proxy_server = "127.0.0.1:7890";
+                        var result = await _ipTester.TestAsync(proxy_server);
+                        if (result.IsValid)
+                        {
+                            if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
+                            {
+                                ipInfo = JObject.Parse(result.Data);
+                                realIp = ipInfo["query"].Value<string>();
+                            }
+                            else
+                            {
+                                var ip_json = JObject.Parse(result.Data);
+                                if (ip_json.ContainsKey("query"))
+                                    realIp = ip_json["query"].Value<string>();
+                                if (ip_json.ContainsKey("ip"))
+                                    realIp = ip_json["ip"].Value<string>();
+                                ipInfo = new JObject();
+                                ipInfo["query"] = realIp;
+                            }
+                        }
+                        else
+                        {
+                            LogWriteLine($"无法获取IP信息,{proxy_server}");
+                            return;
+                        }
+                    }
+                }
+                else
+                {
+
+
+                    if (_appSettings.GetIpInfo)
+                    {
+                        var result = await _ipTester.TestAsync(proxy_server);
+                        if (result.IsValid)
+                        {
+                            if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
+                            {
+                                ipInfo = JObject.Parse(result.Data);
+                                realIp = ipInfo["query"].Value<string>();
+                            }
+                            else
+                            {
+                                var ip_json = JObject.Parse(result.Data);
+                                if (ip_json.ContainsKey("query"))
+                                    realIp = ip_json["query"].Value<string>();
+                                if (ip_json.ContainsKey("ip"))
+                                    realIp = ip_json["ip"].Value<string>();
+                                ipInfo = new JObject();
+                                ipInfo["query"] = realIp;
+                            }
+                        }
+                        else
+                        {
+                            LogWriteLine($"无法获取IP信息,{proxy_server}");
+                            return;
+                        }
+                    }
+
+                    if (_appSettings.IsRealIp && string.IsNullOrWhiteSpace(realIp))
+                    {
+
+                        var result = await _ipTester.TestAsync(proxy_server);
+                        if (result.IsValid)
+                        {
+                            if (result.SuccessUrl.Equals("http://ip-api.com/json"))
+                            {
+                                ipInfo = JObject.Parse(result.Data);
+                                realIp = ipInfo["query"].Value<string>();
+                            }
+                            else
+                            {
+                                var ip_json = JObject.Parse(result.Data);
+                                if (ip_json.ContainsKey("query"))
+                                    realIp = ip_json["query"].Value<string>();
+                                if (ip_json.ContainsKey("ip"))
+                                    realIp = ip_json["ip"].Value<string>();
+                                ipInfo = new JObject();
+                                ipInfo["query"] = realIp;
+                            }
+                        }
+                        else
+                        {
+                            LogWriteLine($"无法获取真实IP,{proxy_server}");
+                            return;
+                        }
+                    }
+                }
+
+
+                OSType os = dev_client_id.Equals("7") ? OSType.PC : dev_client_id.Equals("4") ? OSType.IOS : OSType.ANDROID;
+
+                var st = System.DateTime.Now;
+                for (int uv = 0; uv < totalUV; uv++)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    _aggregator.Enqueue(new TaskEvent(taskid, StateType.Request, 1));
+
+                    JToken dev = null;
+                    int redo_dev_count = 0;
+                redo_dev:
+                    if (redo_dev_count++ > 5)
+                    {
+                        break;
+                    }
+                    dev = await _adeHelper.GetDeviceAsync(os, 100);
+                    if (dev == null)
+                    {
+                        goto redo_dev;
+                    }
+
+                    var ua = dev["ua"].Value<string>();
+                    if (os == OSType.ANDROID)
+                    {
+                        var m1 = Regex.Match(ua, @"(?<=Android\s+)([\d.]+);([\S\s]+)(?=Build)");
+                        if (m1.Success && m1.Groups.Count == 3)
+                        {
+                            var model = m1.Groups[2].Value.Trim();
+                            model = Regex.Replace(model, "^.*?;\\s*", "");
+
+                            dev["osv"] = m1.Groups[1].Value.Trim();
+                            dev["model"] = model.Trim();
+                        }
+                        else
+                        {
+                            dev["osv"] = "13";
+                        }
+
+                        var m2 = Regex.Match(ua, @"Chrome/([\d.]+)");
+                        if (m2.Success && m2.Groups.Count == 2)
+                        {
+                            dev["full_version"] = m2.Groups[1].Value.Trim();
+                        }
+                        else
+                        {
+                            dev["full_version"] = "132.0.6834.186";
+                        }
+                    }
+                    else if (os == OSType.IOS)
+                    {
+                        dev["full_version"] = dev["osv"];
+                    }
+                    else
+                    {
+                        if (dev["width"].Value<int>() < 1920)
+                        {
+                            dev["width"] = 1920;
+                            dev["height"] = 1080;
+                        }
+                        dev["full_version"] = dev["fullVersionList"].FirstOrDefault(p => p["brand"].Value<string>().Equals("Chromium"))?["version"]?.Value<string>() ?? "132.0.6834.186";
+                    }
+
+
+                    var cacheName = $"s{consumerId}_{uv + 1}";
+                    var args = new JObject();
+                    args["task"] = task;
+                    args["dev"] = dev;
+                    args["ipInfo"] = ipInfo;
+                    args["isProxyMode"] = _appSettings.IsProxyMode;
+                    args["proxy_server"] = proxy_server;
+                    args["realIp"] = realIp;
+                    args["isHiddenMode"] = _appSettings.IsHiddenMode;
+                    args["cacheName"] = cacheName;
+                    args["processIndex"] = consumerId;
+                    args["totalPV"] = totalPV;
+                    args["currentUV"] = uv + 1;
+                    args["pageLoadingTimeout"] = _appSettings.PageLoadingTimeout;
+                    args["pageloadedDelay"] = _appSettings.PageloadedDelay;
+                    args["hompageTrigger"] = _appSettings.HompageTrigger;
+                    args["os"] = (int)os;
+                    args["isLocalAdWord"] = _appSettings.UseLocalWord;
+                    args["priorityNon1688"] = _appSettings.PriorityNon1688;
+                    args["pvsTriggerOne"] = _appSettings.PVsTriggerOne; ;
+                    args["isTest"] = _appSettings.IsTest;
+                    args["kernelVersion"] = _appSettings.KernelVersion;
+                    args["incognito"] = _appSettings.Incognito;
+                    args["wordname"] = _appSettings.WordName;
+                    args["noTrigger1688"] = _appSettings.NoTrigger1688;
+                    args["cleaningWords"] = _appSettings.CleaningWords;
+                    args["notTriggerDownload"] = _appSettings.NotTriggerDownload;
+
+                    var plugin = allPlugins[_appSettings.QTPName];
+                    var plugin_instance = Activator.CreateInstance(plugin.type, new object[] { this._aggregator, this._processManager, this._adeHelper, this._nameGenerator, this._appSettings });
+                    if (plugin_instance != null && plugin_instance is IQTPService)
+                    {
+                        IQTPService plugin_service = (IQTPService)plugin_instance;
+
+                        plugin_service.OnLogEventHandler += (s, e) =>
+                        {
+                            LogWriteLine(e);
+                        };
+
+                        plugin_service.OnStateChangedEventHandler += (s, e) =>
+                        {
+                            _aggregator.Enqueue(new TaskEvent(e.Id, e.Type, e.Count, e.Data));
+                        };
+
+                        plugin_service.OnTaskAdWordEventHandler += (s, e) =>
+                        {
+                            _aggregator.EnqueueAdWord(e.Type, e.Word);
+                        };
+
+                        var uniqueId = Guid.NewGuid().ToString("D");
+
+                        try
+                        {
+                            LogWriteLine($"提交任务:{task["title"]}[{task["id"]}_{consumerId}_{cacheName}],os={os},proxy={proxy_server ?? "False"},realIp={(realIp ?? "")},uv={totalUV}/{(uv + 1)}");
+                            var ip_ttl = _appSettings.IpTtl - ((TimeSpan)(DateTime.Now - st)).TotalSeconds;
+                            using var ctsTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(ip_ttl));
+                            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, ctsTimeout.Token);
+                            try
+                            {
+                                var (is_success, is_page_trigger_click, page_ads_count) =
+                                    await plugin_service.ExecuteWorkerAsync(uniqueId, args, linkedCts).WithCancellation(linkedCts.Token); ;
+
+                                if (totalUV > 1 && is_page_trigger_click && _appSettings.UVsTriggerOne)
+                                {
+                                    break;
+                                }
+                            }
+                            catch (OperationCanceledException) when (ctsTimeout.IsCancellationRequested)
+                            {
+                                LogWriteLine($"插件 {uniqueId} 执行超时");
+                                break;
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                LogWriteLine($"浏览器关闭,插件 {uniqueId} 被取消");
+                                //break;
+                            }
+                        }
+                        catch (Exception)
+                        {
+
+
+                        }
+                        finally
+                        {
+                            await _processManager.CloseAsync(uniqueId);
+                        }
+
+                    }
+
+
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex.Message);
+            }
+        }
+
+        private void InitPipelineRunner()
+        {
+            int capacity = _appSettings.Multiple * _appSettings.MaximumConcurrency;
+            int consumerCount = _appSettings.MaximumConcurrency;
+
+            _pipeline = new PipelineRunner<JToken>(
+                capacity,
+                consumerCount,
+                ProducerAsync,
+                ConsumerAsync
+            );
+
+            _pipeline.ProgressChanged += count =>
+            {
+                this.BeginInvoke(() =>
+                {
+                    //progressBar.Value = (int)Math.Min(count, progressBar.Maximum);
+                });
+            };
+
+            _pipeline.Started += () => this.BeginInvoke((Delegate)(() => lblStatus.Text = $"任务状态：Running"));
+            _pipeline.Completed += () => this.BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Completed"));
+            _pipeline.Canceled += () => this.BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Canceled"));
+            _pipeline.Faulted += ex => _logger.LogError(ex, ex.Message);
+
+        }
+
+        private async void btnStartStop_Click(object sender, EventArgs e)
+        {
+            string version = comboBox_KernelVersion.Text;
+            var chromeDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", version, version);
+            if (!System.IO.Directory.Exists(chromeDir))
+            {
+                btnStartStop.Enabled = false;
+                await DownloadBrowserAsync(version).ContinueWith(t =>
+                {
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        btnStartStop.Enabled = true;
+                    });
+                });
+            }
+
+
+            if (_uiRunner != null && _uiRunner.State == RunnerState.Running)
+            {
+                btnStartStop.Enabled = false;
+                // 停止任务
+                await _uiRunner.StopAsync();
+                _appAutoRestart?.Stop();
+                btnStartStop.Enabled = true;
+                return;
+            }
+
+            // 初始化 Pipeline
+            InitPipelineRunner();
+
+            // 初始化 UiTaskRunner
+            _uiRunner = new UiTaskRunner(token => _pipeline!.RunAsync(token));
+
+            // 状态绑定按钮和 Label
+            _uiRunner.StateChanged += state =>
+            {
+                this.BeginInvoke((Delegate)(() =>
+                {
+                    lblStatus.Text = $"任务状态：{state}";
+                    btnStartStop.Text = state == RunnerState.Running ? "停止" : "开始";
+                }));
+            };
+
+            // 记录调度器崩溃事件
+            _uiRunner.Faulted += ex =>
+            {
+                _logger.LogError(ex, ex.Message);
+            };
+
+            // 更新任务状态
+            _uiRunner.SetPeriodicAction(
+                TimeSpan.FromSeconds(1), async () =>
+                {
+                    var elapsed = _uiRunner.RunElapsed;
+                    var totalStats = _aggregator.GetTotalStats();
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        label5.Text = $"提交数量:{totalStats.Request}";
+                        label6.Text = $"执行数量:{totalStats.Start}";
+                        label7.Text = $"曝光数量:{totalStats.DSP}";
+                        label8.Text = $"点击数量:{totalStats.Clickthrough}";
+                        label9.Text = $"成功数量:{totalStats.Success}";
+
+                        toolStripStatusLabel4.Text = $"执行总量：{this.QTPTotalStartCount + totalStats.Start}";
+                        toolStripStatusLabel5.Text = $"曝光总量：{this.QTPTotalDspCount + totalStats.DSP}";
+                        toolStripStatusLabel6.Text = $"点击总量：{this.QTPTotalClickthroughCount + totalStats.Clickthrough}";
+
+                        label12.Text = $"运行时长:{elapsed:hh\\:mm\\:ss}";
+                    });
+
+                    await Task.CompletedTask;
+                }
+            );
+
+            // 定时检测应用状态
+            _uiRunner.SetPeriodicAction(TimeSpan.FromSeconds(10), async () =>
+            {
+                CommonHelper.ClearErrorMsgDialog("node.exe - 应用程序错误");
+                CommonHelper.ClearErrorMsgDialog("chrome.exe - 应用程序错误");
+                CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
+                CommonHelper.ClearProcesses(new string[] { "WerFault" });
+                await Task.CompletedTask;
+            });
+
+
+            // 启动任务
+            _uiRunner.Start();
+
+            // 初始化自动重启（60分钟 ±30秒示例，可修改）
+            var restartInterval = CommonHelper.GetRandomizedInterval(_appSettings.MainResetTimeout, 30);
+            _appAutoRestart = new AppAutoRestart(
+                restartInterval,
+                () => _uiRunner != null && _uiRunner.State == RunnerState.Running
+            );
+            _appAutoRestart.Start();
+        }
+
+
+        private Task DownloadBrowserAsync(string version)
+        {
+            return Task.Run(async () =>
+            {
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    toolStripProgressBarDownload.AutoSize = false;
+                    toolStripProgressBarDownload.Width = 300;
+                    toolStripProgressBarDownload.Visible = true;
+                });
+                double _lastReportedProgress = 0;
+                double MinProgressStep = 1;
+                DateTime _lastProgressUpdate = System.DateTime.Now;
+                double ProgressUpdateIntervalMs = 1000;
+                EventHandler<ProgressEventArgs> handler = (s, e) =>
+                {
+                    bool isProgressTooSmall = Math.Abs(e.Progress - _lastReportedProgress) < MinProgressStep;
+                    bool isTooSoon = (DateTime.Now - _lastProgressUpdate).TotalMilliseconds < ProgressUpdateIntervalMs;
+                    bool notFinished = e.Progress < 100;
+
+                    if (isProgressTooSmall && isTooSoon && notFinished)
+                    {
+                        return;
+                    }
+                    _lastReportedProgress = e.Progress;
+                    _lastProgressUpdate = DateTime.Now;
+                    _logger.LogInformation(e.Message);
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        toolStripProgressBarDownload.Value = (int)Math.Min(Math.Max(e.Progress, 0), 100);
+                    });
+                };
+                _fileUpdater.ProgressChanged -= handler;
+                _fileUpdater.ProgressChanged += handler;
+                var zipFilePath = await _fileUpdater.DownloadBrowserAsync(_appSettings.TaskApiUrl, version);
+                var chromeDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", version);
+                if (!System.IO.Directory.Exists(chromeDir))
+                    System.IO.Directory.CreateDirectory(chromeDir);
+                ZipFile.ExtractToDirectory(zipFilePath, chromeDir);
+
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    toolStripProgressBarDownload.Width = 60;
+                    toolStripProgressBarDownload.Visible = false;
+                });
+            });
+        }
+
+
+
+        private async void button6_Click(object sender, EventArgs e)
+        {
+            if (comboBox_KernelVersion.Items.Count == 0 || string.IsNullOrWhiteSpace(comboBox_KernelVersion.Text))
+            {
+                _logger.LogInformation("请先选择要更新的版本！");
+                return;
+            }
+            string version = comboBox_KernelVersion.Text;
+            var chromeDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", version, version);
+            if (System.IO.Directory.Exists(chromeDir))
+            {
+                _logger.LogInformation($"浏览器版本{version},已存在！");
+                return;
+            }
+            button6.Enabled = false;
+            await DownloadBrowserAsync(version).ContinueWith(t =>
+            {
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    button6.Enabled = true;
+                });
+            });
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "请选择一个文件";
+                dialog.Filter = "文本文件 (*.txt)|*.txt";
+                dialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    button1.Enabled = false;
+                    string selectedFilePath = dialog.FileName;
+                    Task.Run(async () =>
+                    {
+                        await _adeHelper.UploadWordFileAsZipAsync(selectedFilePath);
+                        this.BeginInvoke(() =>
+                        {
+                            button1.Enabled = true;
+                        });
+                    });
+                }
+            }
+        }
+
+        private void button7_Click(object sender, EventArgs e)
+        {
+            button7.Enabled = false;
+            Task.Run(async () =>
+            {
+                await _adeHelper.DownloadWordFileByNameAsync(_appSettings.WordName);
+                this.BeginInvoke(() =>
+                {
+                    button7.Enabled = true;
+                });
+            });
+        }
+    }
+}
