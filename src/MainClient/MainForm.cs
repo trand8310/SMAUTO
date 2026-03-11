@@ -886,7 +886,7 @@ namespace MainClient
                 while (!token.IsCancellationRequested)
                 {
                     var url = $"{_appSettings.TaskApiUrl}?type=1&action=getTask&name={_appSettings.TaskName}&_t={DateTime.Now.Ticks}";
-                    var res = await _adeHelper.GetTaskAsync(url);
+                    var res = await _adeHelper.GetTaskAsync(url, token);
                     if (string.IsNullOrWhiteSpace(res))
                     {
                         LogWriteLine("读取任务异常");
@@ -951,48 +951,72 @@ namespace MainClient
             //LogWriteLine($"{consumerId},取出任务");
             try
             {
-                int taskid = task["id"].Value<int>();
-                var url = task["url"].Value<string>();
-                var totalUV = task["uv"].Value<int>();
-                int totalPV = task["pv"].Value<int>();
-                if (totalPV == 0)
-                    totalPV = 1;
-
-                if (!string.IsNullOrWhiteSpace(_appSettings.UVOverride))
+                if (task is not JObject taskObj)
                 {
-                    var uv_values = _appSettings.UVOverride.Split('-');
-                    if (uv_values.Length > 1)
-                    {
-                        totalUV = CommonHelper.RandomRange(int.Parse(uv_values[0]), int.Parse(uv_values[1]) + 1);
-                    }
-                    else
-                    {
-                        totalUV = Convert.ToInt32(_appSettings.UVOverride);
-                    }
+                    _logger.LogWarning("ConsumerAsync received invalid task payload: {Task}", task?.ToString(Newtonsoft.Json.Formatting.None));
+                    return;
                 }
-                if (!string.IsNullOrWhiteSpace(_appSettings.PVOverride))
+
+                var taskIdToken = taskObj["id"];
+                var url = taskObj["url"]?.Value<string>();
+                var totalUvToken = taskObj["uv"];
+                var totalPvToken = taskObj["pv"];
+
+                if (taskIdToken == null || totalUvToken == null || totalPvToken == null || string.IsNullOrWhiteSpace(url))
                 {
-                    var pv_values = _appSettings.PVOverride.Split('-');
-                    if (pv_values.Length > 1)
+                    _logger.LogWarning("ConsumerAsync skip malformed task: {Task}", taskObj.ToString(Newtonsoft.Json.Formatting.None));
+                    return;
+                }
+
+                var taskid = taskIdToken.Value<int>();
+                var totalUV = Math.Max(1, totalUvToken.Value<int>());
+                var totalPV = Math.Max(1, totalPvToken.Value<int>());
+
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(_appSettings.UVOverride))
                     {
-                        totalPV = CommonHelper.RandomRange(int.Parse(pv_values[0]), int.Parse(pv_values[1]) + 1);
-                        if (totalUV == 2)
+                        var uvValues = _appSettings.UVOverride.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        if (uvValues.Length > 1 && int.TryParse(uvValues[0], out var minUv) && int.TryParse(uvValues[1], out var maxUv) && maxUv >= minUv)
                         {
-                            totalPV = int.Parse(pv_values[0]);
+                            totalUV = CommonHelper.RandomRange(minUv, maxUv + 1);
+                        }
+                        else if (uvValues.Length == 1 && int.TryParse(uvValues[0], out var uvExact))
+                        {
+                            totalUV = uvExact;
                         }
                     }
-                    else
+
+                    if (!string.IsNullOrWhiteSpace(_appSettings.PVOverride))
                     {
-                        totalPV = Convert.ToInt32(_appSettings.PVOverride);
+                        var pvValues = _appSettings.PVOverride.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        if (pvValues.Length > 1 && int.TryParse(pvValues[0], out var minPv) && int.TryParse(pvValues[1], out var maxPv) && maxPv >= minPv)
+                        {
+                            totalPV = CommonHelper.RandomRange(minPv, maxPv + 1);
+                            if (totalUV == 2)
+                                totalPV = minPv;
+                        }
+                        else if (pvValues.Length == 1 && int.TryParse(pvValues[0], out var pvExact))
+                        {
+                            totalPV = pvExact;
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "ConsumerAsync override parse failed, fallback to task values. taskId={TaskId}", taskid);
+                }
 
+                totalUV = Math.Max(1, totalUV);
+                totalPV = Math.Max(1, totalPV);
 
+                var dev_client_id = taskObj["client"]?.Value<string>()?
+                    .Split(new string[] { "|" }, StringSplitOptions.RemoveEmptyEntries)
+                    .FirstOrDefault() ?? "0";
 
-                string dev_client_id = task["client"]?.Value<string>().Split(new String[] { "|" }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                string proxy_server = null;
+                string? proxy_server = null;
                 string realIp = string.Empty;
-                JObject ipInfo = null;
+                JObject? ipInfo = null;
 
                 if (this._appSettings.IsProxyMode)
                 {
@@ -1156,9 +1180,9 @@ namespace MainClient
                             LogWriteLine($"IP异常,{ex.Message}");
                             if (ex.Message.Contains("没有满足您选择的条件IP"))
                             {
-                                await Task.Delay(new Random().Next(2000, 3000));
+                                await Task.Delay(Random.Shared.Next(2000, 3000), token);
                             }
-                            await Task.Delay(new Random().Next(300, 500));
+                            await Task.Delay(Random.Shared.Next(300, 500), token);
                             goto redo_getip;
                         }
                     }
@@ -1254,7 +1278,7 @@ namespace MainClient
                 }
 
 
-                OSType os = dev_client_id.Equals("7") ? OSType.PC : dev_client_id.Equals("4") ? OSType.IOS : OSType.ANDROID;
+                OSType os = _adeHelper.GetOS(dev_client_id);
 
                 var st = System.DateTime.Now;
                 for (int uv = 0; uv < totalUV; uv++)
@@ -1349,11 +1373,15 @@ namespace MainClient
                     args["cleaningWords"] = _appSettings.CleaningWords;
                     args["notTriggerDownload"] = _appSettings.NotTriggerDownload;
 
-                    var plugin = allPlugins[_appSettings.QTPName];
-                    var plugin_instance = Activator.CreateInstance(plugin.type, new object[] { this._aggregator, this._processManager, this._adeHelper, this._nameGenerator, this._appSettings });
-                    if (plugin_instance != null && plugin_instance is IQTPService)
+                    if (!allPlugins.TryGetValue(_appSettings.QTPName, out var plugin) || plugin.type == null)
                     {
-                        IQTPService plugin_service = (IQTPService)plugin_instance;
+                        _logger.LogError("ConsumerAsync plugin not found: {PluginName}", _appSettings.QTPName);
+                        return;
+                    }
+
+                    var plugin_instance = Activator.CreateInstance(plugin.type, new object[] { this._aggregator, this._processManager, this._adeHelper, this._nameGenerator, this._appSettings });
+                    if (plugin_instance is IQTPService plugin_service)
+                    {
 
                         plugin_service.OnLogEventHandler += (s, e) =>
                         {
@@ -1375,8 +1403,8 @@ namespace MainClient
                         try
                         {
                             LogWriteLine($"提交任务:{task["title"]}[{task["id"]}_{consumerId}_{cacheName}],os={os},proxy={proxy_server ?? "False"},realIp={(realIp ?? "")},uv={totalUV}/{(uv + 1)}");
-                            var ip_ttl = _appSettings.IpTtl - ((TimeSpan)(DateTime.Now - st)).TotalSeconds;
-                            using var ctsTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(ip_ttl));
+                            var ipTtl = Math.Max(10, _appSettings.IpTtl - (DateTime.Now - st).TotalSeconds);
+                            using var ctsTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(ipTtl));
                             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, ctsTimeout.Token);
                             try
                             {
@@ -1399,10 +1427,9 @@ namespace MainClient
                                 //break;
                             }
                         }
-                        catch (Exception)
+                        catch (Exception ex)
                         {
-
-
+                            _logger.LogError(ex, "ConsumerAsync plugin execute failed. taskId={TaskId}, consumer={ConsumerId}", taskid, consumerId);
                         }
                         finally
                         {
