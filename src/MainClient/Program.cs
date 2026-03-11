@@ -13,6 +13,7 @@ using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 using System.Diagnostics;
+using System.Threading;
 
 
 
@@ -20,6 +21,12 @@ namespace MainClient
 {
     static class Program
     {
+        private static readonly TimeSpan RestartCooldown = TimeSpan.FromMinutes(2);
+        private static int _restartRequested;
+        private static DateTime _lastRestartRequestUtc = DateTime.MinValue;
+        private static PeriodicTimer? _errorDialogTimer;
+        private static CancellationTokenSource? _errorDialogCts;
+
         /// <summary>
         /// 应用程序的主入口点。
         /// </summary>
@@ -64,7 +71,9 @@ namespace MainClient
                 .WriteTo.Sink<UiLogSink>()
                 .CreateLogger();
 
-            var packagesDir = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "packages");
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            var parentDir = Directory.GetParent(baseDir)?.FullName ?? AppDomain.CurrentDomain.BaseDirectory;
+            var packagesDir = Path.Combine(parentDir, "packages");
             if (!Directory.Exists(packagesDir))
             {
                 Directory.CreateDirectory(packagesDir);
@@ -126,8 +135,11 @@ namespace MainClient
                 e.SetObserved();
             };
 
+            StartErrorDialogGuard();
+
             Application.ApplicationExit += async (sender, e) =>
             {
+                StopErrorDialogGuard();
                 CommonHelper.KillAllChromeProcess();
                 var pw = host.Services.GetService<IPlaywright>();
                 if (pw is IAsyncDisposable asyncDisposable)
@@ -139,6 +151,22 @@ namespace MainClient
 
         static void RestartApplication()
         {
+            if (Interlocked.Exchange(ref _restartRequested, 1) == 1)
+            {
+                Log.Warning("RestartApplication skipped: restart already requested.");
+                return;
+            }
+
+            var utcNow = DateTime.UtcNow;
+            var elapsed = utcNow - _lastRestartRequestUtc;
+            if (elapsed >= TimeSpan.Zero && elapsed < RestartCooldown)
+            {
+                Log.Warning("RestartApplication skipped due to cooldown. Elapsed={ElapsedSeconds}s", elapsed.TotalSeconds);
+                return;
+            }
+
+            _lastRestartRequestUtc = utcNow;
+
             try
             {
                 var exePath = Application.ExecutablePath;
@@ -158,6 +186,50 @@ namespace MainClient
 
                 Environment.Exit(1);
             }
+        }
+
+        private static void StartErrorDialogGuard()
+        {
+            StopErrorDialogGuard();
+
+            _errorDialogCts = new CancellationTokenSource();
+            _errorDialogTimer = new PeriodicTimer(TimeSpan.FromSeconds(8));
+            var token = _errorDialogCts.Token;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (await _errorDialogTimer.WaitForNextTickAsync(token))
+                    {
+                        CommonHelper.ClearAllErrorMsgDialog();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Error dialog guard stopped unexpectedly.");
+                }
+            }, token);
+        }
+
+        private static void StopErrorDialogGuard()
+        {
+            try
+            {
+                _errorDialogCts?.Cancel();
+            }
+            catch
+            {
+            }
+
+            _errorDialogTimer?.Dispose();
+            _errorDialogTimer = null;
+
+            _errorDialogCts?.Dispose();
+            _errorDialogCts = null;
         }
     }
 }

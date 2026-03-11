@@ -4,6 +4,10 @@ namespace MainClient.UiTask
 {
     public sealed class AppAutoRestart : IDisposable
     {
+        private static readonly TimeSpan RestartCooldown = TimeSpan.FromMinutes(2);
+        private static int _restartRequested;
+        private static DateTime _lastRestartRequestUtc = DateTime.MinValue;
+
         private PeriodicTimer? _timer;
         private CancellationTokenSource? _cts;
         private readonly Func<bool> _shouldRestart;
@@ -51,6 +55,16 @@ namespace MainClient.UiTask
 
         private void RestartApplication()
         {
+            if (Interlocked.Exchange(ref _restartRequested, 1) == 1)
+                return;
+
+            var utcNow = DateTime.UtcNow;
+            var elapsed = utcNow - _lastRestartRequestUtc;
+            if (elapsed >= TimeSpan.Zero && elapsed < RestartCooldown)
+                return;
+
+            _lastRestartRequestUtc = utcNow;
+
             try
             {
                 var exePath = Application.ExecutablePath;

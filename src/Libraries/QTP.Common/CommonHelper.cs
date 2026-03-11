@@ -126,6 +126,10 @@ namespace QTP.Common
                 "CefSharp.BrowserSubprocess.exe - 错误",
                 "CefSharp.BrowserSubprocess.exe - 异常",
                 "WerFault.exe - 应用程序错误",
+                "chrome.exe - 应用程序错误",
+                "chrome.exe - 系统错误",
+                "Google Chrome",
+                "Chromium",
             ];
 
 

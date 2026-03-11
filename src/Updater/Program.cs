@@ -37,14 +37,7 @@ namespace Updater
                     var exePath = Path.Combine(appDir, "MainClient.exe");
                     if (System.IO.File.Exists(exePath))
                     {
-                        Process.Start(new ProcessStartInfo
-                        {
-                            FileName = exePath,
-                            WorkingDirectory = Path.GetDirectoryName(exePath)!,
-                            UseShellExecute = false,
-                            CreateNoWindow = false
-                        });
-                        Environment.Exit(0);
+                        LaunchAndExit(exePath);
                         return;
                     }
                 }
@@ -58,7 +51,7 @@ namespace Updater
                 switch (args[0].ToLower())
                 {
                     case "--update-version":
-                        if (args.Length >= 3)
+                        if (args.Length >= 5)
                         {
                             string appExePath = args[1];
                             string zipFilePath = args[2];
@@ -118,15 +111,7 @@ namespace Updater
                             appExePath = Path.Combine(appDir, "MainClient.exe");
                             if (System.IO.File.Exists(appExePath))
                             {
-                                Process.Start(new ProcessStartInfo
-                                {
-                                    FileName = appExePath,
-                                    Arguments = $"restart",
-                                    WorkingDirectory = Path.GetDirectoryName(appExePath)!,
-                                    UseShellExecute = false,
-                                    CreateNoWindow = false
-                                });
-                                Environment.Exit(0);
+                                LaunchAndExit(appExePath, "restart");
                             }
 
 
@@ -138,7 +123,7 @@ namespace Updater
                         return;
 
                     case "--switch-version":
-                        if (args.Length >= 3)
+                        if (args.Length >= 4)
                         {
                             string appExePath = args[1];
                             string currentVersion = args[2];
@@ -181,15 +166,7 @@ namespace Updater
                             appExePath = Path.Combine(appDir, "MainClient.exe");
                             if (System.IO.File.Exists(appExePath))
                             {
-                                Process.Start(new ProcessStartInfo
-                                {
-                                    FileName = appExePath,
-                                    Arguments = $"restart",
-                                    WorkingDirectory = Path.GetDirectoryName(appExePath)!,
-                                    UseShellExecute = false,
-                                    CreateNoWindow = false
-                                });
-                                Environment.Exit(0);
+                                LaunchAndExit(appExePath, "restart");
                             }
 
 
@@ -215,15 +192,7 @@ namespace Updater
                                         builder.Append($" {args[i]}");
                                     }
 
-                                    Process.Start(new ProcessStartInfo
-                                    {
-                                        FileName = appExePath,
-                                        Arguments = $"restart {builder.ToString()}",
-                                        WorkingDirectory = Path.GetDirectoryName(appExePath)!,
-                                        UseShellExecute = false,
-                                        CreateNoWindow = false
-                                    });
-                                    Environment.Exit(0);
+                                    LaunchAndExit(appExePath, $"restart {builder}".Trim());
                                 }
                             }
                         }
@@ -234,6 +203,31 @@ namespace Updater
             }
         }
 
+
+        static void LaunchAndExit(string exePath, string? arguments = null)
+        {
+            if (!File.Exists(exePath))
+                return;
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = arguments ?? string.Empty,
+                    WorkingDirectory = Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory,
+                    UseShellExecute = false,
+                    CreateNoWindow = false
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"启动失败: {ex.Message}");
+                return;
+            }
+
+            Environment.Exit(0);
+        }
 
 
         static void CopyDirectory(string sourceDir, string targetDir)
@@ -294,15 +288,34 @@ namespace Updater
         }
         static async Task WaitForExitAsync(string exePath)
         {
-            var processes = System.Diagnostics.Process.GetProcessesByName(Path.GetFileNameWithoutExtension(exePath));
+            var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(exePath));
             foreach (var p in processes)
             {
                 try
                 {
-                    if (!p.HasExited)
-                        await p.WaitForExitAsync();
+                    if (p.HasExited)
+                        continue;
+
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+                    await p.WaitForExitAsync(cts.Token);
                 }
-                catch { }
+                catch (OperationCanceledException)
+                {
+                    try
+                    {
+                        if (!p.HasExited)
+                        {
+                            p.Kill(entireProcessTree: true);
+                            p.WaitForExit(3000);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+                catch
+                {
+                }
             }
         }
 
