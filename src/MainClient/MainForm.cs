@@ -2100,23 +2100,7 @@ namespace MainClient
                 if (logHandler != null) pluginService.OnLogEventHandler -= logHandler;
                 if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
                 if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
-
-                try
-                {
-                    await _processManager.CloseAsync(uniqueId).WaitAsync(TimeSpan.FromSeconds(15), token);
-                }
-                catch (TimeoutException ex)
-                {
-                    _logger.LogWarning(ex, "Close browser timeout. uniqueId={UniqueId}", uniqueId);
-                }
-                catch (OperationCanceledException) when (token.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Close browser failed. uniqueId={UniqueId}", uniqueId);
-                }
+                await _processManager.CloseAsync(uniqueId,token);
             }
         }
 
