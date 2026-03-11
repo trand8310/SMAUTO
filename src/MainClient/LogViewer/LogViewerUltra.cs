@@ -2,25 +2,23 @@
 using System.Collections.Concurrent;
 using Timer = System.Windows.Forms.Timer;
 
-
 namespace MainClient.LogViewer
 {
-
     using System;
-    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Drawing;
     using System.Linq;
     using System.Windows.Forms;
 
- 
-
     public class LogItem
     {
         public DateTime Time { get; set; }
         public LogLevel Level { get; set; }
-        public string Message { get; set; } = "";
+        public string Message { get; set; } = string.Empty;
         public Color Color { get; set; }
+
+        public string[] CachedLines { get; set; } = Array.Empty<string>();
+        public int LineCount => CachedLines.Length == 0 ? 1 : CachedLines.Length;
     }
 
     public class LogViewerUltra : Control
@@ -33,20 +31,23 @@ namespace MainClient.LogViewer
         private readonly VScrollBar _scrollBar = new();
         private readonly Timer _timer = new();
 
+        private readonly Dictionary<Color, SolidBrush> _brushCache = new();
+
         private int _lineHeight = 18;
         private bool _autoScroll = true;
-        private bool _paused = false;
-        private string _filter = "";
+        private bool _paused;
+        private string _filter = string.Empty;
+        private bool _filterDirty = true;
 
-        // 选中
+        private int _totalLines;
+
         private int _selectStartLine = -1;
         private int _selectEndLine = -1;
-        private bool _selecting = false;
+        private bool _selecting;
 
-        // 每条日志拆分的行信息，用于选择和滚动
         private readonly List<(LogItem log, int startLine, int lineCount)> _logLines = new();
 
-        public int MaxLogs { get; set; } = 1_000_000;
+        public int MaxLogs { get; set; } = 300_000;
 
         public LogViewerUltra()
         {
@@ -65,7 +66,7 @@ namespace MainClient.LogViewer
             };
             Controls.Add(_scrollBar);
 
-            _timer.Interval = 100;
+            _timer.Interval = 80;
             _timer.Tick += (s, e) => FlushQueue();
             _timer.Start();
 
@@ -81,18 +82,22 @@ namespace MainClient.LogViewer
             KeyDown += LogViewer_KeyDown;
         }
 
-        #region Public API
-
         public void WriteLog(string message, LogLevel level)
         {
-            var log = new LogItem
+            var safeMessage = message ?? string.Empty;
+            var prefix = $"{DateTime.Now:HH:mm:ss} [{level}] ";
+            var merged = prefix + safeMessage;
+
+            var item = new LogItem
             {
                 Time = DateTime.Now,
                 Level = level,
-                Message = message,
-                Color = GetColor(level)
+                Message = safeMessage,
+                Color = GetColor(level),
+                CachedLines = NormalizeLines(merged)
             };
-            _queue.Enqueue(log);
+
+            _queue.Enqueue(item);
         }
 
         public void Pause() => _paused = true;
@@ -105,7 +110,12 @@ namespace MainClient.LogViewer
                 _logs.Clear();
                 _filteredLogs.Clear();
                 _logLines.Clear();
+                _totalLines = 0;
             }
+
+            _selectStartLine = -1;
+            _selectEndLine = -1;
+
             UpdateScrollBar();
             Invalidate();
         }
@@ -121,75 +131,98 @@ namespace MainClient.LogViewer
 
         public void SetFilter(string text)
         {
-            _filter = text ?? "";
-            ApplyFilter();
+            var filter = text ?? string.Empty;
+            if (string.Equals(_filter, filter, StringComparison.Ordinal))
+                return;
+
+            _filter = filter;
+            _filterDirty = true;
+
+            ApplyFilterIfNeeded();
             UpdateScrollBar();
             Invalidate();
         }
 
-        #endregion
+        private static string[] NormalizeLines(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return new[] { string.Empty };
 
-        #region Queue Flush
+            return content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        }
 
         private void FlushQueue()
         {
-            if (_paused) return;
+            if (_paused)
+                return;
 
-            int count = 0;
+            var hadUpdates = false;
+            var dequeued = 0;
+
             while (_queue.TryDequeue(out var log))
             {
+                hadUpdates = true;
                 lock (_lock)
                 {
                     _logs.Add(log);
                     if (_logs.Count > MaxLogs)
                     {
-                        int remove = _logs.Count - MaxLogs;
+                        var remove = _logs.Count - MaxLogs;
                         _logs.RemoveRange(0, remove);
                     }
                 }
-                count++;
-                if (count > 5000) break;
+
+                dequeued++;
+                if (dequeued >= 8000)
+                    break;
             }
 
-            ApplyFilter();
+            if (!hadUpdates && !_filterDirty)
+                return;
+
+            ApplyFilterIfNeeded();
             UpdateScrollBar();
 
             if (_autoScroll)
-                _scrollBar.Value = Math.Max(0, _scrollBar.Maximum);
+                _scrollBar.Value = _scrollBar.Maximum;
 
             Invalidate();
         }
 
-        private void ApplyFilter()
+        private void ApplyFilterIfNeeded()
         {
             lock (_lock)
             {
+                if (!_filterDirty && _filteredLogs.Count == _logs.Count && string.IsNullOrEmpty(_filter))
+                    return;
+
                 _filteredLogs.Clear();
                 if (string.IsNullOrEmpty(_filter))
+                {
                     _filteredLogs.AddRange(_logs);
+                }
                 else
+                {
                     _filteredLogs.AddRange(_logs.Where(x => x.Message.Contains(_filter, StringComparison.OrdinalIgnoreCase)));
+                }
 
-                // 重新计算每条日志的行信息
                 _logLines.Clear();
-                int lineCounter = 0;
+                _totalLines = 0;
                 foreach (var log in _filteredLogs)
                 {
-                    int lineCount = log.Message.Count(c => c == '\n') + 1;
-                    _logLines.Add((log, lineCounter, lineCount));
-                    lineCounter += lineCount;
+                    var lineCount = Math.Max(1, log.LineCount);
+                    _logLines.Add((log, _totalLines, lineCount));
+                    _totalLines += lineCount;
                 }
+
+                _filterDirty = false;
             }
         }
 
-        #endregion
-
-        #region Scroll
-
         private void LogViewer_MouseWheel(object sender, MouseEventArgs e)
         {
-            int delta = e.Delta > 0 ? -3 * _lineHeight : 3 * _lineHeight;
-            int newVal = Math.Clamp(_scrollBar.Value + delta, 0, _scrollBar.Maximum);
+            var delta = e.Delta > 0 ? -3 * _lineHeight : 3 * _lineHeight;
+            var newVal = Math.Clamp(_scrollBar.Value + delta, 0, _scrollBar.Maximum);
             _scrollBar.Value = newVal;
             _autoScroll = newVal >= _scrollBar.Maximum - 1;
             Invalidate();
@@ -197,42 +230,48 @@ namespace MainClient.LogViewer
 
         private void UpdateScrollBar()
         {
-            int totalLines = _logLines.Count == 0 ? 0 : _logLines.Last().startLine + _logLines.Last().lineCount;
-            _scrollBar.Maximum = Math.Max(0, totalLines * _lineHeight - Height);
-            _scrollBar.LargeChange = Height;
+            var viewHeight = Math.Max(1, Height);
+            var totalPixels = Math.Max(0, _totalLines * _lineHeight - viewHeight);
+
+            _scrollBar.Minimum = 0;
+            _scrollBar.LargeChange = viewHeight;
+            _scrollBar.SmallChange = _lineHeight;
+            _scrollBar.Maximum = totalPixels;
+
             if (_autoScroll)
+                _scrollBar.Value = _scrollBar.Maximum;
+            else if (_scrollBar.Value > _scrollBar.Maximum)
                 _scrollBar.Value = _scrollBar.Maximum;
         }
 
         private int HitTestLine(int y)
         {
-            int lineIndex = (y + _scrollBar.Value) / _lineHeight;
-            return Math.Clamp(lineIndex, 0, _logLines.LastOrDefault().startLine + _logLines.LastOrDefault().lineCount - 1);
+            if (_totalLines <= 0)
+                return 0;
+
+            var lineIndex = (y + _scrollBar.Value) / _lineHeight;
+            return Math.Clamp(lineIndex, 0, _totalLines - 1);
         }
-
-        #endregion
-
-        #region Mouse Selection
 
         private void LogViewer_MouseDown(object sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left)
-            {
-                Focus();
-                _selectStartLine = HitTestLine(e.Y);
-                _selectEndLine = _selectStartLine;
-                _selecting = true;
-                Invalidate();
-            }
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            Focus();
+            _selectStartLine = HitTestLine(e.Y);
+            _selectEndLine = _selectStartLine;
+            _selecting = true;
+            Invalidate();
         }
 
         private void LogViewer_MouseMove(object sender, MouseEventArgs e)
         {
-            if (_selecting)
-            {
-                _selectEndLine = HitTestLine(e.Y);
-                Invalidate();
-            }
+            if (!_selecting)
+                return;
+
+            _selectEndLine = HitTestLine(e.Y);
+            Invalidate();
         }
 
         private void LogViewer_MouseUp(object sender, MouseEventArgs e)
@@ -240,110 +279,106 @@ namespace MainClient.LogViewer
             _selecting = false;
         }
 
-        #endregion
-
-        #region Painting
-
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(Color.White);
 
-            int offsetY = _scrollBar.Value; // 滚动像素
-            int y = -offsetY;               // 起始绘制位置
-
+            List<(LogItem log, int startLine, int lineCount)> snapshot;
             lock (_lock)
             {
-                foreach (var (log, startLine, lineCount) in _logLines)
+                snapshot = _logLines.ToList();
+            }
+
+            var startPixel = _scrollBar.Value;
+            var viewTopLine = startPixel / _lineHeight;
+            var viewTopOffset = startPixel % _lineHeight;
+
+            var selectionEnabled = _selectStartLine != -1 && _selectEndLine != -1;
+            var selMin = Math.Min(_selectStartLine, _selectEndLine);
+            var selMax = Math.Max(_selectStartLine, _selectEndLine);
+
+            foreach (var (log, startLine, lineCount) in snapshot)
+            {
+                var endLine = startLine + lineCount - 1;
+                if (endLine < viewTopLine)
+                    continue;
+
+                for (var i = 0; i < log.CachedLines.Length; i++)
                 {
-                    string[] lines = $"{log.Time:HH:mm:ss} [{log.Level}] {log.Message}".Split('\n');
+                    var currentLine = startLine + i;
+                    if (currentLine < viewTopLine)
+                        continue;
 
-                    for (int li = 0; li < lines.Length; li++)
+                    var y = (currentLine - viewTopLine) * _lineHeight - viewTopOffset;
+                    if (y > Height)
+                        return;
+
+                    if (selectionEnabled && currentLine >= selMin && currentLine <= selMax)
                     {
-                        int lineIndex = startLine + li;
-
-                        // 如果绘制位置超出可见区域就跳过
-                        if (y + _lineHeight < 0)
-                        {
-                            y += _lineHeight;
-                            continue;
-                        }
-
-                        if (y > Height) break;
-
-                        // 绘制选中背景
-                        if (_selectStartLine != -1 && _selectEndLine != -1)
-                        {
-                            int min = Math.Min(_selectStartLine, _selectEndLine);
-                            int max = Math.Max(_selectStartLine, _selectEndLine);
-                            if (lineIndex >= min && lineIndex <= max)
-                            {
-                                using var brush = new SolidBrush(Color.LightBlue);
-                                e.Graphics.FillRectangle(brush, 0, y, Width - _scrollBar.Width, _lineHeight);
-                            }
-                        }
-
-                        // 绘制文本
-                        using var brushColor = new SolidBrush(log.Color);
-                        e.Graphics.DrawString(lines[li], Font, brushColor, 4, y);
-
-                        y += _lineHeight;
+                        e.Graphics.FillRectangle(Brushes.LightBlue, 0, y, Width - _scrollBar.Width, _lineHeight);
                     }
 
-                    // 如果当前绘制位置已经超出控件高度，直接结束绘制
-                    if (y > Height) break;
+                    e.Graphics.DrawString(log.CachedLines[i], Font, GetBrush(log.Color), 4, y);
                 }
             }
         }
 
-
-        #endregion
-
-        #region Keyboard
-
         private void LogViewer_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Control && e.KeyCode == Keys.C)
-            {
-                CopySelectedOrAll();
-                e.Handled = true;
-            }
+            if (!(e.Control && e.KeyCode == Keys.C))
+                return;
+
+            CopySelectedOrAll();
+            e.Handled = true;
         }
 
         private void CopySelectedOrAll()
         {
-            lock (_lock)
+            try
             {
-                int min = _selectStartLine;
-                int max = _selectEndLine;
-                if (min == -1 || max == -1)
+                lock (_lock)
                 {
-                    Clipboard.SetText(GetAllLogs());
-                    return;
+                    var min = _selectStartLine;
+                    var max = _selectEndLine;
+                    if (min == -1 || max == -1)
+                    {
+                        Clipboard.SetText(GetAllLogs());
+                        return;
+                    }
+
+                    if (min > max) (min, max) = (max, min);
+
+                    var selectedText = new List<string>();
+                    foreach (var (log, startLine, lineCount) in _logLines)
+                    {
+                        var endLine = startLine + lineCount - 1;
+                        if (endLine < min || startLine > max)
+                            continue;
+
+                        var from = Math.Max(min - startLine, 0);
+                        var to = Math.Min(max - startLine, log.CachedLines.Length - 1);
+
+                        for (var li = from; li <= to; li++)
+                            selectedText.Add(log.CachedLines[li]);
+                    }
+
+                    Clipboard.SetText(string.Join(Environment.NewLine, selectedText));
                 }
-
-                if (min > max) (min, max) = (max, min);
-
-                var selectedText = new List<string>();
-                foreach (var (log, startLine, lineCount) in _logLines)
-                {
-                    int endLine = startLine + lineCount - 1;
-                    if (endLine < min || startLine > max) continue;
-
-                    var lines = $"{log.Time:HH:mm:ss} [{log.Level}] {log.Message}".Split('\n');
-                    int from = Math.Max(min - startLine, 0);
-                    int to = Math.Min(max - startLine, lines.Length - 1);
-
-                    for (int li = from; li <= to; li++)
-                        selectedText.Add(lines[li]);
-                }
-
-                Clipboard.SetText(string.Join(Environment.NewLine, selectedText));
+            }
+            catch
+            {
             }
         }
 
-        #endregion
+        private Brush GetBrush(Color color)
+        {
+            if (_brushCache.TryGetValue(color, out var brush))
+                return brush;
 
-        #region Color Mapping
+            var created = new SolidBrush(color);
+            _brushCache[color] = created;
+            return created;
+        }
 
         private Color GetColor(LogLevel level)
         {
@@ -358,7 +393,19 @@ namespace MainClient.LogViewer
             };
         }
 
-        #endregion
-    }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _timer.Stop();
+                _timer.Dispose();
 
+                foreach (var brush in _brushCache.Values)
+                    brush.Dispose();
+                _brushCache.Clear();
+            }
+
+            base.Dispose(disposing);
+        }
+    }
 }
