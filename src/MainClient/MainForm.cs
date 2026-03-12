@@ -40,7 +40,7 @@ namespace MainClient
         private readonly ChromiumSessionManager _processManager;
         private readonly TaskStatsAggregator _aggregator;
         private readonly ChineseNameGenerator _nameGenerator;
-
+        private readonly FileCleanupQueue _fileCleanupQueue = new();
         #region 任务调度
         private PipelineRunner<JToken>? _pipeline;
         private UiTaskRunner? _uiRunner;
@@ -474,6 +474,41 @@ namespace MainClient
                 }
             }
         }
+
+        private void ClearLocalCacheFile()
+        {
+            string downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            string tempPath = Path.GetTempPath();
+            string chromeUserDataPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "Temp",
+                "Chrome",
+                _appSettings.KernelVersion,
+                "User_Data");
+
+            // 1. 先快速收集
+            var items = new List<CleanupItem>();
+
+            items.AddRange(CleanupCollector.CollectDownloadFiles(
+                downloadsPath,
+                new[] { ".apk", ".crdownload", ".pdf" }));
+
+            items.AddRange(CleanupCollector.CollectPrefixedDirectories(
+                tempPath,
+                "playwright-"));
+
+            items.AddRange(CleanupCollector.CollectSingleDirectory(
+                chromeUserDataPath));
+
+            // 2. 再统一入后台队列
+            foreach (var item in items)
+            {
+                if (item.Type == CleanupItemType.File)
+                    _fileCleanupQueue.EnqueueFile(item.Path);
+                else
+                    _fileCleanupQueue.EnqueueDirectory(item.Path);
+            }
+        }
         private void MainForm_Load(object sender, EventArgs e)
         {
             StartLogConsumer();
@@ -484,17 +519,13 @@ namespace MainClient
                 try
                 {
                     CommonHelper.ClearLocalChromeProcesses();
+
                     await InitFileVersionListAsync();
                     await InitBrowserVersionListAsync();
                     await InitSpiderNames(_appSettings.WordType);
                     await InitCloudNames();
                     await InitGlobalStatus();
-
-                    string downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-                    CommonHelper.DeleteDownloadDir(downloadsPath, new string[] { ".apk", ".crdownload", ".pdf" });
-                    string tempPath = Path.GetTempPath();
-                    CommonHelper.DeletePlaywrightDirs(tempPath, "playwright-");
-                    CommonHelper.DeleteCacheFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Temp", "Chrome", _appSettings.KernelVersion, "User_Data"));
+                    ClearLocalCacheFile();
                 }
                 catch (Exception)
                 {
@@ -949,542 +980,6 @@ namespace MainClient
             }
         }
 
-        private async Task ConsumerAsync2(int consumerId, JToken task, CancellationToken token)
-        {
-            //LogWriteLine($"{consumerId},取出任务");
-            try
-            {
-                if (task is not JObject taskObj)
-                {
-                    _logger.LogWarning("ConsumerAsync received invalid task payload: {Task}", task?.ToString(Newtonsoft.Json.Formatting.None));
-                    return;
-                }
-
-                var taskIdToken = taskObj["id"];
-                var url = taskObj["url"]?.Value<string>();
-                var totalUvToken = taskObj["uv"];
-                var totalPvToken = taskObj["pv"];
-
-                if (taskIdToken == null || totalUvToken == null || totalPvToken == null || string.IsNullOrWhiteSpace(url))
-                {
-                    _logger.LogWarning("ConsumerAsync skip malformed task: {Task}", taskObj.ToString(Newtonsoft.Json.Formatting.None));
-                    return;
-                }
-
-                var taskid = taskIdToken.Value<int>();
-                var totalUV = Math.Max(1, totalUvToken.Value<int>());
-                var totalPV = Math.Max(1, totalPvToken.Value<int>());
-
-                try
-                {
-                    if (!string.IsNullOrWhiteSpace(_appSettings.UVOverride))
-                    {
-                        var uvValues = _appSettings.UVOverride.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                        if (uvValues.Length > 1 && int.TryParse(uvValues[0], out var minUv) && int.TryParse(uvValues[1], out var maxUv) && maxUv >= minUv)
-                        {
-                            totalUV = CommonHelper.RandomRange(minUv, maxUv + 1);
-                        }
-                        else if (uvValues.Length == 1 && int.TryParse(uvValues[0], out var uvExact))
-                        {
-                            totalUV = uvExact;
-                        }
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(_appSettings.PVOverride))
-                    {
-                        var pvValues = _appSettings.PVOverride.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                        if (pvValues.Length > 1 && int.TryParse(pvValues[0], out var minPv) && int.TryParse(pvValues[1], out var maxPv) && maxPv >= minPv)
-                        {
-                            totalPV = CommonHelper.RandomRange(minPv, maxPv + 1);
-                            if (totalUV == 2)
-                                totalPV = minPv;
-                        }
-                        else if (pvValues.Length == 1 && int.TryParse(pvValues[0], out var pvExact))
-                        {
-                            totalPV = pvExact;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "ConsumerAsync override parse failed, fallback to task values. taskId={TaskId}", taskid);
-                }
-
-                totalUV = Math.Max(1, totalUV);
-                totalPV = Math.Max(1, totalPV);
-
-                var dev_client_id = taskObj["client"]?.Value<string>()?
-                    .Split(new string[] { "|" }, StringSplitOptions.RemoveEmptyEntries)
-                    .FirstOrDefault() ?? "0";
-
-                string? proxy_server = null;
-                string realIp = string.Empty;
-                JObject? ipInfo = null;
-
-                if (this._appSettings.IsProxyMode)
-                {
-                    if (!string.IsNullOrWhiteSpace(this._appSettings.ProxyIpUrl))
-                    {
-                        int redo_getip_count = 0;
-                        int redo_max_getip_count = 10;
-                    redo_getip:
-                        redo_getip_count++;
-                        if (redo_getip_count > redo_max_getip_count)
-                        {
-                            return;
-                        }
-                        try
-                        {
-                            _aggregator.EnqueueProxyIpFetched(taskid, 1);
-                            var ipEntity = await _ipHelper.GetProxyIpAsync(task);
-                            if (ipEntity == null)
-                            {
-                                LogWriteLine($"获取IP错误");
-                                await Task.Delay(Random.Shared.Next(100, 200), token);
-                                goto redo_getip;
-                            }
-                            //_aggregator.Enqueue(new TaskEvent(task["id"].Value<int>(), StateType.Request, 1));
-                            //await _ipHelper.ProxyIpStatAsync(task["id"].Value<int>(), _appSettings.ProxyIpUrl);
-
-                            if (ipEntity.format == IPFormat.JSON)
-                            {
-                                proxy_server = $"{ipEntity.json["ip"]}:{ipEntity.json["port"]}";
-                                if (this._appSettings.IsRealIp)
-                                {
-
-                                    realIp = ipEntity.json["rip"]?.Value<string>() ?? ipEntity.json["real_ip"]?.Value<string>() ?? ipEntity.json["realIp"]?.Value<string>();
-                                }
-                            }
-                            else
-                            {
-                                proxy_server = ipEntity.value;
-                                if (this._appSettings.IsRealIp)
-                                    realIp = proxy_server;
-                            }
-                            string pattern = @"(?:(?:[0,1]?\d?\d|2[0-4]\d|25[0-5])\.){3}(?:[0,1]?\d?\d|2[0-4]\d|25[0-5]):\d{0,5}";
-                            if (!Regex.IsMatch(proxy_server, pattern))
-                            {
-                                LogWriteLine($"IP异常,{proxy_server}");
-                                await Task.Delay(Random.Shared.Next(100, 200), token);
-                                goto redo_getip;
-                            }
-
-                            if (_appSettings.GetIpInfo)
-                            {
-                                try
-                                {
-                                    var result = await _ipTester.TestAsync(proxy_server);
-                                    if (result.IsValid)
-                                    {
-                                        if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
-                                        {
-                                            ipInfo = JObject.Parse(result.Data);
-                                            realIp = ipInfo["query"].Value<string>();
-                                        }
-                                        else
-                                        {
-                                            var ip_json = JObject.Parse(result.Data);
-                                            if (ip_json.ContainsKey("query"))
-                                                realIp = ip_json["query"].Value<string>();
-                                            if (ip_json.ContainsKey("ip"))
-                                                realIp = ip_json["ip"].Value<string>();
-                                            ipInfo = new JObject();
-                                            ipInfo["query"] = realIp;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        LogWriteLine($"无法获取IP信息,{proxy_server}");
-                                        await Task.Delay(Random.Shared.Next(100, 200), token);
-                                        goto redo_getip;
-                                    }
-
-
-                                }
-                                catch (Exception)
-                                {
-                                    LogWriteLine($"无法获取IP信息,{proxy_server}");
-                                    await Task.Delay(Random.Shared.Next(100, 200), token);
-                                    goto redo_getip;
-                                }
-                            }
-
-                            if (_appSettings.IsRealIp && string.IsNullOrWhiteSpace(realIp))
-                            {
-
-                                var result = await _ipTester.TestAsync(proxy_server);
-                                if (result.IsValid)
-                                {
-                                    if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
-                                    {
-                                        ipInfo = JObject.Parse(result.Data);
-                                        realIp = ipInfo["query"].Value<string>();
-                                    }
-                                    else
-                                    {
-                                        var ip_json = JObject.Parse(result.Data);
-                                        if (ip_json.ContainsKey("query"))
-                                            realIp = ip_json["query"].Value<string>();
-                                        if (ip_json.ContainsKey("ip"))
-                                            realIp = ip_json["ip"].Value<string>();
-                                        ipInfo = new JObject();
-                                        ipInfo["query"] = realIp;
-                                    }
-                                }
-                                else
-                                {
-                                    LogWriteLine($"无法获取真实IP,{proxy_server}");
-                                    await Task.Delay(Random.Shared.Next(100, 200), token);
-                                    goto redo_getip;
-                                }
-                            }
-
-                            if (_appSettings.IsIpDuplicate)
-                            {
-                                if (string.IsNullOrWhiteSpace(realIp))
-                                {
-                                    var result = await _ipTester.TestAsync(proxy_server);
-                                    if (result.IsValid)
-                                    {
-                                        if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
-                                        {
-                                            ipInfo = JObject.Parse(result.Data);
-                                            realIp = ipInfo["query"].Value<string>();
-                                        }
-                                        else
-                                        {
-                                            var ip_json = JObject.Parse(result.Data);
-                                            if (ip_json.ContainsKey("query"))
-                                                realIp = ip_json["query"].Value<string>();
-                                            if (ip_json.ContainsKey("ip"))
-                                                realIp = ip_json["ip"].Value<string>();
-                                            ipInfo = new JObject();
-                                            ipInfo["query"] = realIp;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        LogWriteLine($"无法获取真实IP,{proxy_server}");
-                                        await Task.Delay(Random.Shared.Next(100, 200), token);
-                                        goto redo_getip;
-                                    }
-
-                                }
-                            }
-
-                            if (!string.IsNullOrWhiteSpace(realIp))
-                            {
-                                _aggregator.EnqueueProxyIpConsumed(taskid, realIp, 1);
-                                //await _ipHelper.UpdateProxyIpStatAsync(task["id"].Value<int>(), _appSettings.ProxyIpUrl, realIp);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            LogWriteLine($"IP异常,{ex.Message}");
-                            if (ex.Message.Contains("没有满足您选择的条件IP"))
-                            {
-                                await Task.Delay(Random.Shared.Next(2000, 3000), token);
-                            }
-                            await Task.Delay(Random.Shared.Next(300, 500), token);
-                            goto redo_getip;
-                        }
-                    }
-                    else
-                    {
-                        proxy_server = "127.0.0.1:7890";
-                        var result = await _ipTester.TestAsync(proxy_server);
-                        if (result.IsValid)
-                        {
-                            if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
-                            {
-                                ipInfo = JObject.Parse(result.Data);
-                                realIp = ipInfo["query"].Value<string>();
-                            }
-                            else
-                            {
-                                var ip_json = JObject.Parse(result.Data);
-                                if (ip_json.ContainsKey("query"))
-                                    realIp = ip_json["query"].Value<string>();
-                                if (ip_json.ContainsKey("ip"))
-                                    realIp = ip_json["ip"].Value<string>();
-                                ipInfo = new JObject();
-                                ipInfo["query"] = realIp;
-                            }
-                        }
-                        else
-                        {
-                            LogWriteLine($"无法获取IP信息,{proxy_server}");
-                            return;
-                        }
-                    }
-                }
-                else
-                {
-
-
-                    if (_appSettings.GetIpInfo)
-                    {
-                        var result = await _ipTester.TestAsync(proxy_server);
-                        if (result.IsValid)
-                        {
-                            if (result.SuccessUrl.Equals("http://ip-api.com/json") || result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
-                            {
-                                ipInfo = JObject.Parse(result.Data);
-                                realIp = ipInfo["query"].Value<string>();
-                            }
-                            else
-                            {
-                                var ip_json = JObject.Parse(result.Data);
-                                if (ip_json.ContainsKey("query"))
-                                    realIp = ip_json["query"].Value<string>();
-                                if (ip_json.ContainsKey("ip"))
-                                    realIp = ip_json["ip"].Value<string>();
-                                ipInfo = new JObject();
-                                ipInfo["query"] = realIp;
-                            }
-                        }
-                        else
-                        {
-                            LogWriteLine($"无法获取IP信息,{proxy_server}");
-                            return;
-                        }
-                    }
-
-                    if (_appSettings.IsRealIp && string.IsNullOrWhiteSpace(realIp))
-                    {
-
-                        var result = await _ipTester.TestAsync(proxy_server);
-                        if (result.IsValid)
-                        {
-                            if (result.SuccessUrl.Equals("http://ip-api.com/json"))
-                            {
-                                ipInfo = JObject.Parse(result.Data);
-                                realIp = ipInfo["query"].Value<string>();
-                            }
-                            else
-                            {
-                                var ip_json = JObject.Parse(result.Data);
-                                if (ip_json.ContainsKey("query"))
-                                    realIp = ip_json["query"].Value<string>();
-                                if (ip_json.ContainsKey("ip"))
-                                    realIp = ip_json["ip"].Value<string>();
-                                ipInfo = new JObject();
-                                ipInfo["query"] = realIp;
-                            }
-                        }
-                        else
-                        {
-                            LogWriteLine($"无法获取真实IP,{proxy_server}");
-                            return;
-                        }
-                    }
-                }
-
-
-                OSType os = _adeHelper.GetOS(dev_client_id);
-
-                var st = System.DateTime.Now;
-                for (int uv = 0; uv < totalUV; uv++)
-                {
-                    if (token.IsCancellationRequested)
-                    {
-                        break;
-                    }
-
-                    try
-                    {
-                        _aggregator.Enqueue(new TaskEvent(taskid, StateType.Request, 1));
-
-                    JToken dev = null;
-                    int redo_dev_count = 0;
-                redo_dev:
-                    if (redo_dev_count++ > 5)
-                    {
-                        _logger.LogWarning("ConsumerAsync get device failed after retries. taskId={TaskId}, uv={Uv}", taskid, uv + 1);
-                        continue;
-                    }
-                    dev = await _adeHelper.GetDeviceAsync(os, 100);
-                    if (dev == null)
-                    {
-                        goto redo_dev;
-                    }
-
-                    var ua = dev["ua"]?.Value<string>() ?? string.Empty;
-                    if (os == OSType.ANDROID)
-                    {
-                        var m1 = Regex.Match(ua, @"(?<=Android\s+)([\d.]+);([\S\s]+)(?=Build)");
-                        if (m1.Success && m1.Groups.Count == 3)
-                        {
-                            var model = m1.Groups[2].Value.Trim();
-                            model = Regex.Replace(model, "^.*?;\\s*", "");
-
-                            dev["osv"] = m1.Groups[1].Value.Trim();
-                            dev["model"] = model.Trim();
-                        }
-                        else
-                        {
-                            dev["osv"] = "13";
-                        }
-
-                        var m2 = Regex.Match(ua, @"Chrome/([\d.]+)");
-                        if (m2.Success && m2.Groups.Count == 2)
-                        {
-                            dev["full_version"] = m2.Groups[1].Value.Trim();
-                        }
-                        else
-                        {
-                            dev["full_version"] = "132.0.6834.186";
-                        }
-                    }
-                    else if (os == OSType.IOS)
-                    {
-                        dev["full_version"] = dev["osv"];
-                    }
-                    else
-                    {
-                        if ((dev["width"]?.Value<int>() ?? 0) < 1920)
-                        {
-                            dev["width"] = 1920;
-                            dev["height"] = 1080;
-                        }
-                        dev["full_version"] = dev["fullVersionList"]?.FirstOrDefault(p => p["brand"]?.Value<string>() == "Chromium")?["version"]?.Value<string>() ?? "132.0.6834.186";
-                    }
-
-
-                    var cacheName = $"s{consumerId}_{uv + 1}";
-                    var args = new JObject();
-                    args["task"] = task;
-                    args["dev"] = dev;
-                    args["ipInfo"] = ipInfo;
-                    args["isProxyMode"] = _appSettings.IsProxyMode;
-                    args["proxy_server"] = proxy_server;
-                    args["realIp"] = realIp;
-                    args["isHiddenMode"] = _appSettings.IsHiddenMode;
-                    args["cacheName"] = cacheName;
-                    args["processIndex"] = consumerId;
-                    args["totalPV"] = totalPV;
-                    args["currentUV"] = uv + 1;
-                    args["pageLoadingTimeout"] = _appSettings.PageLoadingTimeout;
-                    args["pageloadedDelay"] = _appSettings.PageloadedDelay;
-                    args["hompageTrigger"] = _appSettings.HompageTrigger;
-                    args["os"] = (int)os;
-                    args["isLocalAdWord"] = _appSettings.UseLocalWord;
-                    args["priorityNon1688"] = _appSettings.PriorityNon1688;
-                    args["pvsTriggerOne"] = _appSettings.PVsTriggerOne; ;
-                    args["isTest"] = _appSettings.IsTest;
-                    args["kernelVersion"] = _appSettings.KernelVersion;
-                    args["incognito"] = _appSettings.Incognito;
-                    args["wordname"] = _appSettings.WordName;
-                    args["noTrigger1688"] = _appSettings.NoTrigger1688;
-                    args["cleaningWords"] = _appSettings.CleaningWords;
-                    args["notTriggerDownload"] = _appSettings.NotTriggerDownload;
-
-                    if (!allPlugins.TryGetValue(_appSettings.QTPName, out var plugin) || plugin.type == null)
-                    {
-                        _logger.LogError("ConsumerAsync plugin not found: {PluginName}", _appSettings.QTPName);
-                        continue;
-                    }
-
-                    var plugin_instance = Activator.CreateInstance(plugin.type, new object[] { this._aggregator, this._processManager, this._adeHelper, this._nameGenerator, this._appSettings });
-                    if (plugin_instance is IQTPService plugin_service)
-                    {
-
-                        plugin_service.OnLogEventHandler += (s, e) =>
-                        {
-                            LogWriteLine(e);
-                        };
-
-                        plugin_service.OnStateChangedEventHandler += (s, e) =>
-                        {
-                            _aggregator.Enqueue(new TaskEvent(e.Id, e.Type, e.Count, e.Data));
-                        };
-
-                        plugin_service.OnTaskAdWordEventHandler += (s, e) =>
-                        {
-                            _aggregator.EnqueueAdWord(e.Type, e.Word);
-                        };
-
-                        var uniqueId = Guid.NewGuid().ToString("D");
-
-                        try
-                        {
-                            LogWriteLine($"提交任务:{task["title"]}[{task["id"]}_{consumerId}_{cacheName}],os={os},proxy={proxy_server ?? "False"},realIp={(realIp ?? "")},uv={totalUV}/{(uv + 1)}");
-                            var ipTtl = Math.Max(10, _appSettings.IpTtl - (DateTime.Now - st).TotalSeconds);
-                            using var ctsTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(ipTtl));
-                            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, ctsTimeout.Token);
-                            try
-                            {
-                                var (is_success, is_page_trigger_click, page_ads_count) =
-                                    await plugin_service.ExecuteWorkerAsync(uniqueId, args, linkedCts).WithCancellation(linkedCts.Token); ;
-
-                                if (totalUV > 1 && is_page_trigger_click && _appSettings.UVsTriggerOne)
-                                {
-                                    break;
-                                }
-                            }
-                            catch (OperationCanceledException) when (ctsTimeout.IsCancellationRequested)
-                            {
-                                LogWriteLine($"插件 {uniqueId} 执行超时");
-                                break;
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                LogWriteLine($"浏览器关闭,插件 {uniqueId} 被取消");
-                                //break;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "ConsumerAsync plugin execute failed. taskId={TaskId}, consumer={ConsumerId}", taskid, consumerId);
-                        }
-                        finally
-                        {
-                            try
-                            {
-                                await _processManager.CloseAsync(uniqueId).WaitAsync(TimeSpan.FromSeconds(15), token);
-                            }
-                            catch (TimeoutException ex)
-                            {
-                                _logger.LogWarning(ex, "Close browser timeout. uniqueId={UniqueId}", uniqueId);
-                            }
-                            catch (OperationCanceledException) when (token.IsCancellationRequested)
-                            {
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "Close browser failed. uniqueId={UniqueId}", uniqueId);
-                            }
-                        }
-
-                    }
-                    else
-                    {
-                        _logger.LogWarning("ConsumerAsync plugin instance invalid. plugin={PluginName}", _appSettings.QTPName);
-                        continue;
-                    }
-                    }
-                    catch (OperationCanceledException) when (token.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "ConsumerAsync uv failed. taskId={TaskId}, uv={Uv}, consumer={ConsumerId}", taskid, uv + 1, consumerId);
-                        continue;
-                    }
-
-                }
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ConsumerAsync failed");
-            }
-        }
-
-
         private async Task ConsumerAsync(int consumerId, JToken task, CancellationToken token)
         {
             try
@@ -1503,15 +998,26 @@ namespace MainClient
 
                 await PrepareProxyContextAsync(ctx, task, token);
 
+                var ipLeaseStartTime = DateTime.Now;
+                var ipTtlSeconds = _appSettings.IpTtl;
+                if (ipTtlSeconds <= 0)
+                {
+                    _logger.LogWarning("ConsumerAsync invalid IpTtl={IpTtl}, taskId={TaskId}", ipTtlSeconds, ctx.TaskId);
+                    return;
+                }
+                using var ipTtlCts = new CancellationTokenSource(TimeSpan.FromSeconds(ipTtlSeconds));
+                using var consumerLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, ipTtlCts.Token);
+                var consumerToken = consumerLinkedCts.Token;
+
                 for (int uvIndex = 0; uvIndex < ctx.TotalUV; uvIndex++)
                 {
-                    token.ThrowIfCancellationRequested();
+                    consumerToken.ThrowIfCancellationRequested();
 
                     try
                     {
                         _aggregator.Enqueue(new TaskEvent(ctx.TaskId, StateType.Request, 1));
 
-                        var dev = await GetDeviceForTaskAsync(ctx.OS, ctx.TaskId, uvIndex, token);
+                        var dev = await GetDeviceForTaskAsync(ctx.OS, ctx.TaskId, uvIndex, consumerToken);
                         if (dev == null)
                             continue;
 
@@ -1524,7 +1030,7 @@ namespace MainClient
                             pluginArgs,
                             consumerId,
                             uvIndex,
-                            token);
+                            consumerToken);
 
                         if (stopRemainingUv)
                             break;
@@ -1532,6 +1038,11 @@ namespace MainClient
                     catch (OperationCanceledException) when (token.IsCancellationRequested)
                     {
                         throw;
+                    }
+                    catch (OperationCanceledException) when (ipTtlCts.IsCancellationRequested)
+                    {
+                        LogWriteLine($"任务 {ctx.TaskTitle}[{ctx.TaskId}] 的 IP 总有效时长已到，停止后续 UV。");
+                        break;
                     }
                     catch (Exception ex)
                     {
@@ -2060,15 +1571,12 @@ namespace MainClient
                 LogWriteLine(
                     $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
 
-                var ipTtl = Math.Max(10, _appSettings.IpTtl - (DateTime.Now - ctx.StartTime).TotalSeconds);
-
-                using var ctsTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(ipTtl));
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, ctsTimeout.Token);
+                //using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
                 try
                 {
                     var (_, isPageTriggerClick, _) =
-                        await pluginService.ExecuteWorkerAsync(uniqueId, args, linkedCts);
+                        await pluginService.ExecuteWorkerAsync(uniqueId, args, token);
 
                     if (ctx.TotalUV > 1 && isPageTriggerClick && _appSettings.UVsTriggerOne)
                         return true;
@@ -2076,15 +1584,6 @@ namespace MainClient
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
                     throw;
-                }
-                catch (OperationCanceledException) when (ctsTimeout.IsCancellationRequested)
-                {
-                    LogWriteLine($"插件 {uniqueId} 执行超时");
-                    return true;
-                }
-                catch (OperationCanceledException)
-                {
-                    LogWriteLine($"浏览器关闭,插件 {uniqueId} 被取消");
                 }
                 catch (Exception ex)
                 {
@@ -2100,7 +1599,38 @@ namespace MainClient
                 if (logHandler != null) pluginService.OnLogEventHandler -= logHandler;
                 if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
                 if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
-                await _processManager.CloseAsync(uniqueId,token);
+
+                try
+                {
+                    await _processManager.CloseAsync(uniqueId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Close process failed. uniqueId={UniqueId}", uniqueId);
+                }
+
+                if (pluginService is IAsyncDisposable asyncDisposable)
+                {
+                    try
+                    {
+                        await asyncDisposable.DisposeAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Async dispose plugin failed. uniqueId={UniqueId}", uniqueId);
+                    }
+                }
+                else if (pluginService is IDisposable disposable)
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Dispose plugin failed. uniqueId={UniqueId}", uniqueId);
+                    }
+                }
             }
         }
 

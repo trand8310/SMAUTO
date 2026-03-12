@@ -8,14 +8,18 @@ using System.Threading.Channels;
 
 namespace QTP.Common
 {
-    public sealed record ChromiumSession(
-        string UniqueId,
-        string? Proxy,
-        Process Process,
-        int DebugPort,
-        string UserDir,
-        DateTime ExpireAt
-    );
+    public sealed class ChromiumSession
+    {
+        public string UniqueId { get; init; } = "";
+        public string? Proxy { get; init; }
+        public Process Process { get; init; } = null!;
+        public int DebugPort { get; init; }
+        public string UserDir { get; init; } = "";
+        public DateTime ExpireAt { get; init; }
+
+        // 0 = 未关闭，1 = 关闭中/已关闭
+        public int CloseStarted;
+    }
 
     public sealed class ChromiumSessionManager : IAsyncDisposable
     {
@@ -80,18 +84,38 @@ namespace QTP.Common
                 var readyTs = readyTimeout ?? TimeSpan.FromSeconds(20);
                 await WaitForDebugPortReadyAsync(proc, port, readyTs, token);
 
-                var session = new ChromiumSession(
-                    uniqueId,
-                    proxyServer,
-                    proc,
-                    port,
-                    userDataDir,
-                    DateTime.UtcNow.Add(ttl)
-                );
+                var session = new ChromiumSession
+                {
+                    UniqueId = uniqueId,
+                    Proxy = proxyServer,
+                    Process = proc,
+                    DebugPort = port,
+                    UserDir = userDataDir,
+                    ExpireAt = DateTime.UtcNow.Add(ttl),
+                    CloseStarted = 0
+                };
 
+                // 正常情况下 uniqueId 为 GUID，不应命中旧 session；这里只是防御性兜底
                 if (_sessions.TryGetValue(uniqueId, out var oldSession))
                 {
-                    _ = CloseInternalAsync(oldSession, CancellationToken.None);
+                    if (Interlocked.Exchange(ref oldSession.CloseStarted, 1) == 0)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await CloseInternalAsync(oldSession);
+                            }
+                            catch
+                            {
+                                // fire-and-forget，忽略异常
+                            }
+                            finally
+                            {
+                                _sessions.TryRemove(uniqueId, out _);
+                            }
+                        });
+                    }
                 }
 
                 _sessions[uniqueId] = session;
@@ -110,7 +134,8 @@ namespace QTP.Common
 
                     try
                     {
-                        await proc.WaitForExitAsync(CancellationToken.None);
+                        using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                        await proc.WaitForExitAsync(waitCts.Token);
                     }
                     catch { }
 
@@ -141,18 +166,31 @@ namespace QTP.Common
 
         /// <summary>
         /// 关闭指定会话
+        /// 说明：关闭属于清理动作，不依赖外部业务 token。
         /// </summary>
         public async Task CloseAsync(string uniqueId, CancellationToken token = default)
         {
-            token.ThrowIfCancellationRequested();
-
-            if (!_sessions.TryRemove(uniqueId, out var session))
+            if (!_sessions.TryGetValue(uniqueId, out var session))
                 return;
 
-            await CloseInternalAsync(session, token);
+            if (Interlocked.Exchange(ref session.CloseStarted, 1) == 1)
+                return;
+
+            try
+            {
+                await CloseInternalAsync(session);
+            }
+            finally
+            {
+                _sessions.TryRemove(uniqueId, out _);
+            }
         }
 
-        private async Task CloseInternalAsync(ChromiumSession session, CancellationToken token)
+        /// <summary>
+        /// 关闭 Chromium 进程、释放端口、安排缓存目录清理。
+        /// 不依赖外部业务 token，全部使用内部超时控制。
+        /// </summary>
+        private async Task CloseInternalAsync(ChromiumSession session)
         {
             try
             {
@@ -164,22 +202,23 @@ namespace QTP.Common
                     }
                     catch
                     {
-                        // 进程可能已经退出
+                        // 进程可能已经退出，忽略
                     }
 
                     try
                     {
-                        await session.Process.WaitForExitAsync(token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
+                        using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                        await session.Process.WaitForExitAsync(waitCts.Token);
                     }
                     catch
                     {
-                        // 等待退出失败，也继续资源释放
+                        // 等待退出失败/超时，也继续做 finally 清理
                     }
                 }
+            }
+            catch
+            {
+                // 清理阶段尽力而为，不再向上打断
             }
             finally
             {
@@ -197,15 +236,13 @@ namespace QTP.Common
 
                 try
                 {
-                    await _cleanupQueue.Writer.WriteAsync(session, token);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
+                    using var cleanupQueueCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await _cleanupQueue.Writer.WriteAsync(session, cleanupQueueCts.Token);
                 }
                 catch
                 {
-                    // manager 停止过程中可能写失败，忽略
+                    // 队列不可写/manager停止时，直接降级为后台删目录
+                    _ = CleanupUserDirLaterAsync(session.UserDir);
                 }
             }
         }
@@ -273,9 +310,6 @@ namespace QTP.Common
             }
         }
 
-
-
-
         private static int? SafeGetExitCode(Process process)
         {
             try
@@ -308,11 +342,11 @@ namespace QTP.Common
 #if NET8_0_OR_GREATER
                 await client.ConnectAsync(host, port, ct);
 #else
-        var connectTask = client.ConnectAsync(host, port);
-        var completed = await Task.WhenAny(connectTask, Task.Delay(timeoutMs, ct));
-        if (completed != connectTask)
-            return false;
-        await connectTask;
+            var connectTask = client.ConnectAsync(host, port);
+            var completed = await Task.WhenAny(connectTask, Task.Delay(timeoutMs, ct));
+            if (completed != connectTask)
+                return false;
+            await connectTask;
 #endif
 
                 return client.Connected;
@@ -332,8 +366,6 @@ namespace QTP.Common
         /// 测试 DevTools /json/version 是否可访问
         /// 不依赖 HttpClient，避免额外复杂度
         /// </summary>
-
-
         private static async Task<bool> CanQueryDevToolsVersionAsync(
             int port,
             CancellationToken token,
@@ -380,7 +412,7 @@ namespace QTP.Common
             catch (OperationCanceledException)
             {
                 token.ThrowIfCancellationRequested();
-                return false; // 内部 timeout
+                return false;
             }
             catch
             {
@@ -388,16 +420,13 @@ namespace QTP.Common
             }
         }
 
-
-
-
-        private async Task CleanupLoopAsync(CancellationToken token)
+        private async Task CleanupLoopAsync(CancellationToken token = default)
         {
             try
             {
                 await foreach (var session in _cleanupQueue.Reader.ReadAllAsync(token))
                 {
-                    await TryDeleteDirectoryWithRetryAsync(session.UserDir, token);
+                    await TryDeleteDirectoryWithRetryAsync(session.UserDir);
                 }
             }
             catch (OperationCanceledException)
@@ -414,40 +443,40 @@ namespace QTP.Common
         {
             try
             {
-                await TryDeleteDirectoryWithRetryAsync(userDir, CancellationToken.None);
+                await TryDeleteDirectoryWithRetryAsync(userDir);
             }
             catch { }
         }
 
-        private async Task TryDeleteDirectoryWithRetryAsync(string userDir, CancellationToken token)
+        /// <summary>
+        /// 删除缓存目录：不依赖业务 token，尽量清干净
+        /// </summary>
+        private async Task TryDeleteDirectoryWithRetryAsync(string userDir)
         {
             if (string.IsNullOrWhiteSpace(userDir))
                 return;
 
             var delays = new[]
             {
-            TimeSpan.FromSeconds(5),
-            TimeSpan.FromSeconds(10),
-            TimeSpan.FromSeconds(20),
-            TimeSpan.FromSeconds(30)
-        };
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(20),
+                TimeSpan.FromSeconds(30)
+            };
 
             foreach (var delay in delays)
             {
-                token.ThrowIfCancellationRequested();
-
                 try
                 {
                     if (!Directory.Exists(userDir))
                         return;
 
-                    await Task.Delay(delay, token);
+                    if (delay > TimeSpan.Zero)
+                        await Task.Delay(delay);
+
                     Directory.Delete(userDir, recursive: true);
                     return;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
                 }
                 catch
                 {
@@ -472,7 +501,17 @@ namespace QTP.Common
 
                         if (now >= session.ExpireAt)
                         {
-                            _ = CloseAsync(session.UniqueId, CancellationToken.None);
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await CloseAsync(session.UniqueId, CancellationToken.None);
+                                }
+                                catch
+                                {
+                                    // 后台过期清理，忽略异常
+                                }
+                            });
                         }
                     }
                 }

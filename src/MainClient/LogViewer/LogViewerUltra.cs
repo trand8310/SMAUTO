@@ -33,7 +33,7 @@ namespace MainClient.LogViewer
 
         private readonly Dictionary<Color, SolidBrush> _brushCache = new();
 
-        private int _lineHeight = 18;
+        private int _lineHeight = 22;
         private bool _autoScroll = true;
         private bool _paused;
         private string _filter = string.Empty;
@@ -47,7 +47,7 @@ namespace MainClient.LogViewer
 
         private readonly List<(LogItem log, int startLine, int lineCount)> _logLines = new();
 
-        public int MaxLogs { get; set; } = 300_000;
+        public int MaxLogs { get; set; } = 30_000;
 
         public LogViewerUltra()
         {
