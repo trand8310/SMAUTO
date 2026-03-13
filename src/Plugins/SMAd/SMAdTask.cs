@@ -2897,7 +2897,7 @@ namespace QTP.Plugins
                 }
                 if (ctx.Config.IsTest)
                 {
-                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=wm796866&q=%E6%BF%80%E7%B4%A0%E4%BE%9D%E8%B5%96%E6%80%A7%E7%9A%AE%E7%82%8E";
+                    entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=%E6%BF%80%E7%B4%A0%E4%BE%9D%E8%B5%96%E6%80%A7%E7%9A%AE%E7%82%8E";
                 }
 
                 var gotoOk = await NavigateToEntryAsync(ctx, entry.FirstPageUrl!, token);
@@ -2906,7 +2906,7 @@ namespace QTP.Plugins
 
                 if (ctx.Config.IsTest)
                 {
-                    await RunTestBranchAsync(ctx, token);
+                    await RunTestBranchAsync(ctx, entry, token);
                     return CompleteSuccess(ctx);
                 }
 
@@ -3525,6 +3525,13 @@ namespace QTP.Plugins
 
         #region Ads / JumpClick
 
+        /// <summary>
+        /// 检测页面广告词标记
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="q"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         private async Task<bool> DetectAndUploadAdWordsAsync(WorkerRunContext ctx, string? q, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
@@ -3665,6 +3672,72 @@ namespace QTP.Plugins
 
             return FlowControl.Continue;
         }
+
+        /// <summary>
+        /// 测试_触发广告
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        private async Task<FlowControl> TryTestExecuteJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+
+            var sponsoreds = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
+            var sponsoredCount = await sponsoreds.CountAsync();
+            if (sponsoredCount <= 0)
+                return FlowControl.Continue;
+
+            var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
+
+            foreach (var sponsored in candidates)
+            {
+                token.ThrowIfCancellationRequested();
+
+                await SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, sponsored);
+                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                var target = await PickSponsoredTargetAsync(sponsored, token);
+                if (target == null)
+                    continue;
+
+                var dataUrl = await target.GetAttributeAsync("data-url");
+                if (string.IsNullOrWhiteSpace(dataUrl))
+                    continue;
+
+                var text = await target.InnerTextAsync();
+                var box = await target.BoundingBoxAsync();
+
+                if (box != null)
+                    LogWriteLine($"触发广告位:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
+                else
+                    LogWriteLine($"触发广告位:{text}");
+
+                var click = await ClickAndDetectNavigationAsync(ctx, target, token);
+                if (!click.Attempted)
+                    continue;
+
+                if (ctx.TriggerDownloadSign > 0)
+                {
+                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
+                    ctx.PageTriggerClick = true;
+                    return FlowControl.EndTask;
+                }
+
+                if (click.Navigated)
+                {
+                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
+                    ctx.PageTriggerClick = true;
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    return FlowControl.Continue;
+                }
+            }
+            return FlowControl.Continue;
+        }
+
+
 
         private async Task<List<ILocator>> BuildSponsoredCandidatesAsync(WorkerRunContext ctx, ILocator sponsoreds, int count, CancellationToken token)
         {
@@ -4182,8 +4255,8 @@ namespace QTP.Plugins
             token.ThrowIfCancellationRequested();
             if (medical)
             {
-                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-
+                //await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                await TouchPageScroll(ctx.Page, ctx.CdpSession!, CommonHelper.RandomRange(1, 3), 1);
                 //|图文.*起|电话.*起
                 var locator_list = ctx.Page.Locator("text=/剩.*个名额|图文.*起|电话.*起/").Filter(new() { Visible = true });
                 var locator_count = await locator_list.CountAsync();
@@ -4192,7 +4265,16 @@ namespace QTP.Plugins
                     foreach (var target_index in Enumerable.Range(0, locator_count).OrderBy(o => Guid.NewGuid()))
                     {
                         var target = locator_list.Nth(target_index);
-                        await SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, target);
+
+                        await SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, target, maxSwipes: 3);
+                        await target.ScrollIntoViewIfNeededAsync();
+ 
+                        var target_text = await target.InnerTextAsync();
+                        if (!string.IsNullOrWhiteSpace(target_text))
+                            LogWriteLine(target_text);
+
+
+                  
                         result = await ClickElementHandleAndDetectNavigationAsync(ctx, target, token);
                         if (result.Navigated)
                         {
@@ -4512,8 +4594,25 @@ namespace QTP.Plugins
 
         #region Test Branch
 
-        private async Task RunTestBranchAsync(WorkerRunContext ctx, CancellationToken token)
+        private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+
+            token.ThrowIfCancellationRequested();
+
+            var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
+            if (!adsOk)
+                return;
+
+            await DecideJumpClickAsync(ctx, token);
+
+            if (ctx.JumpClick)
+            {
+                var clickFlow = await TryTestExecuteJumpClickAsync(ctx, token);
+                if (clickFlow == FlowControl.EndTask)
+                    return;
+            }
+
+
             token.ThrowIfCancellationRequested();
 
             var locator1 = ctx.Page!.Locator("*:has-text('医院')");
@@ -4521,26 +4620,30 @@ namespace QTP.Plugins
 
             if (await locator1.CountAsync() > 0 || await locator2.CountAsync() > 0)
             {
-                try
-                {
-                    int redo = 0;
-                    while (redo++ < 3)
-                    {
-                        token.ThrowIfCancellationRequested();
 
-                        await TouchPageScroll(ctx.Page, ctx.CdpSession!, CommonHelper.RandomRange(1, 5), 1);
-                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                var offerItems = await ResolveOfferItemsAsync(ctx, token);
 
-                        var result = await TryRandomViewportClickableClickAsync(ctx, token);
-                        if (result.Navigated && ctx.Page.Url.StartsWith("https://laputa.healthjd.com/doctor_home"))
-                            break;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch { }
+
+                //try
+                //{
+                //    int redo = 0;
+                //    while (redo++ < 3)
+                //    {
+                //        token.ThrowIfCancellationRequested();
+
+                //        await TouchPageScroll(ctx.Page, ctx.CdpSession!, CommonHelper.RandomRange(1, 5), 1);
+                //        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                //        var result = await TryRandomViewportClickableClickAsync(ctx, token);
+                //        if (result.Navigated && ctx.Page.Url.StartsWith("https://laputa.healthjd.com/doctor_home"))
+                //            break;
+                //    }
+                //}
+                //catch (OperationCanceledException)
+                //{
+                //    throw;
+                //}
+                //catch { }
             }
 
             await Task.Delay(TimeSpan.FromSeconds(150), token);

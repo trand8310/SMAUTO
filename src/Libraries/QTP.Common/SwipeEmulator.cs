@@ -653,10 +653,10 @@ namespace QTP.Common
                 page,
                 client,
                 times: 1,
-                distancePx: 60,
-                pointCount: 5,
-                delayMs: 6,
-                jitter: 0.18f,
+                distancePx: 70,
+                pointCount: 7,
+                delayMs: 14,
+                jitter: 0.35f,
                 direction: direction,
                 cancellationToken: cancellationToken);
         }

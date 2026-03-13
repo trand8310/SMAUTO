@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("QTP.Common")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+69512e441cf03f325c9f912f9f54dc34d69f1854")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f33d877cb6d927911552e942f5d47d36bbf5800b")]
 [assembly: System.Reflection.AssemblyProductAttribute("QTP.Common")]
 [assembly: System.Reflection.AssemblyTitleAttribute("QTP.Common")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
