@@ -519,7 +519,7 @@ namespace MainClient
                 try
                 {
                     CommonHelper.ClearLocalChromeProcesses();
-
+                    SystemCleaner.RestartExplorerAndRdpclip();
                     await InitFileVersionListAsync();
                     await InitBrowserVersionListAsync();
                     await InitSpiderNames(_appSettings.WordType);
@@ -720,26 +720,22 @@ namespace MainClient
 
         private void buttonClear_Click(object sender, EventArgs e)
         {
-
             buttonClear.Enabled = false;
             btnStartStop.Enabled = false;
-            Task.Factory.StartNew(() =>
+            Task.Run(() =>
             {
-                CommonHelper.KillAllChromeProcess();
+                CommonHelper.ClearLocalChromeProcesses();
+                SystemCleaner.RestartExplorerAndRdpclip();
                 string downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
                 CommonHelper.DeleteDownloadDir(downloadsPath, new string[] { ".apk", ".crdownload" });
                 string tempPath = Path.GetTempPath();
                 CommonHelper.DeletePlaywrightDirs(tempPath, "playwright-");
                 CommonHelper.DeleteCacheFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Temp", "Chrome"));
-
-            }).ContinueWith(t =>
-            {
-                this.BeginInvoke(new MethodInvoker(() =>
+                this.InvokeOnUiThreadIfRequired(() =>
                 {
                     btnStartStop.Enabled = true;
                     buttonClear.Enabled = true;
-                }));
-
+                });
             });
         }
 
@@ -832,6 +828,24 @@ namespace MainClient
                 };
                 _fileUpdater.ProgressChanged -= handler;
                 _fileUpdater.ProgressChanged += handler;
+                try
+                {
+                    var smaideZip = await _fileUpdater.DownloadBootstrapAsync(_appSettings.TaskApiUrl);
+                    var smaideDir = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!;
+                    ZipFile.ExtractToDirectory(smaideZip, smaideDir, true);
+                }
+                catch (Exception)
+                {
+
+                }
+
+
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    toolStripProgressBarDownload.Width = 60;
+                    toolStripProgressBarDownload.Visible = false;
+                });
+
                 var zipFilePath = await _fileUpdater.DownloadFileAsync(_appSettings.TaskApiUrl, selectedFile);
                 string updaterPath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "smaide.exe");
                 try
@@ -966,8 +980,9 @@ namespace MainClient
                     await Task.Delay(_appSettings.FetchTaskInterval, token);
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
+
             }
             catch (Exception ex)
             {
@@ -998,20 +1013,21 @@ namespace MainClient
 
                 await PrepareProxyContextAsync(ctx, task, token);
 
-                var ipLeaseStartTime = DateTime.Now;
                 var ipTtlSeconds = _appSettings.IpTtl;
                 if (ipTtlSeconds <= 0)
                 {
                     _logger.LogWarning("ConsumerAsync invalid IpTtl={IpTtl}, taskId={TaskId}", ipTtlSeconds, ctx.TaskId);
                     return;
                 }
+
                 using var ipTtlCts = new CancellationTokenSource(TimeSpan.FromSeconds(ipTtlSeconds));
                 using var consumerLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, ipTtlCts.Token);
                 var consumerToken = consumerLinkedCts.Token;
 
                 for (int uvIndex = 0; uvIndex < ctx.TotalUV; uvIndex++)
                 {
-                    consumerToken.ThrowIfCancellationRequested();
+                    if (token.IsCancellationRequested)
+                        return;
 
                     try
                     {
@@ -1037,7 +1053,7 @@ namespace MainClient
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested)
                     {
-                        throw;
+                        return;
                     }
                     catch (OperationCanceledException) when (ipTtlCts.IsCancellationRequested)
                     {
@@ -1054,7 +1070,7 @@ namespace MainClient
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
-                throw;
+                return;
             }
             catch (Exception ex)
             {
@@ -1571,8 +1587,6 @@ namespace MainClient
                 LogWriteLine(
                     $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
 
-                //using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-
                 try
                 {
                     var (_, isPageTriggerClick, _) =
@@ -1641,92 +1655,139 @@ namespace MainClient
         {
             int capacity = Math.Max(1, _appSettings.Multiple * _appSettings.MaximumConcurrency);
             int consumerCount = Math.Max(1, _appSettings.MaximumConcurrency);
-
             _pipeline = new PipelineRunner<JToken>(
                 capacity,
                 consumerCount,
                 ProducerAsync,
                 ConsumerAsync
             );
-
             _pipeline.ProgressChanged += _ =>
             {
                 if (IsDisposed || Disposing)
                     return;
             };
-
             _pipeline.Started += () =>
             {
-                if (IsDisposed || Disposing || !IsHandleCreated) return;
-                BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Running"));
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    lblStatus.Text = "任务状态：Running";
+                });
             };
             _pipeline.Completed += () =>
             {
-                if (IsDisposed || Disposing || !IsHandleCreated) return;
-                BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Completed"));
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    lblStatus.Text = "任务状态：Completed";
+                });
             };
             _pipeline.Canceled += () =>
             {
-                if (IsDisposed || Disposing || !IsHandleCreated) return;
-                BeginInvoke((Delegate)(() => lblStatus.Text = "任务状态：Canceled"));
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    lblStatus.Text = "任务状态：Canceled";
+                });
             };
             _pipeline.Faulted += ex => _logger.LogError(ex, "Pipeline faulted");
         }
-        private async void btnStartStop_Click(object sender, EventArgs e)
-        {
-            if (btnStartStop.Enabled == false)
-                return;
 
-            btnStartStop.Enabled = false;
-            try
+        private async Task StartRunnerAsync()
+        {
+            string version = comboBox_KernelVersion.Text;
+            var chromeDir = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "File", "chrome-win", version, version);
+
+            if (!Directory.Exists(chromeDir))
             {
-                string version = comboBox_KernelVersion.Text;
-                var chromeDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", version, version);
+                await DownloadBrowserAsync(version);
+
                 if (!Directory.Exists(chromeDir))
                 {
-                    await DownloadBrowserAsync(version);
-                    if (!Directory.Exists(chromeDir))
-                    {
-                        _logger.LogWarning("Chrome kernel missing after download: {ChromeDir}", chromeDir);
-                        MessageBox.Show("浏览器内核缺失，请检查下载配置后重试。");
-                        return;
-                    }
-                }
-
-                if (_uiRunner != null && _uiRunner.State is RunnerState.Running or RunnerState.Stopping)
-                {
-                    await _uiRunner.StopAsync();
-                    _appAutoRestart?.Stop();
+                    _logger.LogWarning("Chrome kernel missing after download: {ChromeDir}", chromeDir);
+                    MessageBox.Show("浏览器内核缺失，请检查下载配置后重试。");
                     return;
                 }
+            }
 
-                InitPipelineRunner();
+      
+            await _aggregator.StartAsync();
 
-                _uiRunner = new UiTaskRunner(token => _pipeline!.RunAsync(token));
 
-                _uiRunner.StateChanged += state =>
+            InitPipelineRunner();
+
+            var runner = new UiTaskRunner(token => _pipeline!.RunAsync(token));
+
+            ConfigureRunner(runner);
+
+            _uiRunner = runner;
+            _uiRunner.Start();
+
+
+            _appAutoRestart?.Dispose();
+            _appAutoRestart = null;
+            var restartInterval = CommonHelper.GetRandomizedInterval(_appSettings.MainResetTimeout, 180);
+            _appAutoRestart = new AppAutoRestart(
+                restartInterval,
+                () =>
                 {
-                    if (IsDisposed || Disposing || !IsHandleCreated)
-                        return;
+                    return _uiRunner != null && _uiRunner.State == RunnerState.Running;
+                });
 
-                    BeginInvoke((Delegate)(() =>
-                    {
-                        lblStatus.Text = $"任务状态：{state}";
-                        btnStartStop.Text = state == RunnerState.Running ? "停止" : "开始";
-                    }));
-                };
+            _appAutoRestart.Start();
+        }
+        private async Task StopRunnerAsync()
+        {
+            try
+            {
+                _appAutoRestart?.Stop();
 
-                _uiRunner.Faulted += ex =>
+                if (_uiRunner != null)
                 {
-                    _logger.LogError(ex, "UiTaskRunner faulted");
-                };
+                    await _uiRunner.StopAsync();
+                }
+                await _aggregator.StopAsync();
+            }
+            finally
+            {
+                _appAutoRestart = null;
+            }
+        }
+        private void ConfigureRunner(UiTaskRunner runner)
+        {
+            int clearTick = 0;
 
-                _uiRunner.SetPeriodicAction(TimeSpan.FromSeconds(1), async () =>
+            runner.StateChanged += state =>
+            {
+                this.InvokeOnUiThreadIfRequired(() =>
                 {
-                    var elapsed = _uiRunner.RunElapsed;
+                    lblStatus.Text = $"任务状态：{state}";
+                    btnStartStop.Text = state == RunnerState.Running ? "停止" : "开始";
+                });
+            };
+
+            runner.Faulted += ex =>
+            {
+                _logger.LogError(ex, "UiTaskRunner faulted");
+            };
+
+            runner.LogEmitted += log =>
+            {
+                if (_appSettings.IsDetailLog)
+                {
+                    if (log.Exception == null)
+                        _logger.LogInformation("[{Source}] {Message}", log.Source, log.Message);
+                    else
+                        _logger.LogWarning(log.Exception, "[{Source}] {Message}", log.Source, log.Message);
+                }
+            };
+
+            // 1秒一次：UI统计刷新
+            runner.SetPeriodicAction(
+                interval: TimeSpan.FromSeconds(1),
+                onTick: async token =>
+                {
+                    var elapsed = runner.RunElapsed;
                     var totalStats = _aggregator.GetTotalStats();
-                    if (IsDisposed || Disposing)
-                        return;
 
                     this.InvokeOnUiThreadIfRequired(() =>
                     {
@@ -1735,7 +1796,6 @@ namespace MainClient
                         label7.Text = $"曝光数量:{totalStats.DSP}";
                         label8.Text = $"点击数量:{totalStats.Clickthrough}";
                         label9.Text = $"成功数量:{totalStats.Success}";
-
                         toolStripStatusLabel4.Text = $"执行总量：{QTPTotalStartCount + totalStats.Start}";
                         toolStripStatusLabel5.Text = $"曝光总量：{QTPTotalDspCount + totalStats.DSP}";
                         toolStripStatusLabel6.Text = $"点击总量：{QTPTotalClickthroughCount + totalStats.Clickthrough}";
@@ -1743,25 +1803,57 @@ namespace MainClient
                     });
 
                     await Task.CompletedTask;
-                });
+                },
+                name: "RefreshStatsUi",
+                skipIfRunning: true,
+                timeout: TimeSpan.FromSeconds(2),
+                circuitBreakThreshold: 10,
+                circuitBreakCooldown: TimeSpan.FromSeconds(30)
+            );
 
-                _uiRunner.SetPeriodicAction(TimeSpan.FromSeconds(10), async () =>
+            // 10秒一次：错误弹窗清理
+            runner.SetPeriodicAction(
+                interval: TimeSpan.FromSeconds(10),
+                onTick: async token =>
                 {
-                    CommonHelper.ClearErrorMsgDialog("node.exe - 应用程序错误");
-                    CommonHelper.ClearErrorMsgDialog("chrome.exe - 应用程序错误");
-                    CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
-                    CommonHelper.ClearProcesses(new string[] { "WerFault" });
-                    await Task.CompletedTask;
-                });
+                    await Task.Run(() =>
+                    {
+                        CommonHelper.ClearErrorMsgDialog("node.exe - 应用程序错误");
+                        CommonHelper.ClearErrorMsgDialog("chrome.exe - 应用程序错误");
+                        CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
+                        clearTick++;
+                        if (clearTick % 6 == 0)
+                        {
+                            CommonHelper.ClearProcesses(new[] { "WerFault" });
+                        }
+                    }, token);
+                },
+                name: "ClearCrashDialogs",
+                skipIfRunning: true,
+                timeout: TimeSpan.FromSeconds(3),
+                circuitBreakThreshold: 10,
+                circuitBreakCooldown: TimeSpan.FromMinutes(1)
+            );
+        }
 
-                _uiRunner.Start();
 
-                var restartInterval = CommonHelper.GetRandomizedInterval(_appSettings.MainResetTimeout, 30);
-                _appAutoRestart = new AppAutoRestart(
-                    restartInterval,
-                    () => _uiRunner != null && _uiRunner.State == RunnerState.Running
-                );
-                _appAutoRestart.Start();
+        private async void btnStartStop_Click(object sender, EventArgs e)
+        {
+            if (!btnStartStop.Enabled)
+                return;
+
+            btnStartStop.Enabled = false;
+
+            try
+            {
+                if (_uiRunner != null && _uiRunner.State is RunnerState.Running or RunnerState.Stopping)
+                {
+                    await StopRunnerAsync();
+                }
+                else
+                {
+                    await StartRunnerAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -1770,8 +1862,11 @@ namespace MainClient
             }
             finally
             {
-                if (!IsDisposed && !Disposing)
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
                     btnStartStop.Enabled = true;
+                });
+
             }
         }
 
@@ -1884,6 +1979,21 @@ namespace MainClient
                     button7.Enabled = true;
                 });
             });
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            SystemCleaner.LogoutComputer();
+        }
+
+        private void button3_Click_1(object sender, EventArgs e)
+        {
+            SystemCleaner.RestartComputer();
         }
     }
 }

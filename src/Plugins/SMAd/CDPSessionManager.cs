@@ -1,50 +1,119 @@
-﻿using Microsoft.Playwright;
-using System.Collections.Concurrent;
-
+﻿
+ 
 namespace QTP.Plugins
 {
-    public class CDPSessionManager
+    using Microsoft.Playwright;
+    using System;
+    using System.Collections.Concurrent;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
+
+    public sealed class CDPSessionManager
     {
+        private sealed class SessionEntry
+        {
+            public required Lazy<Task<ICDPSession>> LazySession { get; init; }
+            public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
+        }
+
         private readonly IBrowserContext _context;
-        // 用 Lazy<Task> 包装异步创建，确保并发时只创建一个会话
-        private readonly ConcurrentDictionary<IPage, Lazy<Task<ICDPSession>>> _sessionMap = new();
+        private readonly ConcurrentDictionary<IPage, SessionEntry> _sessionMap = new();
+
         public CDPSessionManager(IBrowserContext context)
         {
-            _context = context;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
 
             _context.Page += (_, page) =>
             {
                 page.Close += (_, _) =>
                 {
-                    // 页面关闭时移除缓存
-                    _sessionMap.TryRemove(page, out var _);
+                    RemoveSession(page);
                 };
             };
         }
 
-        public Task<ICDPSession> GetOrCreateSessionAsync(IPage page)
+        public async Task<ICDPSession> GetOrCreateSessionAsync(IPage page)
         {
-            // GetOrAdd 保证原子操作
-            var lazySession = _sessionMap.GetOrAdd(page, p =>
-                new Lazy<Task<ICDPSession>>(() => _context.NewCDPSessionAsync(p))
-            );
+            if (page == null)
+                throw new ArgumentNullException(nameof(page));
 
-            return lazySession.Value;
+            var entry = _sessionMap.GetOrAdd(page, CreateEntry);
+
+            try
+            {
+                return await entry.LazySession.Value.ConfigureAwait(false);
+            }
+            catch
+            {
+                // 创建失败后把坏缓存清掉，避免后续一直拿到 faulted task
+                _sessionMap.TryRemove(new KeyValuePair<IPage, SessionEntry>(page, entry));
+                throw;
+            }
         }
 
-        public bool HasSession(IPage page)
+        public bool ContainsPage(IPage page)
         {
+            if (page == null)
+                return false;
+
             return _sessionMap.ContainsKey(page);
         }
 
-        public void RemoveSession(IPage page)
+        public bool RemoveSession(IPage page)
         {
-            _sessionMap.TryRemove(page, out var _);
+            if (page == null)
+                return false;
+
+            return _sessionMap.TryRemove(page, out _);
         }
 
-        public IReadOnlyDictionary<IPage, Lazy<Task<ICDPSession>>> GetAllSessions()
+        public int Count => _sessionMap.Count;
+
+        public IReadOnlyCollection<IPage> GetTrackedPages()
         {
-            return _sessionMap;
+            return _sessionMap.Keys.ToArray();
+        }
+
+        public async Task<bool> TryWarmupSessionAsync(IPage page)
+        {
+            try
+            {
+                await GetOrCreateSessionAsync(page).ConfigureAwait(false);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public void Clear()
+        {
+            _sessionMap.Clear();
+        }
+
+        private SessionEntry CreateEntry(IPage page)
+        {
+            return new SessionEntry
+            {
+                LazySession = new Lazy<Task<ICDPSession>>(
+                    () => CreateSessionCoreAsync(page),
+                    LazyThreadSafetyMode.ExecutionAndPublication)
+            };
+        }
+
+        private async Task<ICDPSession> CreateSessionCoreAsync(IPage page)
+        {
+            if (page == null)
+                throw new ArgumentNullException(nameof(page));
+
+            // 页面可能已经关了，提前拦一下
+            if (page.IsClosed)
+                throw new InvalidOperationException("Page is already closed.");
+
+            return await _context.NewCDPSessionAsync(page).ConfigureAwait(false);
         }
     }
 }

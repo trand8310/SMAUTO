@@ -1,14 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿
 
 namespace MainClient
 {
     public class AppConsts
     {
-        public const string AppVertion = "2026.3.0.17";
+        public const string AppVertion = "2026.3.0.24";
         /// <summary>
         /// IP区域查询
         /// </summary>

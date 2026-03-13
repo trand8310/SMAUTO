@@ -50,7 +50,7 @@ namespace QTP.Common
 
         public static TimeSpan GetRandomizedInterval(int minutes, int maxRandomSeconds)
         {
-            return TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(Random.Shared.Next(-30, 31));
+            return TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(Random.Shared.Next(-180, 180));
         }
 
 

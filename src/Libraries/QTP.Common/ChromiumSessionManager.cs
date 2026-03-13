@@ -1,8 +1,9 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 
@@ -24,7 +25,10 @@ namespace QTP.Common
     public sealed class ChromiumSessionManager : IAsyncDisposable
     {
         private readonly ConcurrentDictionary<string, ChromiumSession> _sessions = new();
-        private readonly SemaphoreSlim _launchLimiter = new(10); // Windows 并发启动限流
+
+        // 启动并发建议先保守一点，避免页面文件和系统资源被瞬间打爆
+        private readonly SemaphoreSlim _launchLimiter = new(4, 4);
+
         private readonly Channel<ChromiumSession> _cleanupQueue = Channel.CreateUnbounded<ChromiumSession>(
             new UnboundedChannelOptions
             {
@@ -36,10 +40,36 @@ namespace QTP.Common
         private readonly Task _cleanupLoopTask;
         private readonly Task _expireLoopTask;
 
+        private int _disposeStarted;
+
         public ChromiumSessionManager()
         {
             _cleanupLoopTask = CleanupLoopAsync(_cts.Token);
             _expireLoopTask = ExpireScanLoopAsync(_cts.Token);
+        }
+
+        public int Count => _sessions.Count;
+
+        public IReadOnlyCollection<ChromiumSession> GetAllSessions()
+        {
+            return _sessions.Values.ToArray();
+        }
+
+        public bool TryGetSession(string uniqueId, out ChromiumSession? session)
+        {
+            if (_sessions.TryGetValue(uniqueId, out var found))
+            {
+                session = found;
+                return true;
+            }
+
+            session = null;
+            return false;
+        }
+
+        public bool Contains(string uniqueId)
+        {
+            return _sessions.ContainsKey(uniqueId);
         }
 
         /// <summary>
@@ -55,15 +85,33 @@ namespace QTP.Common
             TimeSpan? readyTimeout = null,
             CancellationToken token = default)
         {
+            ThrowIfDisposed();
             token.ThrowIfCancellationRequested();
-            await _launchLimiter.WaitAsync(token);
 
+            if (string.IsNullOrWhiteSpace(uniqueId))
+                throw new ArgumentNullException(nameof(uniqueId));
+            if (string.IsNullOrWhiteSpace(exePath))
+                throw new ArgumentNullException(nameof(exePath));
+            if (string.IsNullOrWhiteSpace(userDataDir))
+                throw new ArgumentNullException(nameof(userDataDir));
+            if (ttl <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(ttl));
+
+            var entered = false;
+            var started = false;
             int port = 0;
             Process? proc = null;
-            var started = false;
 
             try
             {
+                await _launchLimiter.WaitAsync(token).ConfigureAwait(false);
+                entered = true;
+
+                ThrowIfDisposed();
+
+                if (_sessions.ContainsKey(uniqueId))
+                    throw new InvalidOperationException($"Chromium session already exists. uniqueId={uniqueId}");
+
                 port = RemotePortManager.AcquirePort();
 
                 var fullArgs = $"{arguments} --user-data-dir=\"{userDataDir}\" --remote-debugging-port={port}";
@@ -81,8 +129,8 @@ namespace QTP.Common
 
                 started = true;
 
-                var readyTs = readyTimeout ?? TimeSpan.FromSeconds(20);
-                await WaitForDebugPortReadyAsync(proc, port, readyTs, token);
+                var readyTs = readyTimeout ?? TimeSpan.FromSeconds(10);
+                await WaitForDebugPortReadyAsync(proc, port, readyTs, token).ConfigureAwait(false);
 
                 var session = new ChromiumSession
                 {
@@ -95,30 +143,9 @@ namespace QTP.Common
                     CloseStarted = 0
                 };
 
-                // 正常情况下 uniqueId 为 GUID，不应命中旧 session；这里只是防御性兜底
-                if (_sessions.TryGetValue(uniqueId, out var oldSession))
-                {
-                    if (Interlocked.Exchange(ref oldSession.CloseStarted, 1) == 0)
-                    {
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                await CloseInternalAsync(oldSession);
-                            }
-                            catch
-                            {
-                                // fire-and-forget，忽略异常
-                            }
-                            finally
-                            {
-                                _sessions.TryRemove(uniqueId, out _);
-                            }
-                        });
-                    }
-                }
+                if (!_sessions.TryAdd(uniqueId, session))
+                    throw new InvalidOperationException($"Failed to register chromium session. uniqueId={uniqueId}");
 
-                _sessions[uniqueId] = session;
                 return session;
             }
             catch
@@ -130,25 +157,37 @@ namespace QTP.Common
                         if (!proc.HasExited)
                             proc.Kill(entireProcessTree: true);
                     }
-                    catch { }
+                    catch
+                    {
+                    }
 
                     try
                     {
                         using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                        await proc.WaitForExitAsync(waitCts.Token);
+                        await proc.WaitForExitAsync(waitCts.Token).ConfigureAwait(false);
                     }
-                    catch { }
+                    catch
+                    {
+                    }
 
                     try
                     {
                         proc.Dispose();
                     }
-                    catch { }
+                    catch
+                    {
+                    }
                 }
 
                 if (port != 0)
                 {
-                    try { RemotePortManager.Release(port); } catch { }
+                    try
+                    {
+                        RemotePortManager.Release(port);
+                    }
+                    catch
+                    {
+                    }
                 }
 
                 if (started)
@@ -160,16 +199,19 @@ namespace QTP.Common
             }
             finally
             {
-                _launchLimiter.Release();
+                if (entered)
+                    _launchLimiter.Release();
             }
         }
 
         /// <summary>
         /// 关闭指定会话
-        /// 说明：关闭属于清理动作，不依赖外部业务 token。
         /// </summary>
-        public async Task CloseAsync(string uniqueId, CancellationToken token = default)
+        public async Task CloseAsync(string uniqueId)
         {
+            if (string.IsNullOrWhiteSpace(uniqueId))
+                return;
+
             if (!_sessions.TryGetValue(uniqueId, out var session))
                 return;
 
@@ -178,7 +220,7 @@ namespace QTP.Common
 
             try
             {
-                await CloseInternalAsync(session);
+                await CloseInternalAsync(session).ConfigureAwait(false);
             }
             finally
             {
@@ -187,8 +229,26 @@ namespace QTP.Common
         }
 
         /// <summary>
-        /// 关闭 Chromium 进程、释放端口、安排缓存目录清理。
-        /// 不依赖外部业务 token，全部使用内部超时控制。
+        /// 关闭全部会话
+        /// </summary>
+        public async Task CloseAllAsync()
+        {
+            var tasks = _sessions.Keys.Select(CloseAsync).ToArray();
+            if (tasks.Length == 0)
+                return;
+
+            try
+            {
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+            }
+            catch
+            {
+                // 尽力而为
+            }
+        }
+
+        /// <summary>
+        /// 关闭 Chromium 进程、释放端口、安排缓存目录清理
         /// </summary>
         private async Task CloseInternalAsync(ChromiumSession session)
         {
@@ -202,23 +262,20 @@ namespace QTP.Common
                     }
                     catch
                     {
-                        // 进程可能已经退出，忽略
                     }
 
                     try
                     {
                         using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                        await session.Process.WaitForExitAsync(waitCts.Token);
+                        await session.Process.WaitForExitAsync(waitCts.Token).ConfigureAwait(false);
                     }
                     catch
                     {
-                        // 等待退出失败/超时，也继续做 finally 清理
                     }
                 }
             }
             catch
             {
-                // 清理阶段尽力而为，不再向上打断
             }
             finally
             {
@@ -226,22 +283,25 @@ namespace QTP.Common
                 {
                     session.Process.Dispose();
                 }
-                catch { }
+                catch
+                {
+                }
 
                 try
                 {
                     RemotePortManager.Release(session.DebugPort);
                 }
-                catch { }
+                catch
+                {
+                }
 
                 try
                 {
-                    using var cleanupQueueCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    await _cleanupQueue.Writer.WriteAsync(session, cleanupQueueCts.Token);
+                    using var writeCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    await _cleanupQueue.Writer.WriteAsync(session, writeCts.Token).ConfigureAwait(false);
                 }
                 catch
                 {
-                    // 队列不可写/manager停止时，直接降级为后台删目录
                     _ = CleanupUserDirLaterAsync(session.UserDir);
                 }
             }
@@ -258,8 +318,8 @@ namespace QTP.Common
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeoutCts.CancelAfter(timeout);
-            var ct = timeoutCts.Token;
 
+            var ct = timeoutCts.Token;
             Exception? lastError = null;
             var start = DateTime.UtcNow;
 
@@ -278,15 +338,15 @@ namespace QTP.Common
                     var tcpOk = await CanConnectTcpAsync(
                         host: "127.0.0.1",
                         port: port,
-                        timeoutMs: 1000,
-                        token: ct);
+                        timeoutMs: 5000,
+                        token: ct).ConfigureAwait(false);
 
                     if (tcpOk)
                     {
                         var versionOk = await CanQueryDevToolsVersionAsync(
                             port: port,
                             token: ct,
-                            timeoutMs: 1500);
+                            timeoutMs: 5000).ConfigureAwait(false);
 
                         if (versionOk)
                             return;
@@ -306,7 +366,7 @@ namespace QTP.Common
                     lastError = ex;
                 }
 
-                await Task.Delay(200, ct);
+                await Task.Delay(200, ct).ConfigureAwait(false);
             }
         }
 
@@ -317,7 +377,9 @@ namespace QTP.Common
                 if (process.HasExited)
                     return process.ExitCode;
             }
-            catch { }
+            catch
+            {
+            }
 
             return null;
         }
@@ -340,13 +402,13 @@ namespace QTP.Common
                 using var client = new TcpClient();
 
 #if NET8_0_OR_GREATER
-                await client.ConnectAsync(host, port, ct);
+                await client.ConnectAsync(host, port, ct).ConfigureAwait(false);
 #else
-            var connectTask = client.ConnectAsync(host, port);
-            var completed = await Task.WhenAny(connectTask, Task.Delay(timeoutMs, ct));
-            if (completed != connectTask)
-                return false;
-            await connectTask;
+                var connectTask = client.ConnectAsync(host, port);
+                var completed = await Task.WhenAny(connectTask, Task.Delay(timeoutMs, ct)).ConfigureAwait(false);
+                if (completed != connectTask)
+                    return false;
+                await connectTask.ConfigureAwait(false);
 #endif
 
                 return client.Connected;
@@ -364,7 +426,6 @@ namespace QTP.Common
 
         /// <summary>
         /// 测试 DevTools /json/version 是否可访问
-        /// 不依赖 HttpClient，避免额外复杂度
         /// </summary>
         private static async Task<bool> CanQueryDevToolsVersionAsync(
             int port,
@@ -392,13 +453,13 @@ namespace QTP.Common
                 using var response = await httpClient.GetAsync(
                     $"http://127.0.0.1:{port}/json/version",
                     HttpCompletionOption.ResponseHeadersRead,
-                    ct);
+                    ct).ConfigureAwait(false);
 
                 if (response.StatusCode != HttpStatusCode.OK)
                     return false;
 
-                await using var stream = await response.Content.ReadAsStreamAsync(ct);
-                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+                await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
 
                 if (!doc.RootElement.TryGetProperty("webSocketDebuggerUrl", out var wsProp))
                     return false;
@@ -420,22 +481,20 @@ namespace QTP.Common
             }
         }
 
-        private async Task CleanupLoopAsync(CancellationToken token = default)
+        private async Task CleanupLoopAsync(CancellationToken token)
         {
             try
             {
-                await foreach (var session in _cleanupQueue.Reader.ReadAllAsync(token))
+                await foreach (var session in _cleanupQueue.Reader.ReadAllAsync(token).ConfigureAwait(false))
                 {
-                    await TryDeleteDirectoryWithRetryAsync(session.UserDir);
+                    await TryDeleteDirectoryWithRetryAsync(session.UserDir).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
             {
-                // 正常退出
             }
             catch
             {
-                // 后台循环不要炸出
             }
         }
 
@@ -443,15 +502,17 @@ namespace QTP.Common
         {
             try
             {
-                await TryDeleteDirectoryWithRetryAsync(userDir);
+                await TryDeleteDirectoryWithRetryAsync(userDir).ConfigureAwait(false);
             }
-            catch { }
+            catch
+            {
+            }
         }
 
         /// <summary>
         /// 删除缓存目录：不依赖业务 token，尽量清干净
         /// </summary>
-        private async Task TryDeleteDirectoryWithRetryAsync(string userDir)
+        private static async Task TryDeleteDirectoryWithRetryAsync(string userDir)
         {
             if (string.IsNullOrWhiteSpace(userDir))
                 return;
@@ -473,7 +534,7 @@ namespace QTP.Common
                         return;
 
                     if (delay > TimeSpan.Zero)
-                        await Task.Delay(delay);
+                        await Task.Delay(delay).ConfigureAwait(false);
 
                     Directory.Delete(userDir, recursive: true);
                     return;
@@ -491,78 +552,90 @@ namespace QTP.Common
             {
                 using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
 
-                while (await timer.WaitForNextTickAsync(token))
+                while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
                 {
                     var now = DateTime.UtcNow;
+                    List<string>? expiredIds = null;
 
-                    foreach (var session in _sessions.Values)
+                    foreach (var kv in _sessions)
                     {
                         token.ThrowIfCancellationRequested();
 
+                        var session = kv.Value;
                         if (now >= session.ExpireAt)
                         {
-                            _ = Task.Run(async () =>
-                            {
-                                try
-                                {
-                                    await CloseAsync(session.UniqueId, CancellationToken.None);
-                                }
-                                catch
-                                {
-                                    // 后台过期清理，忽略异常
-                                }
-                            });
+                            expiredIds ??= new List<string>();
+                            expiredIds.Add(kv.Key);
+                        }
+                    }
+
+                    if (expiredIds == null || expiredIds.Count == 0)
+                        continue;
+
+                    foreach (var uniqueId in expiredIds)
+                    {
+                        try
+                        {
+                            await CloseAsync(uniqueId).ConfigureAwait(false);
+                        }
+                        catch
+                        {
                         }
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                // 正常退出
             }
             catch
             {
-                // 后台扫描不要影响主流程
             }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (Volatile.Read(ref _disposeStarted) != 0)
+                throw new ObjectDisposedException(nameof(ChromiumSessionManager));
         }
 
         public async ValueTask DisposeAsync()
         {
+            if (Interlocked.Exchange(ref _disposeStarted, 1) == 1)
+                return;
+
             try
             {
                 _cts.Cancel();
             }
-            catch { }
-
-            var closeTasks = new List<Task>();
-
-            foreach (var uniqueId in _sessions.Keys)
+            catch
             {
-                closeTasks.Add(CloseAsync(uniqueId, CancellationToken.None));
             }
 
             try
             {
-                await Task.WhenAll(closeTasks);
+                await CloseAllAsync().ConfigureAwait(false);
             }
             catch
             {
-                // 尽力而为
             }
 
             _cleanupQueue.Writer.TryComplete();
 
             try
             {
-                await _cleanupLoopTask;
+                await _cleanupLoopTask.ConfigureAwait(false);
             }
-            catch { }
+            catch
+            {
+            }
 
             try
             {
-                await _expireLoopTask;
+                await _expireLoopTask.ConfigureAwait(false);
             }
-            catch { }
+            catch
+            {
+            }
 
             _launchLimiter.Dispose();
             _cts.Dispose();

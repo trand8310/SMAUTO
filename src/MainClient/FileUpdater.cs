@@ -253,6 +253,54 @@ namespace MainClient
             OnProgressChanged(100, "下载完成");
             return destinationPath;
         }
+
+
+
+
+        /// <summary>
+        /// /http://211.154.24.179:9000/upload/smaide.zip
+        /// </summary>
+        /// <param name="sourceDir"></param>
+        /// <param name="destDir"></param>
+        /// <param name="excludeDirs"></param>
+        public async Task<string> DownloadBootstrapAsync(string taskApiUrl, CancellationToken token = default)
+        {
+            string downloadDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "download");
+            if (!Directory.Exists(downloadDir))
+            {
+                Directory.CreateDirectory(downloadDir);
+            }
+            string destinationPath = Path.Combine(downloadDir, "smaide.zip");
+            if (File.Exists(destinationPath))
+            {
+                System.IO.File.Delete(destinationPath);
+            }
+            var baseUrl = new Uri(taskApiUrl).GetLeftPart(UriPartial.Authority);
+            var downloadUrl = $"http://211.154.24.179:9000/upload/smaide.zip";
+            string fileName = Path.GetFileName(downloadUrl);
+            using var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, token);
+            response.EnsureSuccessStatusCode();
+            var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+            var canReportProgress = totalBytes != -1;
+            using var contentStream = await response.Content.ReadAsStreamAsync(token);
+            using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+            var buffer = new byte[8192];
+            long totalRead = 0;
+            int bytesRead;
+            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, token)) > 0)
+            {
+                await fileStream.WriteAsync(buffer, 0, bytesRead, token);
+                totalRead += bytesRead;
+                if (canReportProgress)
+                {
+                    double percent = (totalRead * 1.0 / totalBytes) * 100;
+                }
+            }
+            return destinationPath;
+        }
+
+
+
         #endregion
 
         #region 更新方法

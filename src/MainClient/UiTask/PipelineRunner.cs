@@ -30,6 +30,7 @@ namespace MainClient.UiTask
                 SingleWriter = true,
                 SingleReader = false
             });
+
             _consumerCount = consumerCount;
             _producer = producer ?? throw new ArgumentNullException(nameof(producer));
             _consumer = consumer ?? throw new ArgumentNullException(nameof(consumer));
@@ -39,35 +40,64 @@ namespace MainClient.UiTask
         {
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             var runToken = linkedCts.Token;
+
             Started?.Invoke();
 
             long globalItemNumber = 0;
 
             var producerTask = Task.Run(() => _producer(_channel.Writer, runToken), runToken);
 
-            var consumerTasks = Enumerable.Range(0, _consumerCount).Select(consumerId =>
-                Task.Run(async () =>
+            var consumerTasks = Enumerable.Range(0, _consumerCount)
+                .Select(consumerId => Task.Run(async () =>
                 {
-                    await foreach (var item in _channel.Reader.ReadAllAsync(runToken))
+                    try
                     {
-                        runToken.ThrowIfCancellationRequested();
-                        await _consumer(consumerId, item, runToken);
+                        await foreach (var item in _channel.Reader.ReadAllAsync(runToken).ConfigureAwait(false))
+                        {
+                            if (runToken.IsCancellationRequested)
+                                break;
 
-                        var itemNumber = Interlocked.Increment(ref globalItemNumber);
-                        ProgressChanged?.Invoke(itemNumber);
+                            try
+                            {
+                                await _consumer(consumerId, item, runToken).ConfigureAwait(false);
+
+                                var itemNumber = Interlocked.Increment(ref globalItemNumber);
+                                ProgressChanged?.Invoke(itemNumber);
+                            }
+                            catch (OperationCanceledException) when (runToken.IsCancellationRequested)
+                            {
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                Faulted?.Invoke(ex);
+                                // 单条任务失败，不中断整体
+                            }
+                        }
                     }
-                }, runToken)).ToArray();
+                    catch (OperationCanceledException) when (runToken.IsCancellationRequested)
+                    {
+                        // 正常停止
+                    }
+                }, runToken))
+                .ToArray();
 
             try
             {
-                await producerTask;
-                await Task.WhenAll(consumerTasks);
+                await producerTask.ConfigureAwait(false);
+                await Task.WhenAll(consumerTasks).ConfigureAwait(false);
+
+                if (token.IsCancellationRequested)
+                {
+                    Canceled?.Invoke();
+                    return;
+                }
+
                 Completed?.Invoke();
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
                 Canceled?.Invoke();
-                throw;
             }
             catch (Exception ex)
             {

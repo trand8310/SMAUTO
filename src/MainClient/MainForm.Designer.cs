@@ -71,6 +71,7 @@
             label25 = new Label();
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
+            button2 = new Button();
             button7 = new Button();
             button6 = new Button();
             label45 = new Label();
@@ -107,7 +108,6 @@
             checkBox_Incognito = new CheckBox();
             label30 = new Label();
             comboBox_KernelVersion = new ComboBox();
-            button3 = new Button();
             checkBox_UVsTriggerOne = new CheckBox();
             checkBox_PriorityNon1688 = new CheckBox();
             button1 = new Button();
@@ -136,6 +136,7 @@
             label12 = new Label();
             label11 = new Label();
             label10 = new Label();
+            button3 = new Button();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_MainResetTimeout).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Multiple).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchTaskInterval).BeginInit();
@@ -331,10 +332,10 @@
             // 
             buttonClear.Font = new Font("宋体", 9F);
             buttonClear.ForeColor = Color.Red;
-            buttonClear.Location = new Point(672, 92);
+            buttonClear.Location = new Point(672, 101);
             buttonClear.Margin = new Padding(5);
             buttonClear.Name = "buttonClear";
-            buttonClear.Size = new Size(120, 43);
+            buttonClear.Size = new Size(66, 31);
             buttonClear.TabIndex = 22;
             buttonClear.Text = "清除";
             buttonClear.UseVisualStyleBackColor = true;
@@ -564,6 +565,8 @@
             // 
             // tabPage1
             // 
+            tabPage1.Controls.Add(button3);
+            tabPage1.Controls.Add(button2);
             tabPage1.Controls.Add(button7);
             tabPage1.Controls.Add(button6);
             tabPage1.Controls.Add(label45);
@@ -592,7 +595,6 @@
             tabPage1.Controls.Add(label30);
             tabPage1.Controls.Add(label14);
             tabPage1.Controls.Add(comboBox_KernelVersion);
-            tabPage1.Controls.Add(button3);
             tabPage1.Controls.Add(checkBox_UVsTriggerOne);
             tabPage1.Controls.Add(checkBox_PriorityNon1688);
             tabPage1.Controls.Add(button1);
@@ -649,6 +651,19 @@
             tabPage1.TabIndex = 0;
             tabPage1.Text = "信息";
             tabPage1.UseVisualStyleBackColor = true;
+            // 
+            // button2
+            // 
+            button2.Font = new Font("宋体", 9F);
+            button2.ForeColor = Color.Red;
+            button2.Location = new Point(748, 101);
+            button2.Margin = new Padding(5);
+            button2.Name = "button2";
+            button2.Size = new Size(66, 31);
+            button2.TabIndex = 195;
+            button2.Text = "注销";
+            button2.UseVisualStyleBackColor = true;
+            button2.Click += button2_Click;
             // 
             // button7
             // 
@@ -745,7 +760,7 @@
             btnStartStop.Location = new Point(672, 8);
             btnStartStop.Margin = new Padding(5);
             btnStartStop.Name = "btnStartStop";
-            btnStartStop.Size = new Size(120, 73);
+            btnStartStop.Size = new Size(142, 73);
             btnStartStop.TabIndex = 185;
             btnStartStop.Text = "开始";
             btnStartStop.UseVisualStyleBackColor = true;
@@ -1023,17 +1038,6 @@
             comboBox_KernelVersion.Name = "comboBox_KernelVersion";
             comboBox_KernelVersion.Size = new Size(205, 28);
             comboBox_KernelVersion.TabIndex = 151;
-            // 
-            // button3
-            // 
-            button3.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
-            button3.Location = new Point(672, 146);
-            button3.Margin = new Padding(5);
-            button3.Name = "button3";
-            button3.Size = new Size(120, 38);
-            button3.TabIndex = 150;
-            button3.Text = "测试";
-            button3.UseVisualStyleBackColor = true;
             // 
             // checkBox_UVsTriggerOne
             // 
@@ -1319,6 +1323,19 @@
             label10.TabIndex = 86;
             label10.Text = "失败数量:0";
             // 
+            // button3
+            // 
+            button3.Font = new Font("宋体", 9F);
+            button3.ForeColor = Color.Red;
+            button3.Location = new Point(672, 139);
+            button3.Margin = new Padding(5);
+            button3.Name = "button3";
+            button3.Size = new Size(142, 31);
+            button3.TabIndex = 196;
+            button3.Text = "重启系统";
+            button3.UseVisualStyleBackColor = true;
+            button3.Click += button3_Click_1;
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(9F, 20F);
@@ -1429,7 +1446,6 @@
         private ComboBox comboBox_WordName;
         private CheckBox checkBox_PriorityNon1688;
         private CheckBox checkBox_UVsTriggerOne;
-        private Button button3;
         private Label label30;
         private ComboBox comboBox_KernelVersion;
         private CheckBox checkBox_Incognito;
@@ -1466,6 +1482,8 @@
         private CheckBox checkBox_p4psearch;
         private Button button6;
         private Button button7;
+        private Button button2;
+        private Button button3;
     }
 }
 

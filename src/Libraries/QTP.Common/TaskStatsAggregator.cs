@@ -1,16 +1,14 @@
 ﻿using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using QTP.Common;
 using QTP.Common.Infrastructure;
-using SixLabors.ImageSharp.Drawing;
+using Newtonsoft.Json;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
-using System.Threading.Tasks;
-
 
 namespace QTP
 {
+
     #region Models
 
     public enum ProxyIpState
@@ -32,7 +30,8 @@ namespace QTP
         [property: JsonProperty("category")] string Category,
         [property: JsonProperty("word")] string Word
     );
-    public class TaskStats
+
+    public sealed class TaskStats
     {
         public long Request;
         public long Start;
@@ -43,82 +42,175 @@ namespace QTP
         public long Complete;
         public long HomepageTrigger;
 
-        public long _deltaStart;
-        public long _deltaDsp;
-        public long _deltaClickthrough;
+        private long _deltaStart;
+        private long _deltaDsp;
+        private long _deltaClickthrough;
 
         public double ClickRatio => DSP == 0 ? 0 : (double)Clickthrough / DSP;
         public double HomepageTriggerRatio => DSP == 0 ? 0 : (double)HomepageTrigger / DSP;
-        // 👉 给 flush 用：只拿增量
-        public Dictionary<string, long> SnapshotAndResetDelta()
+
+        public void Add(StateType type, int count)
         {
-            var start = Interlocked.Exchange(ref _deltaStart, 0);
-            var dsp = Interlocked.Exchange(ref _deltaDsp, 0);
-            var click = Interlocked.Exchange(ref _deltaClickthrough, 0);
-            var dict = new Dictionary<string, long>();
-            if (start > 0) dict["start"] = start;
-            if (dsp > 0) dict["dsp"] = dsp;
-            if (click > 0) dict["click"] = click;
+            switch (type)
+            {
+                case StateType.Request:
+                    Interlocked.Add(ref Request, count);
+                    break;
+
+                case StateType.Start:
+                    Interlocked.Add(ref Start, count);
+                    Interlocked.Add(ref _deltaStart, count);
+                    break;
+
+                case StateType.DSP:
+                    Interlocked.Add(ref DSP, count);
+                    Interlocked.Add(ref _deltaDsp, count);
+                    break;
+
+                case StateType.Clickthrough:
+                    Interlocked.Add(ref Clickthrough, count);
+                    Interlocked.Add(ref _deltaClickthrough, count);
+                    break;
+
+                case StateType.Success:
+                    Interlocked.Add(ref Success, count);
+                    break;
+
+                case StateType.Failure:
+                    Interlocked.Add(ref Failure, count);
+                    break;
+
+                case StateType.Complete:
+                    Interlocked.Add(ref Complete, count);
+                    break;
+
+                case StateType.HomepageTrigger:
+                    Interlocked.Add(ref HomepageTrigger, count);
+                    break;
+            }
+        }
+
+        public TaskMetricDelta SnapshotDelta()
+        {
+            return new TaskMetricDelta(
+                Start: Interlocked.Read(ref _deltaStart),
+                Dsp: Interlocked.Read(ref _deltaDsp),
+                Click: Interlocked.Read(ref _deltaClickthrough)
+            );
+        }
+
+        public void CommitDelta(TaskMetricDelta delta)
+        {
+            if (delta.Start != 0) Interlocked.Add(ref _deltaStart, -delta.Start);
+            if (delta.Dsp != 0) Interlocked.Add(ref _deltaDsp, -delta.Dsp);
+            if (delta.Click != 0) Interlocked.Add(ref _deltaClickthrough, -delta.Click);
+        }
+
+        public Dictionary<string, long> ToMetricDictionary(TaskMetricDelta delta)
+        {
+            var dict = new Dictionary<string, long>(3);
+            if (delta.Start > 0) dict["start"] = delta.Start;
+            if (delta.Dsp > 0) dict["dsp"] = delta.Dsp;
+            if (delta.Click > 0) dict["click"] = delta.Click;
             return dict;
         }
     }
 
-    public record ProxyIpSnapshot(long Fetched, long Consumed, string[] ConsumedIps);
-    public class ProxyIpStat
+    public readonly record struct TaskMetricDelta(long Start, long Dsp, long Click)
+    {
+        public bool IsEmpty => Start == 0 && Dsp == 0 && Click == 0;
+    }
+
+    public readonly record struct ProxyIpSnapshot(long Fetched, long Consumed, string[] ConsumedIps)
+    {
+        public bool IsEmpty => Fetched == 0 && Consumed == 0 && (ConsumedIps == null || ConsumedIps.Length == 0);
+    }
+
+    public sealed class ProxyIpStat
     {
         private long _fetched;
         private long _consumed;
-        private readonly ConcurrentQueue<string> _consumedIps = new();
+
+        private readonly object _ipsLock = new();
+        private List<string> _pendingConsumedIps = new();
+
         public void AddFetched(long value = 1)
         {
-            Interlocked.Add(ref _fetched, value);
+            if (value > 0)
+                Interlocked.Add(ref _fetched, value);
         }
+
         public void AddConsumed(long value = 1)
         {
-            Interlocked.Add(ref _consumed, value);
+            if (value > 0)
+                Interlocked.Add(ref _consumed, value);
         }
+
         public void AddConsumedIp(string ip)
         {
-            if (!string.IsNullOrEmpty(ip))
-                _consumedIps.Enqueue(ip);
-        }
-        public ProxyIpSnapshot Snapshot()
-        {
-            var fetched = Interlocked.Read(ref _fetched);
-            var consumed = Interlocked.Read(ref _consumed);
-            var ips = _consumedIps.ToArray();
-            return new ProxyIpSnapshot(fetched, consumed, ips);
-        }
-        public void Commit(ProxyIpSnapshot snapshot)
-        {
-            if (snapshot == null) return;
-            Interlocked.Add(ref _fetched, -snapshot.Fetched);
-            Interlocked.Add(ref _consumed, -snapshot.Consumed);
-            int needRemove = snapshot.ConsumedIps.Length;
-            while (needRemove-- > 0 && _consumedIps.TryDequeue(out _))
-            {
+            if (string.IsNullOrWhiteSpace(ip))
+                return;
 
+            lock (_ipsLock)
+            {
+                _pendingConsumedIps.Add(ip);
             }
         }
+
+        public ProxyIpSnapshot Snapshot()
+        {
+            string[] ips;
+            lock (_ipsLock)
+            {
+                ips = _pendingConsumedIps.ToArray();
+            }
+
+            return new ProxyIpSnapshot(
+                Fetched: Interlocked.Read(ref _fetched),
+                Consumed: Interlocked.Read(ref _consumed),
+                ConsumedIps: ips
+            );
+        }
+
+        public void Commit(ProxyIpSnapshot snapshot)
+        {
+            if (snapshot.IsEmpty)
+                return;
+
+            if (snapshot.Fetched > 0)
+                Interlocked.Add(ref _fetched, -snapshot.Fetched);
+
+            if (snapshot.Consumed > 0)
+                Interlocked.Add(ref _consumed, -snapshot.Consumed);
+
+            if (snapshot.ConsumedIps.Length > 0)
+            {
+                lock (_ipsLock)
+                {
+                    int removeCount = Math.Min(snapshot.ConsumedIps.Length, _pendingConsumedIps.Count);
+                    if (removeCount > 0)
+                        _pendingConsumedIps.RemoveRange(0, removeCount);
+                }
+            }
+        }
+
         public bool IsEmpty()
         {
-            return Interlocked.Read(ref _fetched) == 0
-                && Interlocked.Read(ref _consumed) == 0
-                && _consumedIps.IsEmpty;
+            lock (_ipsLock)
+            {
+                return Interlocked.Read(ref _fetched) == 0
+                    && Interlocked.Read(ref _consumed) == 0
+                    && _pendingConsumedIps.Count == 0;
+            }
         }
     }
 
     #endregion
 
-
-    /// <summary>
-    /// 本地统计
-    /// </summary>
-    public class LocalHourStats
+    public sealed class LocalHourStats
     {
         public string HourKey { get; }
 
-        // taskId -> (name -> count)
         public ConcurrentDictionary<int, ConcurrentDictionary<string, long>> Tasks { get; }
 
         public LocalHourStats(string hourKey)
@@ -129,111 +221,228 @@ namespace QTP
         }
     }
 
-
-
-
-    public class TaskStatsAggregator : IDisposable
+    public sealed class TaskStatsAggregator : IAsyncDisposable, IDisposable
     {
         #region Fields
 
-        private readonly Channel<TaskEvent> _queue = Channel.CreateUnbounded<TaskEvent>();
-        private readonly Channel<ProxyIpStatEvent> _proxyIpQueue = Channel.CreateUnbounded<ProxyIpStatEvent>();
+        private readonly Channel<TaskEvent> _queue;
+        private readonly Channel<ProxyIpStatEvent> _proxyIpQueue;
+        private readonly Channel<AdWord> _adWordQueue;
 
         private readonly ConcurrentDictionary<int, TaskStats> _tasks = new();
-        private readonly ConcurrentDictionary<int, bool> _dirtyTasks = new();
-
         private readonly ConcurrentDictionary<int, ProxyIpStat> _taskProxyIpStats = new();
-        private readonly ConcurrentDictionary<int, bool> _dirtyProxyIpTasks = new();
 
-        private readonly Channel<AdWord> _adWordQueue = Channel.CreateUnbounded<AdWord>();
-        private readonly ConcurrentQueue<AdWord> _adWordBuffer = new();
-        private bool _dirtyAdWords = false;
+        private readonly object _adWordLock = new();
+        private List<AdWord> _adWordBuffer = new();
 
-        private readonly TaskStats _totalStats = new(); // 全局总统计
-        private bool _dirtyTotalStats = false; // 总统计脏标记
+        private readonly TaskStats _totalStats = new();
 
-        // 分布式点击控制
-        private readonly ConcurrentDictionary<int, TaskStats> _taskGlobalBaseline = new(); // 初始化全局量
-        private readonly ConcurrentDictionary<int, double> _taskClickRates = new(); // 每任务点击率
-        private readonly ConcurrentDictionary<int, double> _taskTriggerHomeRates = new(); // 触发首页输入广告词
-
-
-
+        private readonly ConcurrentDictionary<int, TaskStats> _taskGlobalBaseline = new();
+        private readonly ConcurrentDictionary<int, double> _taskClickRates = new();
+        private readonly ConcurrentDictionary<int, SemaphoreSlim> _baselineInitLocks = new();
 
         private readonly AdeHelper _adeHelper;
         private readonly AppSettings _appSettings;
         private readonly ILogger _logger;
-        private readonly CancellationTokenSource _cts = new();
 
-        private static int _maxConcurrentRequests = 5;
-        private readonly int _retryCount = 3;
-        private bool _disposed;
+        private CancellationTokenSource? _runCts;
+        private readonly SemaphoreSlim _flushSemaphore;
+        private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
+
+        private readonly int _retryCount;
+        private readonly int _maxConcurrentRequests;
+
+        private Task? _processQueueTask;
+        private Task? _processProxyIpQueueTask;
+        private Task? _processAdWordQueueTask;
+        private Task? _flushLoopTask;
+
+        // 0 = new, 1 = running, 2 = stopping, 3 = stopped, 4 = disposed
+        private int _state;
 
         #endregion
 
-        public TaskStatsAggregator(AdeHelper adeHelper, AppSettings appSettings, ILogger<TaskStatsAggregator> logger)
+        public TaskStatsAggregator(
+            AdeHelper adeHelper,
+            AppSettings appSettings,
+            ILogger<TaskStatsAggregator> logger,
+            int maxConcurrentRequests = 5,
+            int retryCount = 3)
         {
             _adeHelper = adeHelper;
             _appSettings = appSettings;
             _logger = logger;
 
-            _ = Task.Run(() => ProcessQueueAsync(_cts.Token));
-            _ = Task.Run(() => ProcessProxyIpQueueAsync(_cts.Token));
-            _ = Task.Run(() => ProcessAdWordQueueAsync(_cts.Token));
-            _ = Task.Run(() => FlushLoopAsync(_cts.Token));
+            _retryCount = retryCount < 0 ? 0 : retryCount;
+            _maxConcurrentRequests = maxConcurrentRequests <= 0 ? 5 : maxConcurrentRequests;
+            _flushSemaphore = new SemaphoreSlim(_maxConcurrentRequests);
+
+            var taskEventOptions = new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            };
+
+            var proxyEventOptions = new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            };
+
+            var adWordOptions = new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            };
+
+            _queue = Channel.CreateUnbounded<TaskEvent>(taskEventOptions);
+            _proxyIpQueue = Channel.CreateUnbounded<ProxyIpStatEvent>(proxyEventOptions);
+            _adWordQueue = Channel.CreateUnbounded<AdWord>(adWordOptions);
+
+            _state = 0;
         }
+
+        #region Lifecycle
+
+        public bool IsStarted => Volatile.Read(ref _state) == 1;
+        public bool IsStopping => Volatile.Read(ref _state) == 2;
+        public bool IsStopped => Volatile.Read(ref _state) == 3;
+        public bool IsDisposed => Volatile.Read(ref _state) == 4;
+
+        public async Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var state = Volatile.Read(ref _state);
+
+                if (state == 1)
+                    return;
+
+                if (state == 2)
+                    throw new InvalidOperationException("TaskStatsAggregator is stopping and cannot be started.");
+
+                if (state == 4)
+                    throw new ObjectDisposedException(nameof(TaskStatsAggregator));
+
+                _runCts = new CancellationTokenSource();
+
+                _processQueueTask = Task.Run(() => ProcessQueueAsync(_runCts.Token));
+                _processProxyIpQueueTask = Task.Run(() => ProcessProxyIpQueueAsync(_runCts.Token));
+                _processAdWordQueueTask = Task.Run(() => ProcessAdWordQueueAsync(_runCts.Token));
+                _flushLoopTask = Task.Run(() => FlushLoopAsync(_runCts.Token));
+
+                Volatile.Write(ref _state, 1);
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var state = Volatile.Read(ref _state);
+
+                if (state == 0 || state == 3)
+                {
+                    Volatile.Write(ref _state, 3);
+                    return;
+                }
+
+                if (state == 4)
+                    return;
+
+                if (state == 2)
+                    return;
+
+                Volatile.Write(ref _state, 2);
+
+                _queue.Writer.TryComplete();
+                _proxyIpQueue.Writer.TryComplete();
+                _adWordQueue.Writer.TryComplete();
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
+
+            // 先等消费线程尽量把 channel 内数据吃完
+            await WaitConsumersDrainAsync().ConfigureAwait(false);
+
+            // 再做一次停机前强制 flush
+            await FlushOnceAsync(cancellationToken).ConfigureAwait(false);
+
+            // 最后停掉周期 flush
+            var cts = _runCts;
+            if (cts != null)
+            {
+                try
+                {
+                    cts.Cancel();
+                }
+                catch
+                {
+                }
+            }
+
+            await WaitBackgroundTasksAsync().ConfigureAwait(false);
+
+            cts?.Dispose();
+            _runCts = null;
+
+            Volatile.Write(ref _state, 3);
+        }
+
+        #endregion
 
         #region Public API
 
-        public void Enqueue(TaskEvent ev) => _queue.Writer.TryWrite(ev);
+        public void Enqueue(TaskEvent ev)
+        {
+            if (!IsStarted)
+                return;
+
+            _queue.Writer.TryWrite(ev);
+        }
 
         public void EnqueueProxyIpFetched(int taskId, int count = 1)
         {
+            if (!IsStarted)
+                return;
+
             _proxyIpQueue.Writer.TryWrite(new ProxyIpStatEvent(taskId, ProxyIpState.Fetched, null, count));
         }
 
         public void EnqueueProxyIpConsumed(int taskId, string ip, int count = 1)
         {
+            if (!IsStarted)
+                return;
+
             _proxyIpQueue.Writer.TryWrite(new ProxyIpStatEvent(taskId, ProxyIpState.Consumed, ip, count));
         }
+
         public void EnqueueAdWord(string category, string word)
         {
+            if (!IsStarted)
+                return;
+
+            if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(word))
+                return;
+
             _adWordQueue.Writer.TryWrite(new AdWord(category, word));
         }
-        public TaskStats? GetTaskStats(int taskId) => _tasks.TryGetValue(taskId, out var stats) ? stats : null;
 
-        //public double GetClickRatio(int taskId) => _tasks.TryGetValue(taskId, out var stats) ? stats.ClickRatio : 0;
-        public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)
-        {
-            // 初始化全局基线
-            if (!_taskGlobalBaseline.ContainsKey(taskId))
-            {
-                var resp = await _adeHelper.GetTaskStatusAsync(taskId);
-                var globalStats = new TaskStats();
-                if (resp != null)
-                {
-                    globalStats.Start = resp.SelectToken("data.start")?.Value<int>() ?? 0;
-                    globalStats.DSP = resp.SelectToken("data.dsp")?.Value<int>() ?? 0;
-                    globalStats.Clickthrough = resp.SelectToken("data.click")?.Value<int>() ?? 0;
-                }
-                _taskGlobalBaseline[taskId] = globalStats;
+        public TaskStats? GetTaskStats(int taskId)
+            => _tasks.TryGetValue(taskId, out var stats) ? stats : null;
 
-                if (!_taskClickRates.ContainsKey(taskId))
-                    _taskClickRates[taskId] = taskCtr; // 默认点击率，可改成从后台取
-            }
-
-            var baseline = _taskGlobalBaseline[taskId];
-            var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
-            double rate = _taskClickRates[taskId];
-
-            int totalDSP = (int)(baseline.DSP + stats.DSP);
-            if (totalDSP == 0)
-                return 0;
-            int totalClick = (int)(baseline.Clickthrough + stats.Clickthrough);
-            return totalClick / (double)totalDSP;
-
-        }
-
+        public TaskStats GetTotalStats() => _totalStats;
 
         public bool CanHomepageTrigger(int taskId)
         {
@@ -242,53 +451,43 @@ namespace QTP
 
             var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
             return stats.HomepageTriggerRatio < _appSettings.HompageTrigger;
-
         }
 
-
-        /// <summary>
-        /// 判断任务是否允许点击
-        /// </summary>
-        /// <param name="taskId"></param>
-        /// <param name="taskCtr"></param>
-        /// <returns></returns>
-        public async Task<bool> CanClickthroughAsync(int taskId, double taskCtr = 100)
+        public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)
         {
-            // 初始化全局基线
-            if (!_taskGlobalBaseline.ContainsKey(taskId))
-            {
-                var resp = await _adeHelper.GetTaskStatusAsync(taskId);
-                var globalStats = new TaskStats();
-                if (resp != null)
-                {
-                    globalStats.Start = resp.SelectToken("data.start")?.Value<int>() ?? 0;
-                    globalStats.DSP = resp.SelectToken("data.dsp")?.Value<int>() ?? 0;
-                    globalStats.Clickthrough = resp.SelectToken("data.click")?.Value<int>() ?? 0;
-                }
-                _taskGlobalBaseline[taskId] = globalStats;
-
-                if (!_taskClickRates.ContainsKey(taskId))
-                    _taskClickRates[taskId] = taskCtr; // 默认点击率，可改成从后台取
-            }
+            await EnsureTaskBaselineAsync(taskId, taskCtr).ConfigureAwait(false);
 
             var baseline = _taskGlobalBaseline[taskId];
             var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
-            double rate = _taskClickRates[taskId];
-            if (rate == 0)
+
+            long totalDsp = baseline.DSP + stats.DSP;
+            if (totalDsp <= 0)
+                return 0;
+
+            long totalClick = baseline.Clickthrough + stats.Clickthrough;
+            return totalClick / (double)totalDsp;
+        }
+
+        public async Task<bool> CanClickthroughAsync(int taskId, double taskCtr = 100)
+        {
+            await EnsureTaskBaselineAsync(taskId, taskCtr).ConfigureAwait(false);
+
+            var baseline = _taskGlobalBaseline[taskId];
+            var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
+            var rate = _taskClickRates.TryGetValue(taskId, out var r) ? r : taskCtr;
+
+            if (rate <= 0)
                 return false;
 
-            int totalDSP = (int)(baseline.DSP + stats.DSP);
-            if (totalDSP == 0)
+            long totalDsp = baseline.DSP + stats.DSP;
+            if (totalDsp <= 0)
                 return true;
-            int totalClick = (int)(baseline.Clickthrough + stats.Clickthrough);
-            if (totalClick == 0)
-                return true;
-            int targetClick = (int)(totalDSP * rate * 0.01);
+
+            long totalClick = baseline.Clickthrough + stats.Clickthrough;
+            long targetClick = (long)Math.Floor(totalDsp * rate * 0.01);
 
             return totalClick < targetClick;
         }
-        public TaskStats GetTotalStats() => _totalStats;
-
 
         #endregion
 
@@ -296,297 +495,413 @@ namespace QTP
 
         private async Task ProcessQueueAsync(CancellationToken token)
         {
-            var buffer = new List<TaskEvent>();
+            var buffer = new List<TaskEvent>(256);
 
             try
             {
-                while (!token.IsCancellationRequested)
+                while (await _queue.Reader.WaitToReadAsync(token).ConfigureAwait(false))
                 {
-                    var ev = await _queue.Reader.ReadAsync(token);
-                    buffer.Add(ev);
-                    while (_queue.Reader.TryRead(out var e)) buffer.Add(e);
-
-                    foreach (var e in buffer)
+                    while (_queue.Reader.TryRead(out var ev))
                     {
-                        var stats = _tasks.GetOrAdd(e.TaskId, _ => new TaskStats());
+                        buffer.Add(ev);
 
-                        switch (e.Type)
+                        if (buffer.Count >= 256)
+                            break;
+                    }
+
+                    foreach (var item in buffer)
+                    {
+                        var stats = _tasks.GetOrAdd(item.TaskId, _ => new TaskStats());
+
+                        if (item.Type == StateType.X5Sec)
                         {
-                            case StateType.Request:
-                                Interlocked.Add(ref stats.Request, e.Count);
-                                Interlocked.Add(ref _totalStats.Request, e.Count);
-                                _dirtyTotalStats = true;
-                                break;
-                            case StateType.Start:
-
-                                Interlocked.Add(ref stats.Start, e.Count);
-                                Interlocked.Add(ref stats._deltaStart, e.Count);
-                                Interlocked.Add(ref _totalStats.Start, e.Count);
-                                Interlocked.Add(ref _totalStats._deltaStart, e.Count);
-                                _dirtyTotalStats = true;
-                                break;
-                            case StateType.DSP:
-
-                                Interlocked.Add(ref stats.DSP, e.Count);
-                                Interlocked.Add(ref stats._deltaDsp, e.Count);
-                                Interlocked.Add(ref _totalStats.DSP, e.Count);
-                                Interlocked.Add(ref _totalStats._deltaDsp, e.Count);
-                                _dirtyTotalStats = true;
-                                break;
-                            case StateType.Clickthrough:
-                                Interlocked.Add(ref stats.Clickthrough, e.Count);
-                                Interlocked.Add(ref stats._deltaClickthrough, e.Count);
-                                Interlocked.Add(ref _totalStats.Clickthrough, e.Count);
-                                Interlocked.Add(ref _totalStats._deltaClickthrough, e.Count);
-                                _dirtyTotalStats = true;
-                                break;
-                            case StateType.Success:
-                                Interlocked.Add(ref stats.Success, e.Count);
-                                Interlocked.Add(ref _totalStats.Success, e.Count);
-                                _dirtyTotalStats = true;
-                                break;
-                            case StateType.Failure:
-                                Interlocked.Add(ref stats.Failure, e.Count);
-                                Interlocked.Add(ref _totalStats.Failure, e.Count);
-                                _dirtyTotalStats = true;
-                                break;
-                            case StateType.Complete:
-                                Interlocked.Add(ref stats.Complete, e.Count);
-                                Interlocked.Add(ref _totalStats.Complete, e.Count);
-                                _dirtyTotalStats = true;
-                                break;
-                            case StateType.X5Sec:
-                                // _logger.LogWarning($"x5sec ip={e.Data}");
-                                _logger.LogX5Sec($"x5sec ip={e.Data}");
-                                break;
-                            case StateType.HomepageTrigger:
-                                Interlocked.Add(ref stats.HomepageTrigger, e.Count);
-                                Interlocked.Add(ref _totalStats.HomepageTrigger, e.Count);
-                                break;
+                            _logger.LogX5Sec($"x5sec ip={item.Data}");
+                            continue;
                         }
 
-                        _dirtyTasks[e.TaskId] = true;
+                        stats.Add(item.Type, item.Count);
+                        _totalStats.Add(item.Type, item.Count);
                     }
 
                     buffer.Clear();
                 }
             }
             catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessQueueAsync crashed.");
+            }
         }
 
         private async Task ProcessProxyIpQueueAsync(CancellationToken token)
         {
             try
             {
-                while (!token.IsCancellationRequested)
+                while (await _proxyIpQueue.Reader.WaitToReadAsync(token).ConfigureAwait(false))
                 {
-                    var ev = await _proxyIpQueue.Reader.ReadAsync(token);
-                    var stat = _taskProxyIpStats.GetOrAdd(ev.TaskId, _ => new ProxyIpStat());
-                    if (ev.State == ProxyIpState.Fetched)
-                        stat.AddFetched(ev.Count);
-                    else
+                    while (_proxyIpQueue.Reader.TryRead(out var ev))
                     {
-                        stat.AddConsumed(ev.Count);
-                        if (!string.IsNullOrEmpty(ev.Ip))
-                            stat.AddConsumedIp(ev.Ip);
+                        var stat = _taskProxyIpStats.GetOrAdd(ev.TaskId, _ => new ProxyIpStat());
+
+                        if (ev.State == ProxyIpState.Fetched)
+                        {
+                            stat.AddFetched(ev.Count);
+                        }
+                        else
+                        {
+                            stat.AddConsumed(ev.Count);
+                            if (!string.IsNullOrWhiteSpace(ev.Ip))
+                                stat.AddConsumedIp(ev.Ip!);
+                        }
                     }
-                    _dirtyProxyIpTasks[ev.TaskId] = true;
                 }
             }
             catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessProxyIpQueueAsync crashed.");
+            }
         }
 
         private async Task ProcessAdWordQueueAsync(CancellationToken token)
         {
             try
             {
-                while (!token.IsCancellationRequested)
+                while (await _adWordQueue.Reader.WaitToReadAsync(token).ConfigureAwait(false))
                 {
-                    var adWord = await _adWordQueue.Reader.ReadAsync(token);
-                    _adWordBuffer.Enqueue(adWord);
-                    _dirtyAdWords = true;
+                    while (_adWordQueue.Reader.TryRead(out var adWord))
+                    {
+                        lock (_adWordLock)
+                        {
+                            _adWordBuffer.Add(adWord);
+                        }
+                    }
                 }
             }
             catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessAdWordQueueAsync crashed.");
+            }
         }
+
         #endregion
 
-        #region Flush (每秒统一上传)
-
-        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(_maxConcurrentRequests);
+        #region Flush
 
         private async Task FlushLoopAsync(CancellationToken token)
         {
-            var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
 
             try
             {
-                while (await timer.WaitForNextTickAsync(token))
+                while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
                 {
-                    var flushTasks = new List<Task>();
-
-                    // ===== Task Stats Flush =====
-                    var dirtySnapshot = _dirtyTasks.Keys.ToArray();
-                    foreach (var taskId in dirtySnapshot)
-                    {
-                        if (_tasks.TryGetValue(taskId, out var stats))
-                        {
-                            var metrics = stats.SnapshotAndResetDelta();
-                            if (metrics.Count == 0)
-                            {
-                                _dirtyTasks.TryRemove(taskId, out _);
-                                continue;
-                            }
-
-                            flushTasks.Add(Task.Run(async () =>
-                            {
-                                await _semaphore.WaitAsync(token);
-                                try
-                                {
-                                    await RetryAsync(() => _adeHelper.UpdateTaskStatusAsync(taskId, metrics, token), _retryCount, token);
-                                    _dirtyTasks.TryRemove(taskId, out _); // ✅ 成功后清理
-                                }
-                                finally
-                                {
-                                    _semaphore.Release();
-                                }
-                            }, token));
-                        }
-                    }
-
-                    // ===== Proxy IP Flush =====
-                    var dirtyProxyIpSnapshot = _dirtyProxyIpTasks.Keys.ToArray();
-                    foreach (var taskId in dirtyProxyIpSnapshot)
-                    {
-                        if (_taskProxyIpStats.TryGetValue(taskId, out var stat))
-                        {
-                            var snapshot = stat.Snapshot();
-                            if (snapshot.Fetched == 0 && snapshot.Consumed == 0 && snapshot.ConsumedIps.Length == 0)
-                            {
-                                _dirtyProxyIpTasks.TryRemove(taskId, out _);
-                                return;
-                            }
-
-                            var metrics = new Dictionary<string, long>();
-                            if (snapshot.Fetched > 0) metrics["fetched"] = snapshot.Fetched;
-                            if (snapshot.Consumed > 0) metrics["consumed"] = snapshot.Consumed;
-                            var consumedIps = snapshot.ConsumedIps.ToList();
-
-                            flushTasks.Add(Task.Run(async () =>
-                            {
-                                await _semaphore.WaitAsync(token);
-                                try
-                                {
-                                    await RetryAsync(() =>
-                                        _adeHelper.UpdateProxyIpStatAsync(
-                                            taskId,
-                                            metrics,
-                                            consumedIps,
-                                            token),
-                                        _retryCount,
-                                        token);
-                                    stat.Commit(snapshot);
-                                    _dirtyProxyIpTasks.TryRemove(taskId, out _);
-                                }
-                                finally
-                                {
-                                    _semaphore.Release();
-                                }
-                            }, token));
-                        }
-                    }
-
-                    // ===== Total Stats Flush =====
-                    if (_dirtyTotalStats)
-                    {
-                        var metrics = _totalStats.SnapshotAndResetDelta();
-                        if (metrics.Count > 0)
-                        {
-                            flushTasks.Add(Task.Run(async () =>
-                            {
-                                await _semaphore.WaitAsync(token);
-                                try
-                                {
-                                    await RetryAsync(() => _adeHelper.UpdateHostStatusAsync(metrics, token), _retryCount, token);
-                                    _dirtyTotalStats = false; // ✅ 成功后才置 false
-                                }
-                                finally
-                                {
-                                    _semaphore.Release();
-                                }
-                            }, token));
-                        }
-                        else
-                        {
-                            _dirtyTotalStats = false;
-                        }
-                    }
-
-                    // ===== AdWord Flush =====
-                    if (_dirtyAdWords)
-                    {
-                        var toUpload = new List<AdWord>();
-                        while (_adWordBuffer.TryDequeue(out var adWord))
-                            toUpload.Add(adWord);
-
-                        if (toUpload.Count > 0)
-                        {
-                            flushTasks.Add(Task.Run(async () =>
-                            {
-                                await _semaphore.WaitAsync(token);
-                                try
-                                {
-                                    await RetryAsync(() => _adeHelper.UpdateAdWordsAsync(toUpload, token), _retryCount, token);
-                                    _dirtyAdWords = false; // ✅ 成功后才置 false
-                                }
-                                finally
-                                {
-                                    _semaphore.Release();
-                                }
-                            }, token));
-                        }
-                        else
-                        {
-                            _dirtyAdWords = false;
-                        }
-                    }
-
-                    // ===== 等待所有 flush 完成 =====
-                    if (flushTasks.Count > 0)
-                        await Task.WhenAll(flushTasks);
+                    await FlushOnceAsync(token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FlushLoopAsync crashed.");
+            }
+        }
+
+        /// <summary>
+        /// 主动执行一次 flush。
+        /// 停机前会调用这个方法，把当前内存里的统计尽量再推一次。
+        /// </summary>
+        public async Task FlushOnceAsync(CancellationToken token = default)
+        {
+            var flushTasks = new List<Task>(64);
+
+            foreach (var pair in _tasks)
+            {
+                int taskId = pair.Key;
+                TaskStats stats = pair.Value;
+
+                var delta = stats.SnapshotDelta();
+                if (delta.IsEmpty)
+                    continue;
+
+                var metrics = stats.ToMetricDictionary(delta);
+                if (metrics.Count == 0)
+                    continue;
+
+                flushTasks.Add(FlushTaskStatsAsync(taskId, stats, delta, metrics, token));
+            }
+
+            foreach (var pair in _taskProxyIpStats)
+            {
+                int taskId = pair.Key;
+                ProxyIpStat stat = pair.Value;
+
+                var snapshot = stat.Snapshot();
+                if (snapshot.IsEmpty)
+                    continue;
+
+                var metrics = new Dictionary<string, long>(2);
+                if (snapshot.Fetched > 0) metrics["fetched"] = snapshot.Fetched;
+                if (snapshot.Consumed > 0) metrics["consumed"] = snapshot.Consumed;
+
+                flushTasks.Add(FlushProxyIpAsync(taskId, stat, snapshot, metrics, token));
+            }
+
+            {
+                var delta = _totalStats.SnapshotDelta();
+                if (!delta.IsEmpty)
+                {
+                    var metrics = _totalStats.ToMetricDictionary(delta);
+                    if (metrics.Count > 0)
+                        flushTasks.Add(FlushTotalStatsAsync(delta, metrics, token));
+                }
+            }
+
+            {
+                List<AdWord>? snapshot = null;
+                lock (_adWordLock)
+                {
+                    if (_adWordBuffer.Count > 0)
+                        snapshot = new List<AdWord>(_adWordBuffer);
+                }
+
+                if (snapshot != null && snapshot.Count > 0)
+                {
+                    flushTasks.Add(FlushAdWordsAsync(snapshot, token));
+                }
+            }
+
+            if (flushTasks.Count > 0)
+                await Task.WhenAll(flushTasks).ConfigureAwait(false);
+        }
+
+        private async Task FlushTaskStatsAsync(
+            int taskId,
+            TaskStats stats,
+            TaskMetricDelta delta,
+            Dictionary<string, long> metrics,
+            CancellationToken token)
+        {
+            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await RetryAsync(
+                    () => _adeHelper.UpdateTaskStatusAsync(taskId, metrics, token),
+                    _retryCount,
+                    token).ConfigureAwait(false);
+
+                stats.CommitDelta(delta);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FlushTaskStatsAsync failed. taskId={TaskId}", taskId);
+            }
             finally
             {
-                timer.Dispose();
+                _flushSemaphore.Release();
+            }
+        }
+
+        private async Task FlushProxyIpAsync(
+            int taskId,
+            ProxyIpStat stat,
+            ProxyIpSnapshot snapshot,
+            Dictionary<string, long> metrics,
+            CancellationToken token)
+        {
+            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await RetryAsync(
+                    () => _adeHelper.UpdateProxyIpStatAsync(
+                        taskId,
+                        metrics,
+                        snapshot.ConsumedIps.ToList(),
+                        token),
+                    _retryCount,
+                    token).ConfigureAwait(false);
+
+                stat.Commit(snapshot);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FlushProxyIpAsync failed. taskId={TaskId}", taskId);
+            }
+            finally
+            {
+                _flushSemaphore.Release();
+            }
+        }
+
+        private async Task FlushTotalStatsAsync(
+            TaskMetricDelta delta,
+            Dictionary<string, long> metrics,
+            CancellationToken token)
+        {
+            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await RetryAsync(
+                    () => _adeHelper.UpdateHostStatusAsync(metrics, token),
+                    _retryCount,
+                    token).ConfigureAwait(false);
+
+                _totalStats.CommitDelta(delta);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FlushTotalStatsAsync failed.");
+            }
+            finally
+            {
+                _flushSemaphore.Release();
+            }
+        }
+
+        private async Task FlushAdWordsAsync(List<AdWord> snapshot, CancellationToken token)
+        {
+            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await RetryAsync(
+                    () => _adeHelper.UpdateAdWordsAsync(snapshot, token),
+                    _retryCount,
+                    token).ConfigureAwait(false);
+
+                lock (_adWordLock)
+                {
+                    int removeCount = Math.Min(snapshot.Count, _adWordBuffer.Count);
+                    if (removeCount > 0)
+                        _adWordBuffer.RemoveRange(0, removeCount);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FlushAdWordsAsync failed.");
+            }
+            finally
+            {
+                _flushSemaphore.Release();
             }
         }
 
         #endregion
 
+        #region Retry / Stop Helpers
+
         private async Task RetryAsync(Func<Task> func, int retryCount, CancellationToken token)
         {
-            int attempt = 0;
-            while (true)
+            Exception? last = null;
+
+            for (int attempt = 0; attempt <= retryCount; attempt++)
+            {
+                token.ThrowIfCancellationRequested();
+
+                try
+                {
+                    await func().ConfigureAwait(false);
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+
+                    if (attempt >= retryCount)
+                        break;
+
+                    await Task.Delay(500, token).ConfigureAwait(false);
+                }
+            }
+
+            throw last ?? new InvalidOperationException("RetryAsync failed with unknown error.");
+        }
+
+        private async Task WaitConsumersDrainAsync()
+        {
+            var tasks = new List<Task>(3);
+
+            if (_processQueueTask != null) tasks.Add(_processQueueTask);
+            if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
+            if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
+
+            if (tasks.Count > 0)
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+
+        private async Task WaitBackgroundTasksAsync()
+        {
+            var tasks = new List<Task>(4);
+
+            if (_processQueueTask != null) tasks.Add(_processQueueTask);
+            if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
+            if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
+            if (_flushLoopTask != null) tasks.Add(_flushLoopTask);
+
+            if (tasks.Count == 0)
+                return;
+
+            foreach (var task in tasks)
             {
                 try
                 {
-                    await func();
-                    return;
+                    await task.ConfigureAwait(false);
                 }
-                catch when (attempt++ < retryCount)
-                {
-                    await Task.Delay(500, token);
-                }
+                catch (OperationCanceledException) { }
+                catch (ObjectDisposedException) { }
             }
         }
 
+        #endregion
 
+        #region Baseline Init
+
+        private async Task EnsureTaskBaselineAsync(int taskId, double taskCtr)
+        {
+            if (_taskGlobalBaseline.ContainsKey(taskId))
+            {
+                _taskClickRates.TryAdd(taskId, taskCtr);
+                return;
+            }
+
+            var gate = _baselineInitLocks.GetOrAdd(taskId, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync().ConfigureAwait(false);
+
+            try
+            {
+                if (_taskGlobalBaseline.ContainsKey(taskId))
+                {
+                    _taskClickRates.TryAdd(taskId, taskCtr);
+                    return;
+                }
+
+                var resp = await _adeHelper.GetTaskStatusAsync(taskId).ConfigureAwait(false);
+
+                var globalStats = new TaskStats();
+                if (resp != null)
+                {
+                    globalStats.Start = resp.SelectToken("data.start")?.Value<long>() ?? 0;
+                    globalStats.DSP = resp.SelectToken("data.dsp")?.Value<long>() ?? 0;
+                    globalStats.Clickthrough = resp.SelectToken("data.click")?.Value<long>() ?? 0;
+                }
+
+                _taskGlobalBaseline[taskId] = globalStats;
+                _taskClickRates.TryAdd(taskId, taskCtr);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        #endregion
 
         #region 时间缓存（UTC + 北京时间）
 
-        private static string _cachedHourKey;
+        private static string? _cachedHourKey;
         private static long _cachedHourTicks;
 
         private static readonly long HourTicks = TimeSpan.TicksPerHour;
@@ -597,14 +912,17 @@ namespace QTP
             var utcNow = DateTime.UtcNow;
             var currentHourTicks = utcNow.Ticks / HourTicks * HourTicks;
 
-            if (_cachedHourKey != null && _cachedHourTicks == currentHourTicks)
-                return _cachedHourKey;
+            var cachedTicks = Volatile.Read(ref _cachedHourTicks);
+            var cachedKey = Volatile.Read(ref _cachedHourKey);
+
+            if (cachedKey != null && cachedTicks == currentHourTicks)
+                return cachedKey;
 
             var beijingTime = new DateTime(currentHourTicks, DateTimeKind.Utc).Add(BeijingOffset);
             var newKey = beijingTime.ToString("yyyyMMddHH");
 
-            _cachedHourKey = newKey;
-            _cachedHourTicks = currentHourTicks;
+            Volatile.Write(ref _cachedHourKey, newKey);
+            Volatile.Write(ref _cachedHourTicks, currentHourTicks);
 
             return newKey;
         }
@@ -618,12 +936,9 @@ namespace QTP
         private static readonly IReadOnlyDictionary<string, long> EmptyDict =
             new Dictionary<string, long>();
 
-        /// <summary>
-        /// 增加统计
-        /// </summary>
         public void AddLocalMetric(int taskId, string name, long value = 1)
         {
-            if (taskId == 0 || string.IsNullOrEmpty(name))
+            if (taskId == 0 || string.IsNullOrWhiteSpace(name))
                 return;
 
             var hour = GetHourKey();
@@ -634,23 +949,19 @@ namespace QTP
 
                 if (current.HourKey == hour)
                 {
-                    // 获取 task 字典
                     var taskDict = current.Tasks.GetOrAdd(taskId,
-                        _ => new ConcurrentDictionary<string, long>(8, 16));
+                        _ => new ConcurrentDictionary<string, long>(Environment.ProcessorCount, 16));
 
-                    // 更新指标
                     taskDict.AddOrUpdate(name, value, (_, old) => old + value);
-
                     return;
                 }
 
-                // 切换小时（CAS）
                 var newStats = new LocalHourStats(hour);
 
                 if (Interlocked.CompareExchange(ref _localStats, newStats, current) == current)
                 {
                     var taskDict = newStats.Tasks.GetOrAdd(taskId,
-                        _ => new ConcurrentDictionary<string, long>(8, 16));
+                        _ => new ConcurrentDictionary<string, long>(Environment.ProcessorCount, 16));
 
                     taskDict.TryAdd(name, value);
                     return;
@@ -658,9 +969,6 @@ namespace QTP
             }
         }
 
-        /// <summary>
-        /// 获取某个任务全部统计
-        /// </summary>
         public IReadOnlyDictionary<string, long> GetAllLocalMetric(int taskId)
         {
             if (taskId == 0)
@@ -677,12 +985,9 @@ namespace QTP
                 : EmptyDict;
         }
 
-        /// <summary>
-        /// 获取某个任务某个指标
-        /// </summary>
         public long GetLocalMetric(int taskId, string name)
         {
-            if (taskId == 0 || string.IsNullOrEmpty(name))
+            if (taskId == 0 || string.IsNullOrWhiteSpace(name))
                 return 0;
 
             var hour = GetHourKey();
@@ -697,9 +1002,6 @@ namespace QTP
             return dict.TryGetValue(name, out var value) ? value : 0;
         }
 
-        /// <summary>
-        /// 获取某个任务多个指标
-        /// </summary>
         public Dictionary<string, long> GetLocalMetrics(int taskId, params string[] names)
         {
             var result = new Dictionary<string, long>();
@@ -707,12 +1009,8 @@ namespace QTP
             if (taskId == 0 || names == null || names.Length == 0)
                 return result;
 
-
             foreach (var name in names)
-            {
                 result[name] = 0;
-            }
-
 
             var hour = GetHourKey();
             var stats = _localStats;
@@ -731,9 +1029,6 @@ namespace QTP
             return result;
         }
 
-        /// <summary>
-        /// 获取某个任务占比
-        /// </summary>
         public double GetStatRatio(int taskId, params string[] names)
         {
             if (taskId == 0 || names == null || names.Length == 0)
@@ -756,29 +1051,51 @@ namespace QTP
             foreach (var kv in dict)
             {
                 total += kv.Value;
-
                 if (set.Contains(kv.Key))
                     part += kv.Value;
             }
 
-            if (total == 0)
-                return 0;
-
-            return (double)part / total;
+            return total == 0 ? 0 : (double)part / total;
         }
 
         #endregion
 
-
+        #region Dispose
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-            _cts.Cancel();
-            _queue.Writer.Complete();
-            _proxyIpQueue.Writer.Complete();
+            DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
-    }
 
+        public async ValueTask DisposeAsync()
+        {
+            await _lifecycleLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (Volatile.Read(ref _state) == 4)
+                    return;
+            }
+            finally
+            {
+                _lifecycleLock.Release();
+            }
+
+            try
+            {
+                await StopAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                Volatile.Write(ref _state, 4);
+
+                _flushSemaphore.Dispose();
+                _lifecycleLock.Dispose();
+
+                foreach (var gate in _baselineInitLocks.Values)
+                    gate.Dispose();
+            }
+        }
+
+        #endregion
+    }
 }
