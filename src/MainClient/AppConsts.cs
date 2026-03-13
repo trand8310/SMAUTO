@@ -4,7 +4,7 @@ namespace MainClient
 {
     public class AppConsts
     {
-        public const string AppVertion = "2026.3.0.26";
+        public const string AppVertion = "2026.3.0.27";
         /// <summary>
         /// IP区域查询
         /// </summary>
