@@ -69,7 +69,7 @@
             // progressBar1
             // 
             progressBar1.Dock = DockStyle.Bottom;
-            progressBar1.Location = new Point(0, 163);
+            progressBar1.Location = new Point(0, 289);
             progressBar1.Name = "progressBar1";
             progressBar1.Size = new Size(597, 29);
             progressBar1.TabIndex = 179;
@@ -99,7 +99,7 @@
             // 
             AutoScaleDimensions = new SizeF(9F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(597, 192);
+            ClientSize = new Size(597, 318);
             Controls.Add(textBox_ApiUrl);
             Controls.Add(label14);
             Controls.Add(progressBar1);

@@ -519,7 +519,6 @@ namespace MainClient
                 try
                 {
                     CommonHelper.ClearLocalChromeProcesses();
-                    SystemCleaner.RestartExplorerAndRdpclip();
                     await InitFileVersionListAsync();
                     await InitBrowserVersionListAsync();
                     await InitSpiderNames(_appSettings.WordType);
@@ -529,7 +528,6 @@ namespace MainClient
                 }
                 catch (Exception)
                 {
-
 
                 }
 

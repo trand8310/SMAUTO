@@ -659,11 +659,10 @@ namespace QTP.Common
         }
 
 
-
         public static void ClearLocalChromeProcesses()
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
-            string[] targets = { "chrome.exe" };
+            string[] targets = { "chrome.exe","node.exe" };
             using (var searcher = new ManagementObjectSearcher("SELECT ProcessId, Name, ExecutablePath FROM Win32_Process"))
             {
                 foreach (ManagementObject obj in searcher.Get())

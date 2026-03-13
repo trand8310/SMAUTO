@@ -4,12 +4,13 @@ using System;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Policy;
+using System.Xml.Linq;
 
 namespace Updater
 {
     public partial class MainForm : Form
     {
- 
+
         private readonly string PackagesDirectory;
         private readonly FileUpdater _fileUpdater;
 
@@ -54,6 +55,9 @@ namespace Updater
             }
 
         }
+
+
+
 
         private void btnUpdate_Click(object sender, EventArgs e)
         {
@@ -113,7 +117,7 @@ namespace Updater
                 var appDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app");
                 if (!System.IO.Directory.Exists(appDir))
                     System.IO.Directory.CreateDirectory(appDir);
-                ZipFile.ExtractToDirectory(zipFilePath, appDir);
+                ZipFile.ExtractToDirectory(zipFilePath, appDir, true);
                 var exePath = Path.Combine(appDir, "MainClient.exe");
                 if (System.IO.File.Exists(exePath))
                 {
