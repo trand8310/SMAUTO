@@ -3,14 +3,6 @@
 namespace SMAd.General
 {
 
-
-
-    public enum TouchScrollDirection
-    {
-        Up,
-        Down
-    }
-
     public sealed class TouchScrollOptions
     {
         /// <summary>
@@ -123,10 +115,10 @@ namespace SMAd.General
             try
             {
                 var scrollDirection = direction == -1
-                    ? TouchScrollDirection.Down
-                    : TouchScrollDirection.Up;
+                    ? PageScrollDirection.Down
+                    : PageScrollDirection.Up;
 
-                LogWriteLine(scrollDirection == TouchScrollDirection.Down
+                LogWriteLine(scrollDirection == PageScrollDirection.Down
                     ? $"TouchScrollDown:{scrollCount}次"
                     : $"TouchScrollUp:{scrollCount}次");
 
@@ -181,8 +173,8 @@ namespace SMAd.General
                 return false;
 
             var scrollDirection = direction == -1
-                ? TouchScrollDirection.Down
-                : TouchScrollDirection.Up;
+                ? PageScrollDirection.Down
+                : PageScrollDirection.Up;
 
             var options = CreateMicroAdjustOptions(page);
 
@@ -207,8 +199,8 @@ namespace SMAd.General
                 return false;
 
             var scrollDirection = direction == -1
-                ? TouchScrollDirection.Down
-                : TouchScrollDirection.Up;
+                ? PageScrollDirection.Down
+                : PageScrollDirection.Up;
 
             var options = CreateFastFlipOptions(page);
 
@@ -292,7 +284,7 @@ namespace SMAd.General
         private async Task<bool> ScrollOnceInternalAsync(
             IPage page,
             ICDPSession client,
-            TouchScrollDirection direction,
+            PageScrollDirection direction,
             TouchScrollOptions options,
             CancellationToken cancellationToken)
         {
@@ -358,7 +350,7 @@ namespace SMAd.General
                         xDistance = (int)Math.Round(xDistance * 0.6);
                 }
 
-                int yDistance = direction == TouchScrollDirection.Down
+                int yDistance = direction == PageScrollDirection.Down
                     ? distance
                     : -distance;
 

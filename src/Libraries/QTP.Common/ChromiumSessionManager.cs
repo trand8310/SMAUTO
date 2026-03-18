@@ -1,4 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿using QTP.Common.Win32;
+using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -123,9 +125,27 @@ namespace QTP.Common
                     CreateNoWindow = true
                 };
 
-                proc = Process.Start(psi);
-                if (proc == null)
-                    throw new InvalidOperationException($"Unable to start chromium process: {exePath}");
+                try
+                {
+                    proc = Process.Start(psi);
+                    if (proc == null)
+                        throw new InvalidOperationException($"Unable to start chromium process: {exePath}");
+                }
+                catch (Win32Exception ex) when (ex.NativeErrorCode == 1455)
+                {
+                    if (ShouldRestartFor1455())
+                    {
+                        SafeRestartHelper.RequestSystemRestart("连续 1455，系统资源不足");
+                    }
+                    throw new InvalidOperationException($"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}",ex);
+
+                    //throw new InvalidOperationException($"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}", ex);
+                }
+
+
+
+
+
 
                 started = true;
 
@@ -592,6 +612,26 @@ namespace QTP.Common
             }
         }
 
+        private static bool ShouldRestartFor1455()
+        {
+            var ms = SystemMemoryHelper.GetMemoryStatus();
+
+            var memoryLoad = ms.dwMemoryLoad;
+            var availPhysMb = SystemMemoryHelper.ToMb(ms.ullAvailPhys);
+            var availPageFileMb = SystemMemoryHelper.ToMb(ms.ullAvailPageFile);
+
+            var dangerous =
+                memoryLoad >= 88 ||
+                availPhysMb <= 1024 ||
+                availPageFileMb <= 1024;
+
+            if (!dangerous)
+                return false;
+
+            return MemoryCrisisGuard.ShouldRestartNow();
+
+
+        }
         private void ThrowIfDisposed()
         {
             if (Volatile.Read(ref _disposeStarted) != 0)

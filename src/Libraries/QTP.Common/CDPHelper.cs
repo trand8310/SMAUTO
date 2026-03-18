@@ -397,10 +397,10 @@ namespace QTP.Common
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
-                    var xmin = 15;
-                    var xmax = 85;
-                    var ymin = 15;
-                    var ymax = 85;
+                    var xmin = 20;
+                    var xmax = 80;
+                    var ymin = 20;
+                    var ymax = 80;
                     if (dir == 1)
                     {
                         //靠上
@@ -596,6 +596,135 @@ namespace QTP.Common
             return false;
         }
 
+
+
+
+        public static async Task<bool> TouchClickVisibleLocatorAsync(
+           IPage page,
+           ICDPSession client,
+           ILocator locator,
+           CancellationToken cancellationToken = default,
+           int insetPercentMin = 30,
+           int insetPercentMax = 70,
+           int minHoldMs = 40,
+           int maxHoldMs = 90,
+           int minMoveDelayMs = 12,
+           int maxMoveDelayMs = 35,
+           int minPostDelayMs = 180,
+           int maxPostDelayMs = 450,
+           bool useTinyMove = true)
+        {
+            if (page == null || page.IsClosed || client == null || locator == null)
+                return false;
+
+            try
+            {
+                await locator.ScrollIntoViewIfNeededAsync();
+
+                var box = await locator.BoundingBoxAsync();
+                if (box == null || box.Width <= 2 || box.Height <= 2)
+                    return false;
+
+                var viewport = page.ViewportSize;
+                if (viewport == null || viewport.Width <= 2 || viewport.Height <= 2)
+                    return false;
+
+                // 与视口无交集，直接返回
+                var visibleLeft = Math.Max(0, box.X);
+                var visibleTop = Math.Max(0, box.Y);
+                var visibleRight = Math.Min(viewport.Width, box.X + box.Width);
+                var visibleBottom = Math.Min(viewport.Height, box.Y + box.Height);
+
+                var visibleWidth = visibleRight - visibleLeft;
+                var visibleHeight = visibleBottom - visibleTop;
+
+                if (visibleWidth <= 2 || visibleHeight <= 2)
+                    return false;
+
+                var rnd = Random.Shared;
+
+                // 在可见区域中间偏内侧随机取点
+                double x = visibleLeft + visibleWidth * CommonHelper.NextDouble(
+                    insetPercentMin / 100.0,
+                    insetPercentMax / 100.0);
+
+                double y = visibleTop + visibleHeight * CommonHelper.NextDouble(
+                    insetPercentMin / 100.0,
+                    insetPercentMax / 100.0);
+
+                // 保底限制在视口内
+                x = Math.Clamp(x, 1, viewport.Width - 1);
+                y = Math.Clamp(y, 1, viewport.Height - 1);
+
+                // 轻微移动，模拟真人 tap
+                double moveX = x + rnd.Next(-2, 3);
+                double moveY = y + rnd.Next(-2, 3);
+
+                moveX = Math.Clamp(moveX, 1, viewport.Width - 1);
+                moveY = Math.Clamp(moveY, 1, viewport.Height - 1);
+
+                await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
+                {
+                    ["type"] = "touchStart",
+                    ["touchPoints"] = new object[]
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["x"] = x,
+                            ["y"] = y,
+                            ["radiusX"] = 2,
+                            ["radiusY"] = 2,
+                            ["force"] = 1,
+                            ["id"] = 0
+                        }
+                    },
+                    ["modifiers"] = 0
+                });
+
+                await Task.Delay(rnd.Next(minHoldMs, maxHoldMs + 1), cancellationToken);
+
+                if (useTinyMove)
+                {
+                    await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
+                    {
+                        ["type"] = "touchMove",
+                        ["touchPoints"] = new object[]
+                        {
+                            new Dictionary<string, object>
+                            {
+                                ["x"] = moveX,
+                                ["y"] = moveY,
+                                ["radiusX"] = 2,
+                                ["radiusY"] = 2,
+                                ["force"] = 1,
+                                ["id"] = 0
+                            }
+                        },
+                        ["modifiers"] = 0
+                    });
+
+                    await Task.Delay(rnd.Next(minMoveDelayMs, maxMoveDelayMs + 1), cancellationToken);
+                }
+
+                await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
+                {
+                    ["type"] = "touchEnd",
+                    ["touchPoints"] = Array.Empty<object>(),
+                    ["modifiers"] = 0
+                });
+
+                await Task.Delay(rnd.Next(minPostDelayMs, maxPostDelayMs + 1), cancellationToken);
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
 
 

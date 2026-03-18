@@ -1,19 +1,15 @@
 ﻿using MainClient.Common;
 using MainClient.Logging;
-using MainClient.LogViewer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Playwright;
 using QTP;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using Serilog;
-using Serilog.Core;
 using Serilog.Events;
 using System.Diagnostics;
-using System.Threading;
 
 
 
@@ -85,13 +81,16 @@ namespace MainClient
                 {
                     services.AddSingleton(appSettings);
                     services.AddHttpClient();
+                    services.AddSingleton<IRootDomainService, RootDomainService>();
+                    services.AddSingleton<IPlaywrightProvider, PlaywrightProvider>();
                     services.AddSingleton<FileUpdater>(sp =>
                     {
-                        var _httpClient = sp.GetRequiredService<HttpClient>();
-                        var _logger = sp.GetRequiredService<ILogger<FileUpdater>>();
-                        return new FileUpdater(_httpClient, _logger);
+                        var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                        var logger = sp.GetRequiredService<ILogger<FileUpdater>>();
+                        var httpClient = httpClientFactory.CreateClient();
+
+                        return new FileUpdater(httpClient, logger);
                     });
-                    
                     services.AddSingleton<ChineseNameGenerator>();
                     services.AddSingleton<ChromiumSessionManager>();
                     services.AddSingleton<TaskStatsAggregator>();
@@ -108,7 +107,9 @@ namespace MainClient
 
 
             var host = builder.Build();
-
+            //启动时初始化一级域规则
+            var rootDomainService = host.Services.GetRequiredService<IRootDomainService>();
+            rootDomainService.InitializeAsync().GetAwaiter().GetResult();
             ApplicationConfiguration.Initialize();
 
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
@@ -140,10 +141,17 @@ namespace MainClient
             Application.ApplicationExit += async (sender, e) =>
             {
                 StopErrorDialogGuard();
-                CommonHelper.KillAllChromeProcess();
-                var pw = host.Services.GetService<IPlaywright>();
-                if (pw is IAsyncDisposable asyncDisposable)
-                    await asyncDisposable.DisposeAsync();
+                CommonHelper.ClearLocalChromeProcesses();
+                try
+                {
+                    var provider = host.Services.GetService<IPlaywrightProvider>();
+                    if (provider is IAsyncDisposable asyncDisposable)
+                        await asyncDisposable.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Dispose PlaywrightProvider failed");
+                }
             };
 
             Application.Run(host.Services.GetRequiredService<MainForm>());

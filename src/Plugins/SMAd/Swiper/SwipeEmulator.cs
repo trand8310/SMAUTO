@@ -32,13 +32,6 @@ namespace SMAd.Swiper
         }
     }
 
-    public enum ScrollDirection
-    {
-        Up,
-        Down,
-        Random
-    }
-
     public sealed class SwipeOptions
     {
         /// <summary>
@@ -64,7 +57,7 @@ namespace SMAd.Swiper
         /// <summary>
         /// 滑动方向
         /// </summary>
-        public ScrollDirection Direction { get; set; } = ScrollDirection.Random;
+        public PageScrollDirection Direction { get; set; } = PageScrollDirection.Random;
 
         /// <summary>
         /// 滑动区域横向起始比例
@@ -99,7 +92,7 @@ namespace SMAd.Swiper
             int pointCount = 18,
             int delayMs = 12,
             float jitter = 1.0f,
-            ScrollDirection direction = ScrollDirection.Random,
+            PageScrollDirection direction = PageScrollDirection.Random,
             CancellationToken cancellationToken = default)
         {
             var options = new SwipeOptions
@@ -126,7 +119,7 @@ namespace SMAd.Swiper
             int pointCount = 8,
             int delayMs = 8,
             float jitter = 0.35f,
-            ScrollDirection direction = ScrollDirection.Random,
+            PageScrollDirection direction = PageScrollDirection.Random,
             CancellationToken cancellationToken = default)
         {
             var options = new SwipeOptions
@@ -354,7 +347,7 @@ namespace SMAd.Swiper
 
                 int swipesCount = 0;
                 int noMoveCount = 0;
-                ScrollDirection? lastDirection = null;
+                PageScrollDirection? lastDirection = null;
 
                 double targetTop = vh * 0.30;
                 double targetBottom = vh * 0.72;
@@ -383,9 +376,9 @@ namespace SMAd.Swiper
                         double beforeY = box.Y;
                         double beforeCenterY = centerY;
 
-                        ScrollDirection probeDirection = centerY < targetCenter
-                            ? ScrollDirection.Down
-                            : ScrollDirection.Up;
+                        PageScrollDirection probeDirection = centerY < targetCenter
+                            ? PageScrollDirection.Down
+                            : PageScrollDirection.Up;
 
                         if (lastDirection.HasValue &&
                             lastDirection.Value != probeDirection &&
@@ -425,14 +418,14 @@ namespace SMAd.Swiper
                     double beforeFullY = box.Y;
                     double beforeFullCenterY = centerY;
 
-                    ScrollDirection direction;
+                    PageScrollDirection direction;
                     if (centerY < targetTop)
                     {
-                        direction = ScrollDirection.Down;
+                        direction = PageScrollDirection.Down;
                     }
                     else if (centerY > targetBottom)
                     {
-                        direction = ScrollDirection.Up;
+                        direction = PageScrollDirection.Up;
                     }
                     else
                     {
@@ -647,7 +640,7 @@ namespace SMAd.Swiper
             if (vw <= 0 || vh <= 0)
                 return allTrajectories;
 
-            options.DistancePx = Math.Clamp(options.DistancePx, 36, (int)(vh * 0.58));
+            options.DistancePx = Math.Clamp(options.DistancePx, 36, (int)(vh * 0.72));
             options.PointCount = Math.Clamp(options.PointCount, 6, 40);
             options.DelayMs = Math.Clamp(options.DelayMs, 6, 40);
             options.Jitter = Math.Clamp(options.Jitter, 0f, 3f);
@@ -680,17 +673,17 @@ namespace SMAd.Swiper
 
                 switch (options.Direction)
                 {
-                    case ScrollDirection.Up:
+                    case PageScrollDirection.Up:
                         start = new Vector2(x, safeY + options.DistancePx / 2f);
                         end = new Vector2(x + xDrift, safeY - options.DistancePx / 2f);
                         break;
 
-                    case ScrollDirection.Down:
+                    case PageScrollDirection.Down:
                         start = new Vector2(x, safeY - options.DistancePx / 2f);
                         end = new Vector2(x + xDrift, safeY + options.DistancePx / 2f);
                         break;
 
-                    case ScrollDirection.Random:
+                    case PageScrollDirection.Random:
                     default:
                         bool up = RandomUtil.NextInt(0, 2) == 0;
                         if (up)
@@ -711,9 +704,9 @@ namespace SMAd.Swiper
 
                 if (Vector2.Distance(start, end) < 36f)
                 {
-                    if (options.Direction == ScrollDirection.Up)
+                    if (options.Direction == PageScrollDirection.Up)
                         end.Y = Math.Max(8, start.Y - 36f);
-                    else if (options.Direction == ScrollDirection.Down)
+                    else if (options.Direction == PageScrollDirection.Down)
                         end.Y = Math.Min(vh - 8, start.Y + 36f);
                 }
 
@@ -743,7 +736,7 @@ namespace SMAd.Swiper
         private static async Task<List<(List<Vector2> points, Vector2 cp1, Vector2 cp2, Vector2 start, Vector2 end)>> SwipeProbeAsync(
             IPage page,
             ICDPSession client,
-            ScrollDirection direction,
+            PageScrollDirection direction,
             CancellationToken cancellationToken)
         {
             return await SwipeMultipleMicroAsync(

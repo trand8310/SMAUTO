@@ -31,6 +31,27 @@ namespace QTP
         [property: JsonProperty("word")] string Word
     );
 
+
+    public sealed class AdKeywordDomain
+    {
+        [property: JsonProperty("keyword")]
+        public string Keyword { get; set; } = "";
+
+        [property: JsonProperty("domains")]
+        public List<string> Domains { get; set; } = new();
+
+        [property: JsonProperty("brands")]
+        public List<string> Brands { get; set; } = new();
+    }
+    public sealed class AdKeywordDomainAccumulator
+    {
+        public HashSet<string> Domains = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Brands = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+
+
+
     public sealed class TaskStats
     {
         public long Request;
@@ -227,7 +248,20 @@ namespace QTP
 
         private readonly Channel<TaskEvent> _queue;
         private readonly Channel<ProxyIpStatEvent> _proxyIpQueue;
+        /// <summary>
+        /// 广告词+类别
+        /// </summary>
         private readonly Channel<AdWord> _adWordQueue;
+        /// <summary>
+        /// 广告词+域名列表
+        /// </summary> 
+        private readonly Channel<AdKeywordDomain> _adKeywordDomainQueue;
+        private readonly object _adKeywordDomainLock = new();
+        // keyword → domains set + brands set
+        private readonly Dictionary<string, AdKeywordDomainAccumulator>
+          _adKeywordDomainBuffer = new(StringComparer.OrdinalIgnoreCase);
+
+
 
         private readonly ConcurrentDictionary<int, TaskStats> _tasks = new();
         private readonly ConcurrentDictionary<int, ProxyIpStat> _taskProxyIpStats = new();
@@ -255,6 +289,7 @@ namespace QTP
         private Task? _processQueueTask;
         private Task? _processProxyIpQueueTask;
         private Task? _processAdWordQueueTask;
+        private Task? _processAdKeywordDomainQueueTask;
         private Task? _flushLoopTask;
 
         // 0 = new, 1 = running, 2 = stopping, 3 = stopped, 4 = disposed
@@ -302,6 +337,15 @@ namespace QTP
             _proxyIpQueue = Channel.CreateUnbounded<ProxyIpStatEvent>(proxyEventOptions);
             _adWordQueue = Channel.CreateUnbounded<AdWord>(adWordOptions);
 
+            var adKeywordDomainOptions = new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            };
+
+            _adKeywordDomainQueue =Channel.CreateUnbounded<AdKeywordDomain>(adKeywordDomainOptions);
+
             _state = 0;
         }
 
@@ -334,6 +378,7 @@ namespace QTP
                 _processProxyIpQueueTask = Task.Run(() => ProcessProxyIpQueueAsync(_runCts.Token));
                 _processAdWordQueueTask = Task.Run(() => ProcessAdWordQueueAsync(_runCts.Token));
                 _flushLoopTask = Task.Run(() => FlushLoopAsync(_runCts.Token));
+                _processAdKeywordDomainQueueTask =Task.Run(() => ProcessAdKeywordDomainQueueAsync(_runCts.Token));
 
                 Volatile.Write(ref _state, 1);
             }
@@ -367,6 +412,7 @@ namespace QTP
                 _queue.Writer.TryComplete();
                 _proxyIpQueue.Writer.TryComplete();
                 _adWordQueue.Writer.TryComplete();
+                _adKeywordDomainQueue.Writer.TryComplete();
             }
             finally
             {
@@ -438,6 +484,20 @@ namespace QTP
 
             _adWordQueue.Writer.TryWrite(new AdWord(category, word));
         }
+        public void EnqueueAdKeywordDomain(AdKeywordDomain item)
+        {
+            if (!IsStarted)
+                return;
+
+            if (item == null ||
+                string.IsNullOrWhiteSpace(item.Keyword) ||
+                item.Domains == null ||
+                item.Domains.Count == 0)
+                return;
+
+            _adKeywordDomainQueue.Writer.TryWrite(item);
+        }
+
 
         public TaskStats? GetTaskStats(int taskId)
             => _tasks.TryGetValue(taskId, out var stats) ? stats : null;
@@ -584,6 +644,38 @@ namespace QTP
                 _logger.LogError(ex, "ProcessAdWordQueueAsync crashed.");
             }
         }
+        private async Task ProcessAdKeywordDomainQueueAsync(CancellationToken token)
+        {
+            try
+            {
+                while (await _adKeywordDomainQueue.Reader.WaitToReadAsync(token))
+                {
+                    while (_adKeywordDomainQueue.Reader.TryRead(out var item))
+                    {
+                        lock (_adKeywordDomainLock)
+                        {
+                            if (!_adKeywordDomainBuffer.TryGetValue(item.Keyword, out var acc))
+                            {
+                                acc = new AdKeywordDomainAccumulator();
+                                _adKeywordDomainBuffer[item.Keyword] = acc;
+                            }
+
+                            foreach (var d in item.Domains)
+                                acc.Domains.Add(d);
+
+                            foreach (var b in item.Brands)
+                                acc.Brands.Add(b);
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessAdKeywordDomainQueueAsync crashed.");
+            }
+        }
+
 
         #endregion
 
@@ -668,6 +760,33 @@ namespace QTP
                 if (snapshot != null && snapshot.Count > 0)
                 {
                     flushTasks.Add(FlushAdWordsAsync(snapshot, token));
+                }
+            }
+
+
+            {
+                List<AdKeywordDomain>? snapshot = null;
+
+                lock (_adKeywordDomainLock)
+                {
+                    if (_adKeywordDomainBuffer.Count > 0)
+                    {
+                        snapshot = new List<AdKeywordDomain>(_adKeywordDomainBuffer.Count);
+                        foreach (var kv in _adKeywordDomainBuffer)
+                        {
+                            snapshot.Add(new AdKeywordDomain
+                            {
+                                Keyword = kv.Key,
+                                Domains = kv.Value.Domains.ToList(),
+                                Brands = kv.Value.Brands.ToList()
+                            });
+                        }
+                    }
+                }
+
+                if (snapshot != null && snapshot.Count > 0)
+                {
+                    flushTasks.Add(FlushAdKeywordDomainsAsync(snapshot, token));
                 }
             }
 
@@ -785,6 +904,33 @@ namespace QTP
             }
         }
 
+
+        private async Task FlushAdKeywordDomainsAsync(
+        List<AdKeywordDomain> snapshot,
+        CancellationToken token)
+        {
+            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await RetryAsync(
+                    () => _adeHelper.AddKeywordDomainsAsync(snapshot, token),
+                    _retryCount,
+                    token).ConfigureAwait(false);
+
+                lock (_adKeywordDomainLock)
+                {
+                    _adKeywordDomainBuffer.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FlushAdKeywordDomainsAsync failed.");
+            }
+            finally
+            {
+                _flushSemaphore.Release();
+            }
+        }
         #endregion
 
         #region Retry / Stop Helpers
@@ -827,6 +973,7 @@ namespace QTP
             if (_processQueueTask != null) tasks.Add(_processQueueTask);
             if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
             if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
+            if (_processAdKeywordDomainQueueTask != null) tasks.Add(_processAdKeywordDomainQueueTask);
 
             if (tasks.Count > 0)
                 await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -839,6 +986,7 @@ namespace QTP
             if (_processQueueTask != null) tasks.Add(_processQueueTask);
             if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
             if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
+            if (_processAdKeywordDomainQueueTask != null) tasks.Add(_processAdKeywordDomainQueueTask);
             if (_flushLoopTask != null) tasks.Add(_flushLoopTask);
 
             if (tasks.Count == 0)

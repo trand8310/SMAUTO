@@ -362,7 +362,7 @@ namespace QTP
                 var body = new Dictionary<string, object>
                 {
                     ["metrics"] = metrics,
-                    ["ips"]= ips
+                    ["ips"] = ips
                 };
                 body["host"] = Host;
                 body["host"] = Host;
@@ -831,6 +831,42 @@ namespace QTP
         }
 
 
+        /// <summary>
+        /// 上传每个词的域名信息
+        /// </summary>
+        /// <param name="words"></param>
+        /// <returns></returns>
+        public async Task AddKeywordDomainsAsync(List<AdKeywordDomain> items, CancellationToken token = default)
+        {
+            if (items == null || items.Count == 0)
+                return;
+            try
+            {
+                string baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
+                StringBuilder builder = new StringBuilder(baseUrl);
+                var bidRequest = new JObject();
+                bidRequest["items"] = JArray.FromObject(items);
+                bidRequest["host"] = Host;
+                builder.Append($"/api{_apiVersion}/test2.php?action=add_keyword_domains?t={System.DateTime.Now.Ticks}");
+                var postData = JsonConvert.SerializeObject(bidRequest);
+                HttpContent content = new StringContent(postData);
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+                var url = builder.ToString();
+                var response = await client.PostAsync(url, content);
+                response.EnsureSuccessStatusCode();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"AddKeywordDomainsAsync error: {ex.Message}");
+            }
+
+        }
+
+
+
 
 
         #endregion
@@ -905,5 +941,111 @@ namespace QTP
         #endregion
 
 
+
+        #region 对话
+
+        private sealed class TalkCacheBucket
+        {
+            public SemaphoreSlim Signal { get; } = new(1, 1);
+            public ConcurrentQueue<string> Queue { get; } = new();
+        }
+
+        private readonly ConcurrentDictionary<string, TalkCacheBucket> _talk_cache_map = new();
+
+        private async Task<string?> GetTalkInternal(string name, int count)
+        {
+            try
+            {
+                string baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
+
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
+
+                var url = $"{baseUrl}/api{_apiVersion}/get_talk.php?name={Uri.EscapeDataString(name)}&count={count}&t={DateTime.Now.Ticks}";
+
+                using HttpResponseMessage response = await client.GetAsync(url);
+                response.EnsureSuccessStatusCode();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadAsStringAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetTalkInternal error, name={Name}", name);
+            }
+
+            return null;
+        }
+
+        public async Task<string?> GetTalkAsync(string name, CancellationToken token = default)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return null;
+            var bucket = _talk_cache_map.GetOrAdd(name, _ => new TalkCacheBucket());
+            // 先无锁快速取一次
+            if (bucket.Queue.TryDequeue(out var cached))
+            {
+                return cached;
+            }
+            await bucket.Signal.WaitAsync(token);
+            try
+            {
+                // 双检，避免并发重复拉取
+                if (bucket.Queue.TryDequeue(out cached))
+                {
+                    return cached;
+                }
+
+                var text = await GetTalkInternal(name, 20);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return null;
+                }
+
+                var json = JObject.Parse(text);
+                var data = json["data"] as JArray;
+                if (data == null || data.Count == 0)
+                {
+                    return null;
+                }
+
+                string? first = null;
+
+                for (int i = 0; i < data.Count; i++)
+                {
+                    var item = data[i]?.Value<string>();
+                    if (string.IsNullOrWhiteSpace(item))
+                        continue;
+
+                    if (first == null)
+                    {
+                        first = item;
+                    }
+                    else
+                    {
+                        bucket.Queue.Enqueue(item);
+                    }
+                }
+
+                return first;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetTalkAsync error, name={Name}", name);
+                return null;
+            }
+            finally
+            {
+                bucket.Signal.Release();
+            }
+        }
+        #endregion
     }
 }

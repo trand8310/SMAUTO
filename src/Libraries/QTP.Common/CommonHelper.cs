@@ -11,17 +11,22 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
+
+
 namespace QTP.Common
 {
     public class CommonHelper
     {
         private const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
-        /// <summary>
-        /// 生成一个随机数
-        /// </summary>
-        /// <returns></returns>
-        public static uint RandomNumber()
+
+
+
+    /// <summary>
+    /// 生成一个随机数
+    /// </summary>
+    /// <returns></returns>
+    public static uint RandomNumber()
         {
             byte[] bytes = new byte[4];
             RandomNumberGenerator.Fill(bytes);
@@ -132,47 +137,28 @@ namespace QTP.Common
             return Random.Shared.Next(min, max);
         }
 
-        public static void ClearAllErrorMsgDialog()
+        /// <summary>
+        /// 返回[min, max)之间的随机整数
+        /// </summary>
+        public static int NextInt(int min, int max)
         {
+            return Random.Shared.Next(min, max);
+        }
+        public static Int64 NextInt64(Int64 min, Int64 max)
+        {
+            return Random.Shared.NextInt64(min, max);
+        }
+ 
 
-            string[] allTitles = [
-                "CefClient.exe - 应用程序错误",
-                "CefSharp.BrowserSubprocess.exe - 应用程序错误",
-                "CefSharp.BrowserSubprocess.exe - 系统错误",
-                "CefSharp.BrowserSubprocess.exe - 错误",
-                "CefSharp.BrowserSubprocess.exe - 异常",
-                "WerFault.exe - 应用程序错误",
-                "chrome.exe - 应用程序错误",
-                "chrome.exe - 系统错误",
-                "Google Chrome",
-                "Chromium",
-            ];
-
-
-
-            // 枚举所有窗口
-            UnsafeNativeMethods.EnumWindows((hWnd, lParam) =>
-            {
-                // 检查窗口标题是否匹配
-                string title = UnsafeNativeMethods.GetWindowTitle(hWnd);
-                if (allTitles.Contains(title))
-                {
-                    UnsafeNativeMethods.SendMessage(hWnd, UnsafeNativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                }
-                return true; // 继续枚举下一个窗口
-            }, IntPtr.Zero);
-
-            //CommonHelper.ClearErrorMsgDialog("CefClient.exe - 应用程序错误");
-            //CommonHelper.ClearErrorMsgDialog("CefSharp.BrowserSubprocess.exe - 应用程序错误");
-            //CommonHelper.ClearErrorMsgDialog("CefSharp.BrowserSubprocess.exe - 系统错误");
-            //CommonHelper.ClearErrorMsgDialog("CefSharp.BrowserSubprocess.exe - 错误");
-            //CommonHelper.ClearErrorMsgDialog("CefSharp.BrowserSubprocess.exe - 异常");
-            //CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
+        public static double NextDouble()
+        {
+            return Random.Shared.NextDouble();
         }
 
-
-
-
+        public static double NextDouble(double min, double max)
+        {
+            return min + Random.Shared.NextDouble() * (max - min);
+        }
 
         public static Int16 Get16BitHash(string s)
         {
@@ -563,7 +549,25 @@ namespace QTP.Common
 
 
 
-
+        public static void ClearAllErrorMsgDialog()
+        {
+            string[] allTitles = [
+                "node.exe - 应用程序错误",
+                "WerFault.exe - 应用程序错误",
+                "chrome.exe - 应用程序错误",
+                "chrome.exe - 系统错误",
+            ];
+            // 枚举所有窗口
+            UnsafeNativeMethods.EnumWindows((hWnd, lParam) =>
+            {
+                string title = UnsafeNativeMethods.GetWindowTitle(hWnd);
+                if (allTitles.Contains(title))
+                {
+                    UnsafeNativeMethods.SendMessage(hWnd, UnsafeNativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                }
+                return true; // 继续枚举下一个窗口
+            }, IntPtr.Zero);
+        }
 
         public static void ClearErrorMsgDialog(string title)
         {
@@ -581,8 +585,6 @@ namespace QTP.Common
             }
 
         }
-
-
 
         public static void ClearCacheFile()
         {

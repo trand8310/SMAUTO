@@ -37,6 +37,8 @@ namespace MainClient
         private readonly AdeHelper _adeHelper;
         private readonly FileUpdater _fileUpdater;
         private ProxyTester _ipTester = new ProxyTester();
+        private readonly IRootDomainService _domainService;
+        private readonly IPlaywrightProvider _playwrightProvider;
         private readonly ChromiumSessionManager _processManager;
         private readonly TaskStatsAggregator _aggregator;
         private readonly ChineseNameGenerator _nameGenerator;
@@ -373,6 +375,8 @@ namespace MainClient
         }
 
         public MainForm(
+            IRootDomainService domainService,
+            IPlaywrightProvider playwrightProvider,
             TaskStatsAggregator aggregator,
             AdeHelper adeHelper,
             ChineseNameGenerator nameGenerator,
@@ -387,8 +391,8 @@ namespace MainClient
 
 
 
-
-
+            this._domainService = domainService;
+            this._playwrightProvider = playwrightProvider;
             this._aggregator = aggregator;
             this._adeHelper = adeHelper;
             this._nameGenerator = nameGenerator;
@@ -1552,7 +1556,7 @@ namespace MainClient
 
             var pluginInstance = Activator.CreateInstance(
                 plugin.type,
-                new object[] { _aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
+                new object[] { _domainService, _playwrightProvider,_aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
 
             if (pluginInstance is not IQTPService pluginService)
             {
@@ -1809,29 +1813,29 @@ namespace MainClient
                 circuitBreakCooldown: TimeSpan.FromSeconds(30)
             );
 
-            // 10秒一次：错误弹窗清理
-            runner.SetPeriodicAction(
-                interval: TimeSpan.FromSeconds(10),
-                onTick: async token =>
-                {
-                    await Task.Run(() =>
-                    {
-                        CommonHelper.ClearErrorMsgDialog("node.exe - 应用程序错误");
-                        CommonHelper.ClearErrorMsgDialog("chrome.exe - 应用程序错误");
-                        CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
-                        clearTick++;
-                        if (clearTick % 6 == 0)
-                        {
-                            CommonHelper.ClearProcesses(new[] { "WerFault" });
-                        }
-                    }, token);
-                },
-                name: "ClearCrashDialogs",
-                skipIfRunning: true,
-                timeout: TimeSpan.FromSeconds(3),
-                circuitBreakThreshold: 10,
-                circuitBreakCooldown: TimeSpan.FromMinutes(1)
-            );
+            //// 10秒一次：错误弹窗清理
+            //runner.SetPeriodicAction(
+            //    interval: TimeSpan.FromSeconds(10),
+            //    onTick: async token =>
+            //    {
+            //        await Task.Run(() =>
+            //        {
+            //            CommonHelper.ClearErrorMsgDialog("node.exe - 应用程序错误");
+            //            CommonHelper.ClearErrorMsgDialog("chrome.exe - 应用程序错误");
+            //            CommonHelper.ClearErrorMsgDialog("WerFault.exe - 应用程序错误");
+            //            clearTick++;
+            //            if (clearTick % 6 == 0)
+            //            {
+            //                CommonHelper.ClearProcesses(new[] { "WerFault" });
+            //            }
+            //        }, token);
+            //    },
+            //    name: "ClearCrashDialogs",
+            //    skipIfRunning: true,
+            //    timeout: TimeSpan.FromSeconds(3),
+            //    circuitBreakThreshold: 10,
+            //    circuitBreakCooldown: TimeSpan.FromMinutes(1)
+            //);
         }
 
 

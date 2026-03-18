@@ -1,12 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace SMAd
+﻿namespace SMAd
 {
     using Microsoft.Playwright;
+    using System.Text;
 
     public sealed class CenterClickCandidate
     {
@@ -21,10 +16,8 @@ namespace SMAd
 
     public static class CenterClickableFinder
     {
-        /// <summary>
-        /// 获取当前可见视口中部区域（默认 30%~70%）内的可点击候选节点。
-        /// 注意：返回的是候选信息，不是直接的 DOM 节点句柄。
-        /// </summary>
+        private const string MarkerAttr = "data-oai-click-candidate";
+
         public static async Task<List<CenterClickCandidate>> GetCandidatesAsync(
             IPage page,
             double xMinRatio = 0.30,
@@ -37,182 +30,26 @@ namespace SMAd
             if (page == null || page.IsClosed || page.ViewportSize == null)
                 return new List<CenterClickCandidate>();
 
-            int vw = page.ViewportSize.Width;
-            int vh = page.ViewportSize.Height;
+            NormalizeArgs(
+                page,
+                ref xMinRatio,
+                ref xMaxRatio,
+                ref yMinRatio,
+                ref yMaxRatio,
+                ref xSteps,
+                ref ySteps,
+                out int vw,
+                out int vh);
 
-            xMinRatio = ClampRatio(xMinRatio);
-            xMaxRatio = ClampRatio(xMaxRatio);
-            yMinRatio = ClampRatio(yMinRatio);
-            yMaxRatio = ClampRatio(yMaxRatio);
-
-            xSteps = Math.Clamp(xSteps, 2, 9);
-            ySteps = Math.Clamp(ySteps, 2, 9);
+            var script = BuildFinderScript(returnMarkedCount: false);
 
             var result = await page.EvaluateAsync<List<CenterClickCandidate>>(
-                @"([vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps]) => {
-                const results = [];
-                const seen = new Set();
-
-                function buildPercents(min, max, steps) {
-                    if (steps <= 1) return [(min + max) / 2];
-                    const arr = [];
-                    const span = max - min;
-                    for (let i = 0; i < steps; i++) {
-                        arr.push(min + span * (i / (steps - 1)));
-                    }
-                    return arr;
-                }
-
-                const xPercents = buildPercents(xMinRatio, xMaxRatio, xSteps);
-                const yPercents = buildPercents(yMinRatio, yMaxRatio, ySteps);
-
-                function isVisible(el) {
-                    if (!el) return false;
-
-                    const style = getComputedStyle(el);
-                    if (style.display === 'none') return false;
-                    if (style.visibility === 'hidden') return false;
-                    if (style.pointerEvents === 'none') return false;
-                    if (parseFloat(style.opacity || '1') <= 0.05) return false;
-
-                    const rect = el.getBoundingClientRect();
-                    if (!rect) return false;
-                    if (rect.width < 2 || rect.height < 2) return false;
-                    if (rect.bottom <= 0 || rect.right <= 0 || rect.left >= vw || rect.top >= vh) return false;
-
-                    return true;
-                }
-
-                function isClickable(el) {
-                    if (!el) return false;
-                    if (el.disabled) return false;
-
-                    const tag = (el.tagName || '').toLowerCase();
-
-                    if (['body', 'html'].includes(tag)) return false;
-
-                    if (['a', 'button', 'summary', 'label'].includes(tag)) return true;
-                    if (tag === 'input' && el.type !== 'hidden') return true;
-
-                    const role = (el.getAttribute('role') || '').toLowerCase();
-                    if (role === 'button' || role === 'link' || role === 'menuitem' || role === 'tab') return true;
-
-                    if (el.hasAttribute('onclick')) return true;
-                    if (el.hasAttribute('tabindex') && el.tabIndex >= 0) return true;
-                    if (el.hasAttribute('aria-expanded')) return true;
-                    if (el.hasAttribute('aria-pressed')) return true;
-
-                    const style = getComputedStyle(el);
-                    if (style.cursor === 'pointer') return true;
-
-                    return false;
-                }
-
-                function isReasonableArea(el) {
-                    const rect = el.getBoundingClientRect();
-                    if (!rect) return false;
-
-                    const area = rect.width * rect.height;
-                    if (area < 36) return false;
-
-                    // 超大容器一般不作为点击目标
-                    if (rect.width > vw * 0.95 && rect.height > vh * 0.45) return false;
-
-                    return true;
-                }
-
-                function getClickableAncestor(el) {
-                    let cur = el;
-                    while (cur && cur !== document.documentElement) {
-                        if (isVisible(cur) && isClickable(cur) && isReasonableArea(cur)) {
-                            return cur;
-                        }
-                        cur = cur.parentElement;
-                    }
-                    return null;
-                }
-
-                function getSelectorHint(el) {
-                    if (!el) return '';
-                    const tag = (el.tagName || '').toLowerCase();
-                    const id = el.id ? `#${el.id}` : '';
-                    const cls = el.classList && el.classList.length > 0
-                        ? '.' + Array.from(el.classList).slice(0, 2).join('.')
-                        : '';
-                    const dataType = el.getAttribute('data-type');
-                    const dt = dataType ? `[data-type=""${dataType}""]` : '';
-                    return `${tag}${id}${cls}${dt}`;
-                }
-
-                for (const xp of xPercents) {
-                    for (const yp of yPercents) {
-                        const x = Math.round(vw * xp);
-                        const y = Math.round(vh * yp);
-
-                        const stack = document.elementsFromPoint(x, y);
-                        if (!stack || stack.length === 0) continue;
-
-                        for (const raw of stack) {
-                            const hit = getClickableAncestor(raw);
-                            if (!hit) continue;
-
-                            const rect = hit.getBoundingClientRect();
-
-                            const key =
-                                (hit.tagName || '') + '|' +
-                                (hit.id || '') + '|' +
-                                (hit.className || '') + '|' +
-                                Math.round(rect.left) + '|' +
-                                Math.round(rect.top) + '|' +
-                                Math.round(rect.width) + '|' +
-                                Math.round(rect.height);
-
-                            if (seen.has(key)) break;
-                            seen.add(key);
-
-                            const cx = rect.left + rect.width / 2;
-                            const cy = rect.top + rect.height / 2;
-
-                            const dx = Math.abs(cx - vw / 2);
-                            const dy = Math.abs(cy - vh / 2);
-
-                            let score = 1000 - dx * 2 - dy * 2;
-
-                            const area = rect.width * rect.height;
-                            if (area < 100) score -= 120;
-                            else if (area < 180) score -= 50;
-                            else if (area > vw * vh * 0.20) score -= 120;
-
-                            const tag = (hit.tagName || '').toLowerCase();
-                            if (tag === 'button' || tag === 'a') score += 40;
-
-                            results.push({
-                                tagName: tag,
-                                selectorHint: getSelectorHint(hit),
-                                centerX: cx,
-                                centerY: cy,
-                                width: rect.width,
-                                height: rect.height,
-                                score
-                            });
-
-                            break;
-                        }
-                    }
-                }
-
-                results.sort((a, b) => b.score - a.score);
-                return results;
-            }",
-                new object[] { vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps });
+                script,
+                new object[] { vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps, MarkerAttr });
 
             return result ?? new List<CenterClickCandidate>();
         }
 
-        /// <summary>
-        /// 给中间区域的可点击候选节点打标记 data-oai-click-candidate='1'
-        /// 返回标记数量。
-        /// </summary>
         public static async Task<int> MarkCandidatesAsync(
             IPage page,
             double xMinRatio = 0.30,
@@ -225,125 +62,24 @@ namespace SMAd
             if (page == null || page.IsClosed || page.ViewportSize == null)
                 return 0;
 
-            int vw = page.ViewportSize.Width;
-            int vh = page.ViewportSize.Height;
+            NormalizeArgs(
+                page,
+                ref xMinRatio,
+                ref xMaxRatio,
+                ref yMinRatio,
+                ref yMaxRatio,
+                ref xSteps,
+                ref ySteps,
+                out int vw,
+                out int vh);
 
-            xMinRatio = ClampRatio(xMinRatio);
-            xMaxRatio = ClampRatio(xMaxRatio);
-            yMinRatio = ClampRatio(yMinRatio);
-            yMaxRatio = ClampRatio(yMaxRatio);
-
-            xSteps = Math.Clamp(xSteps, 2, 9);
-            ySteps = Math.Clamp(ySteps, 2, 9);
+            var script = BuildFinderScript(returnMarkedCount: true);
 
             return await page.EvaluateAsync<int>(
-                @"([vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps]) => {
-                document.querySelectorAll('[data-oai-click-candidate=""1""]')
-                    .forEach(el => el.removeAttribute('data-oai-click-candidate'));
-
-                const seen = new Set();
-                let count = 0;
-
-                function buildPercents(min, max, steps) {
-                    if (steps <= 1) return [(min + max) / 2];
-                    const arr = [];
-                    const span = max - min;
-                    for (let i = 0; i < steps; i++) {
-                        arr.push(min + span * (i / (steps - 1)));
-                    }
-                    return arr;
-                }
-
-                const xPercents = buildPercents(xMinRatio, xMaxRatio, xSteps);
-                const yPercents = buildPercents(yMinRatio, yMaxRatio, ySteps);
-
-                function isVisible(el) {
-                    if (!el) return false;
-
-                    const style = getComputedStyle(el);
-                    if (style.display === 'none') return false;
-                    if (style.visibility === 'hidden') return false;
-                    if (style.pointerEvents === 'none') return false;
-                    if (parseFloat(style.opacity || '1') <= 0.05) return false;
-
-                    const rect = el.getBoundingClientRect();
-                    if (!rect || rect.width < 2 || rect.height < 2) return false;
-                    if (rect.bottom <= 0 || rect.right <= 0 || rect.left >= vw || rect.top >= vh) return false;
-
-                    return true;
-                }
-
-                function isClickable(el) {
-                    if (!el) return false;
-                    if (el.disabled) return false;
-
-                    const tag = (el.tagName || '').toLowerCase();
-                    if (['body', 'html'].includes(tag)) return false;
-                    if (['a', 'button', 'summary', 'label'].includes(tag)) return true;
-                    if (tag === 'input' && el.type !== 'hidden') return true;
-
-                    const role = (el.getAttribute('role') || '').toLowerCase();
-                    if (role === 'button' || role === 'link' || role === 'menuitem' || role === 'tab') return true;
-
-                    if (el.hasAttribute('onclick')) return true;
-                    if (el.hasAttribute('tabindex') && el.tabIndex >= 0) return true;
-
-                    const style = getComputedStyle(el);
-                    if (style.cursor === 'pointer') return true;
-
-                    return false;
-                }
-
-                function isReasonableArea(el) {
-                    const rect = el.getBoundingClientRect();
-                    if (!rect) return false;
-                    const area = rect.width * rect.height;
-                    if (area < 36) return false;
-                    if (rect.width > vw * 0.95 && rect.height > vh * 0.45) return false;
-                    return true;
-                }
-
-                function getClickableAncestor(el) {
-                    let cur = el;
-                    while (cur && cur !== document.documentElement) {
-                        if (isVisible(cur) && isClickable(cur) && isReasonableArea(cur)) {
-                            return cur;
-                        }
-                        cur = cur.parentElement;
-                    }
-                    return null;
-                }
-
-                for (const xp of xPercents) {
-                    for (const yp of yPercents) {
-                        const x = Math.round(vw * xp);
-                        const y = Math.round(vh * yp);
-                        const stack = document.elementsFromPoint(x, y);
-
-                        if (!stack || stack.length === 0) continue;
-
-                        for (const raw of stack) {
-                            const hit = getClickableAncestor(raw);
-                            if (!hit) continue;
-
-                            if (seen.has(hit)) break;
-                            seen.add(hit);
-
-                            hit.setAttribute('data-oai-click-candidate', '1');
-                            count++;
-                            break;
-                        }
-                    }
-                }
-
-                return count;
-            }",
-                new object[] { vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps });
+                script,
+                new object[] { vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps, MarkerAttr });
         }
 
-        /// <summary>
-        /// 获取最佳候选。
-        /// </summary>
         public static async Task<CenterClickCandidate?> GetBestCandidateAsync(
             IPage page,
             double xMinRatio = 0.30,
@@ -357,9 +93,6 @@ namespace SMAd
             return list.Count > 0 ? list[0] : null;
         }
 
-        /// <summary>
-        /// 用鼠标点击最佳候选。
-        /// </summary>
         public static async Task<bool> ClickBestByMouseAsync(
             IPage page,
             CancellationToken cancellationToken = default)
@@ -373,9 +106,13 @@ namespace SMAd
 
             try
             {
-                await page.Mouse.MoveAsync((float)best.CenterX,(float)best.CenterY);
+                var x = (float)GetSafeInnerPoint(best.Width, best.CenterX);
+                var y = (float)GetSafeInnerPoint(best.Height, best.CenterY);
+
+                await page.Mouse.MoveAsync(x, y);
                 await Task.Delay(Random.Shared.Next(35, 90), cancellationToken);
-                await page.Mouse.ClickAsync((float)best.CenterX, (float)best.CenterY);
+                await page.Mouse.ClickAsync(x, y);
+
                 return true;
             }
             catch (OperationCanceledException)
@@ -388,9 +125,6 @@ namespace SMAd
             }
         }
 
-        /// <summary>
-        /// 用触屏事件点击最佳候选。
-        /// </summary>
         public static async Task<bool> ClickBestByTouchAsync(
             IPage page,
             ICDPSession client,
@@ -405,15 +139,26 @@ namespace SMAd
 
             try
             {
-                float x = (float)best.CenterX;
-                float y = (float)best.CenterY;
+                var viewport = page.ViewportSize;
+                if (viewport == null)
+                    return false;
+
+                float x = (float)Math.Clamp(
+                    GetSafeInnerPoint(best.Width, best.CenterX),
+                    1,
+                    viewport.Width - 1);
+
+                float y = (float)Math.Clamp(
+                    GetSafeInnerPoint(best.Height, best.CenterY),
+                    1,
+                    viewport.Height - 1);
 
                 await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
                 {
                     ["type"] = "touchStart",
                     ["touchPoints"] = new object[]
                     {
-                    new { x, y }
+                        new { x, y }
                     },
                     ["modifiers"] = 0
                 });
@@ -438,13 +183,38 @@ namespace SMAd
             }
         }
 
-        /// <summary>
-        /// 返回已标记节点的 Locator。
-        /// 调用前需先执行 MarkCandidatesAsync。
-        /// </summary>
         public static ILocator GetMarkedLocator(IPage page)
         {
-            return page.Locator("[data-oai-click-candidate='1']");
+            return page.Locator($"[{MarkerAttr}='1']");
+        }
+
+        private static void NormalizeArgs(
+            IPage page,
+            ref double xMinRatio,
+            ref double xMaxRatio,
+            ref double yMinRatio,
+            ref double yMaxRatio,
+            ref int xSteps,
+            ref int ySteps,
+            out int vw,
+            out int vh)
+        {
+            vw = page.ViewportSize!.Width;
+            vh = page.ViewportSize!.Height;
+
+            xMinRatio = ClampRatio(xMinRatio);
+            xMaxRatio = ClampRatio(xMaxRatio);
+            yMinRatio = ClampRatio(yMinRatio);
+            yMaxRatio = ClampRatio(yMaxRatio);
+
+            if (xMinRatio > xMaxRatio)
+                (xMinRatio, xMaxRatio) = (xMaxRatio, xMinRatio);
+
+            if (yMinRatio > yMaxRatio)
+                (yMinRatio, yMaxRatio) = (yMaxRatio, yMinRatio);
+
+            xSteps = Math.Clamp(xSteps, 2, 9);
+            ySteps = Math.Clamp(ySteps, 2, 9);
         }
 
         private static double ClampRatio(double value)
@@ -452,6 +222,428 @@ namespace SMAd
             if (value < 0) return 0;
             if (value > 1) return 1;
             return value;
+        }
+
+        /// <summary>
+        /// 在候选框内部选一个更像真人的安全点击点。
+        /// 这里传入的是中心点坐标，所以需要把随机偏移加回去。
+        /// </summary>
+        private static double GetSafeInnerPoint(double size, double center)
+        {
+            if (size <= 2)
+                return center;
+
+            // 取中间 20% 范围内的微随机，不点边缘
+            double half = size / 2.0;
+            double offset = Random.Shared.NextDouble() * (half * 0.20 * 2) - (half * 0.20);
+            return center + offset;
+        }
+
+        private static string BuildFinderScript(bool returnMarkedCount)
+        {
+            var sb = new StringBuilder();
+
+            sb.Append(
+@"([vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps, markerAttr]) => {
+    document.querySelectorAll('[' + markerAttr + '=""1""]').forEach(el => el.removeAttribute(markerAttr));
+
+    function buildPercents(min, max, steps) {
+        if (steps <= 1) return [(min + max) / 2];
+        const arr = [];
+        const span = max - min;
+        for (let i = 0; i < steps; i++) {
+            arr.push(min + span * (i / (steps - 1)));
+        }
+        return arr;
+    }
+
+    const xPercents = buildPercents(xMinRatio, xMaxRatio, xSteps);
+    const yPercents = buildPercents(yMinRatio, yMaxRatio, ySteps);
+
+    const results = [];
+    const seen = new Set();
+    let markedCount = 0;
+
+    function tryParseUrl(raw) {
+        if (!raw || typeof raw !== 'string') return null;
+        const value = raw.trim();
+        if (!value) return null;
+
+        try {
+            return new URL(value, location.href);
+        } catch {
+            return null;
+        }
+    }
+
+    function isHttpProtocol(urlObj) {
+        if (!urlObj || !urlObj.protocol) return false;
+        const p = String(urlObj.protocol).toLowerCase();
+        return p === 'http:' || p === 'https:';
+    }
+
+    function containsAny(text, keywords) {
+        if (!text) return false;
+        const s = String(text).toLowerCase();
+        for (const k of keywords) {
+            if (s.includes(k)) return true;
+        }
+        return false;
+    }
+
+    function isBlockedHost(hostname) {
+        if (!hostname) return false;
+        const h = String(hostname).toLowerCase();
+
+        const exactBlockedHosts = [
+            'work.weixin.qq.com',
+            'weixin.qq.com',
+            'open.weixin.qq.com',
+            'qm.qq.com',
+            'w.url.cn',
+            'c.pc.qq.com',
+            'connect.qq.com',
+            'graph.qq.com'
+        ];
+
+        if (exactBlockedHosts.includes(h))
+            return true;
+
+        const suffixBlocked = [
+            '.work.weixin.qq.com',
+            '.weixin.qq.com',
+            '.open.weixin.qq.com',
+            '.qm.qq.com',
+            '.url.cn'
+        ];
+
+        for (const s of suffixBlocked) {
+            if (h.endsWith(s)) return true;
+        }
+
+        return false;
+    }
+
+    function isBlockedHttpAppLink(urlObj) {
+        if (!urlObj) return false;
+        if (!isHttpProtocol(urlObj)) return true;
+        if (isBlockedHost(urlObj.hostname)) return true;
+
+        const path = (urlObj.pathname || '').toLowerCase();
+        const search = (urlObj.search || '').toLowerCase();
+        const hash = (urlObj.hash || '').toLowerCase();
+        const full = path + search + hash;
+
+        const blockedPathParts = [
+            '/ca/',
+            '/cgi-bin/',
+            '/deeplink',
+            '/deep-link',
+            '/deep_link',
+            '/openapp',
+            '/launch',
+            '/jump',
+            '/invoke',
+            '/universal-link'
+        ];
+
+        for (const p of blockedPathParts) {
+            if (path.includes(p)) return true;
+        }
+
+        const blockedKeywords = [
+            'weixin',
+            'wechat',
+            'wxwork',
+            'mqq',
+            'qqlaunch',
+            'customer_channel=',
+            'scheme=',
+            'scheme%3a',
+            'deeplink',
+            'deep_link',
+            'openapp',
+            'launchapp',
+            'launch=',
+            'intent:',
+            'weixin:',
+            'wxwork:',
+            'mqq:',
+            'qq:'
+        ];
+
+        if (containsAny(full, blockedKeywords))
+            return true;
+
+        return false;
+    }
+
+    function isSafeWebUrl(raw) {
+        if (!raw || typeof raw !== 'string')
+            return true;
+
+        const value = raw.trim();
+        if (!value)
+            return true;
+
+        const urlObj = tryParseUrl(value);
+        if (!urlObj)
+            return true;
+
+        return !isBlockedHttpAppLink(urlObj);
+    }
+
+    function hasBlockedUrlAttribute(el) {
+        if (!el || !el.getAttribute) return false;
+
+        const attrs = [
+            'href',
+            'data-href',
+            'data-url',
+            'data-link',
+            'data-jump',
+            'data-redirect',
+            'data-target-url',
+            'formaction',
+            'action',
+            'xlink:href'
+        ];
+
+        for (const name of attrs) {
+            const val = el.getAttribute(name);
+            if (!val) continue;
+
+            if (!isSafeWebUrl(val))
+                return true;
+        }
+
+        return false;
+    }
+
+    function hasBlockedOnclick(el) {
+        if (!el || !el.getAttribute) return false;
+
+        const onclickText = el.getAttribute('onclick') || '';
+        if (!onclickText) return false;
+
+        const s = onclickText.toLowerCase();
+
+        const blockedSnippets = [
+            'javascript:',
+            'mailto:',
+            'tel:',
+            'sms:',
+            'intent:',
+            'weixin:',
+            'wxwork:',
+            'wechat:',
+            'mqq:',
+            'qq:',
+            'alipays:',
+            'openapp',
+            'launchapp',
+            'deeplink',
+            'deep_link'
+        ];
+
+        if (containsAny(s, blockedSnippets))
+            return true;
+
+        if ((s.includes('location.href') || s.includes('window.open') || s.includes('open(')) &&
+            containsAny(s, ['weixin', 'wechat', 'wxwork', 'qq', 'mqq']))
+            return true;
+
+        return false;
+    }
+
+    function isAllowedTarget(el) {
+        if (!el) return false;
+
+        const linkLike = el.closest('a, area, form');
+        if (linkLike && hasBlockedUrlAttribute(linkLike))
+            return false;
+
+        if (hasBlockedUrlAttribute(el))
+            return false;
+
+        if (hasBlockedOnclick(el))
+            return false;
+
+        return true;
+    }
+
+    function isVisible(el) {
+        if (!el) return false;
+
+        const style = getComputedStyle(el);
+        if (style.display === 'none') return false;
+        if (style.visibility === 'hidden') return false;
+        if (style.pointerEvents === 'none') return false;
+        if (parseFloat(style.opacity || '1') <= 0.05) return false;
+
+        const rect = el.getBoundingClientRect();
+        if (!rect) return false;
+        if (rect.width < 2 || rect.height < 2) return false;
+        if (rect.bottom <= 0 || rect.right <= 0 || rect.left >= vw || rect.top >= vh) return false;
+
+        return true;
+    }
+
+    function isReasonableArea(el) {
+        const rect = el.getBoundingClientRect();
+        if (!rect) return false;
+
+        const area = rect.width * rect.height;
+        if (area < 36) return false;
+
+        // 太大的容器通常不是理想点击目标
+        if (rect.width > vw * 0.95 && rect.height > vh * 0.45) return false;
+
+        return true;
+    }
+
+    function isClickable(el) {
+        if (!el) return false;
+        if (el.disabled) return false;
+        if (!isAllowedTarget(el)) return false;
+
+        const tag = (el.tagName || '').toLowerCase();
+        if (tag === 'html' || tag === 'body') return false;
+
+        if (tag === 'a' || tag === 'area') {
+            const href = el.getAttribute('href') || '';
+            if (!href) return false;
+            return isSafeWebUrl(href);
+        }
+
+        if (tag === 'button' || tag === 'summary' || tag === 'label') return true;
+        if (tag === 'input' && el.type !== 'hidden') return true;
+
+        const role = (el.getAttribute('role') || '').toLowerCase();
+        if (role === 'button' || role === 'link' || role === 'menuitem' || role === 'tab')
+            return true;
+
+        if (el.hasAttribute('onclick')) return true;
+        if (el.hasAttribute('tabindex') && el.tabIndex >= 0) return true;
+        if (el.hasAttribute('aria-expanded')) return true;
+        if (el.hasAttribute('aria-pressed')) return true;
+
+        const style = getComputedStyle(el);
+        if (style.cursor === 'pointer') return true;
+
+        return false;
+    }
+
+    function getClickableAncestor(el) {
+        let cur = el;
+        while (cur && cur !== document.documentElement) {
+            if (isVisible(cur) && isClickable(cur) && isReasonableArea(cur)) {
+                return cur;
+            }
+            cur = cur.parentElement;
+        }
+        return null;
+    }
+
+    function getSelectorHint(el) {
+        if (!el) return '';
+
+        const tag = (el.tagName || '').toLowerCase();
+        const id = el.id ? ('#' + el.id) : '';
+        const cls = el.classList && el.classList.length > 0
+            ? '.' + Array.from(el.classList).slice(0, 2).join('.')
+            : '';
+
+        const dataType = el.getAttribute('data-type');
+        const dt = dataType ? ('[data-type=""' + dataType + '""]') : '';
+
+        return '' + tag + id + cls + dt;
+    }
+
+    function addResult(hit) {
+        const rect = hit.getBoundingClientRect();
+
+        const key =
+            (hit.tagName || '') + '|' +
+            (hit.id || '') + '|' +
+            (hit.className || '') + '|' +
+            Math.round(rect.left) + '|' +
+            Math.round(rect.top) + '|' +
+            Math.round(rect.width) + '|' +
+            Math.round(rect.height);
+
+        if (seen.has(key))
+            return false;
+
+        seen.add(key);
+
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+
+        const dx = Math.abs(cx - vw / 2);
+        const dy = Math.abs(cy - vh / 2);
+
+        let score = 1000 - dx * 2 - dy * 2;
+
+        const area = rect.width * rect.height;
+        if (area < 100) score -= 120;
+        else if (area < 180) score -= 50;
+        else if (area > vw * vh * 0.20) score -= 120;
+
+        const tag = (hit.tagName || '').toLowerCase();
+        if (tag === 'button' || tag === 'a') score += 40;
+        if (tag === 'input') score += 20;
+
+        results.push({
+            tagName: tag,
+            selectorHint: getSelectorHint(hit),
+            centerX: cx,
+            centerY: cy,
+            width: rect.width,
+            height: rect.height,
+            score: score
+        });
+
+        return true;
+    }
+
+    for (const xp of xPercents) {
+        for (const yp of yPercents) {
+            const x = Math.round(vw * xp);
+            const y = Math.round(vh * yp);
+
+            const stack = document.elementsFromPoint(x, y);
+            if (!stack || stack.length === 0) continue;
+
+            for (const raw of stack) {
+                const hit = getClickableAncestor(raw);
+                if (!hit) continue;
+
+                if (addResult(hit)) {
+                    hit.setAttribute(markerAttr, '1');
+                    markedCount++;
+                }
+
+                break;
+            }
+        }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+");
+
+            if (returnMarkedCount)
+            {
+                sb.Append("return markedCount;");
+            }
+            else
+            {
+                sb.Append("return results;");
+            }
+
+            sb.Append("}");
+
+            return sb.ToString();
         }
     }
 }
