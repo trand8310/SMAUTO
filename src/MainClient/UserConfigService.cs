@@ -18,7 +18,7 @@ namespace MainClient
             {
                 appSettings.FetchTaskInterval = 1000;
                 appSettings.MaximumConcurrency = 1;
-                appSettings.MainResetTimeout = 240;
+                appSettings.MainResetTimeout = 65;
                 appSettings.PageloadedDelay = "8-12";
                 appSettings.PageLoadingTimeout = 20;
                 appSettings.Multiple = 1;
@@ -31,6 +31,7 @@ namespace MainClient
                 appSettings.TaskApiUrl = "http://117.21.200.221/client-v5.php";
                 appSettings.IsHiddenMode = true;
                 appSettings.IsProxyMode = true;
+                appSettings.AutoUpdate = false;
             }
         }
 

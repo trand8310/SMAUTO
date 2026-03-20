@@ -220,6 +220,39 @@ namespace QTP.Common
             return result;
         }
 
+        public static List<CleanupItem> CollectDirectories(string parentPath)
+        {
+            var result = new List<CleanupItem>();
+
+            try
+            {
+                if (!Directory.Exists(parentPath))
+                    return result;
+
+                foreach (var dir in Directory.EnumerateDirectories(parentPath, "*", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        result.Add(new CleanupItem
+                        {
+                            Type = CleanupItemType.Directory,
+                            Path = dir
+                        });
+
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+
+
         public static List<CleanupItem> CollectPrefixedDirectories(string parentPath, string prefix)
         {
             var result = new List<CleanupItem>();

@@ -71,6 +71,8 @@
             label25 = new Label();
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
+            checkBox_AutoUpdate = new CheckBox();
+            button3 = new Button();
             button2 = new Button();
             button7 = new Button();
             button6 = new Button();
@@ -82,9 +84,6 @@
             checkBox_Rfq1688 = new CheckBox();
             checkBox_IsTest = new CheckBox();
             btnStartStop = new Button();
-            label42 = new Label();
-            comboBox_HistoryVersionList = new ComboBox();
-            button5 = new Button();
             label43 = new Label();
             comboBox_VersionList = new ComboBox();
             btnUpdate = new Button();
@@ -136,7 +135,6 @@
             label12 = new Label();
             label11 = new Label();
             label10 = new Label();
-            button3 = new Button();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_MainResetTimeout).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Multiple).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchTaskInterval).BeginInit();
@@ -159,7 +157,7 @@
             // 
             comboBox_QTPName.DropDownStyle = ComboBoxStyle.DropDownList;
             comboBox_QTPName.FormattingEnabled = true;
-            comboBox_QTPName.Location = new Point(426, 105);
+            comboBox_QTPName.Location = new Point(371, 105);
             comboBox_QTPName.Margin = new Padding(3, 2, 3, 2);
             comboBox_QTPName.Name = "comboBox_QTPName";
             comboBox_QTPName.Size = new Size(145, 28);
@@ -219,7 +217,7 @@
             // linkLabel1
             // 
             linkLabel1.AutoSize = true;
-            linkLabel1.Location = new Point(593, 377);
+            linkLabel1.Location = new Point(482, 450);
             linkLabel1.Margin = new Padding(4, 0, 4, 0);
             linkLabel1.Name = "linkLabel1";
             linkLabel1.Size = new Size(69, 20);
@@ -231,7 +229,7 @@
             // checkBox_IsDetailLog
             // 
             checkBox_IsDetailLog.AutoSize = true;
-            checkBox_IsDetailLog.Location = new Point(313, 434);
+            checkBox_IsDetailLog.Location = new Point(313, 403);
             checkBox_IsDetailLog.Margin = new Padding(5);
             checkBox_IsDetailLog.Name = "checkBox_IsDetailLog";
             checkBox_IsDetailLog.Size = new Size(91, 24);
@@ -290,7 +288,7 @@
             // checkBox_IsProxyMode
             // 
             checkBox_IsProxyMode.AutoSize = true;
-            checkBox_IsProxyMode.Location = new Point(594, 221);
+            checkBox_IsProxyMode.Location = new Point(552, 221);
             checkBox_IsProxyMode.Margin = new Padding(5);
             checkBox_IsProxyMode.Name = "checkBox_IsProxyMode";
             checkBox_IsProxyMode.Size = new Size(91, 24);
@@ -301,7 +299,7 @@
             // checkBox_IsHiddenMode
             // 
             checkBox_IsHiddenMode.AutoSize = true;
-            checkBox_IsHiddenMode.Location = new Point(594, 192);
+            checkBox_IsHiddenMode.Location = new Point(552, 192);
             checkBox_IsHiddenMode.Margin = new Padding(5);
             checkBox_IsHiddenMode.Name = "checkBox_IsHiddenMode";
             checkBox_IsHiddenMode.Size = new Size(91, 24);
@@ -312,7 +310,7 @@
             // label110
             // 
             label110.AutoSize = true;
-            label110.Location = new Point(410, 144);
+            label110.Location = new Point(355, 144);
             label110.Margin = new Padding(5, 0, 5, 0);
             label110.Name = "label110";
             label110.Size = new Size(73, 20);
@@ -321,7 +319,7 @@
             // 
             // numericUpDown_Multiple
             // 
-            numericUpDown_Multiple.Location = new Point(484, 140);
+            numericUpDown_Multiple.Location = new Point(429, 140);
             numericUpDown_Multiple.Margin = new Padding(5, 4, 5, 4);
             numericUpDown_Multiple.Name = "numericUpDown_Multiple";
             numericUpDown_Multiple.Size = new Size(87, 27);
@@ -337,7 +335,7 @@
             buttonClear.Name = "buttonClear";
             buttonClear.Size = new Size(66, 31);
             buttonClear.TabIndex = 22;
-            buttonClear.Text = "清除";
+            buttonClear.Text = "清理";
             buttonClear.UseVisualStyleBackColor = true;
             buttonClear.Click += buttonClear_Click;
             // 
@@ -449,7 +447,7 @@
             // 
             groupBox6.Controls.Add(radioButton_UseLocalDev);
             groupBox6.Controls.Add(radioButton_UseSystemDev);
-            groupBox6.Location = new Point(579, 469);
+            groupBox6.Location = new Point(482, 368);
             groupBox6.Margin = new Padding(5);
             groupBox6.Name = "groupBox6";
             groupBox6.Padding = new Padding(5);
@@ -486,11 +484,11 @@
             // groupBox33
             // 
             groupBox33.Dock = DockStyle.Fill;
-            groupBox33.Location = new Point(0, 590);
+            groupBox33.Location = new Point(0, 574);
             groupBox33.Margin = new Padding(5, 4, 5, 4);
             groupBox33.Name = "groupBox33";
             groupBox33.Padding = new Padding(5, 4, 5, 4);
-            groupBox33.Size = new Size(1091, 171);
+            groupBox33.Size = new Size(1091, 187);
             groupBox33.TabIndex = 4;
             groupBox33.TabStop = false;
             groupBox33.Text = "日志";
@@ -545,7 +543,7 @@
             // label25
             // 
             label25.AutoSize = true;
-            label25.Location = new Point(341, 109);
+            label25.Location = new Point(286, 109);
             label25.Margin = new Padding(5, 0, 5, 0);
             label25.Name = "label25";
             label25.Size = new Size(77, 20);
@@ -560,11 +558,12 @@
             tabControl1.Margin = new Padding(3, 2, 3, 2);
             tabControl1.Name = "tabControl1";
             tabControl1.SelectedIndex = 0;
-            tabControl1.Size = new Size(1091, 590);
+            tabControl1.Size = new Size(1091, 574);
             tabControl1.TabIndex = 8;
             // 
             // tabPage1
             // 
+            tabPage1.Controls.Add(checkBox_AutoUpdate);
             tabPage1.Controls.Add(button3);
             tabPage1.Controls.Add(button2);
             tabPage1.Controls.Add(button7);
@@ -577,9 +576,6 @@
             tabPage1.Controls.Add(checkBox_Rfq1688);
             tabPage1.Controls.Add(checkBox_IsTest);
             tabPage1.Controls.Add(btnStartStop);
-            tabPage1.Controls.Add(label42);
-            tabPage1.Controls.Add(comboBox_HistoryVersionList);
-            tabPage1.Controls.Add(button5);
             tabPage1.Controls.Add(label43);
             tabPage1.Controls.Add(comboBox_VersionList);
             tabPage1.Controls.Add(btnUpdate);
@@ -647,10 +643,33 @@
             tabPage1.Margin = new Padding(3, 2, 3, 2);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3, 2, 3, 2);
-            tabPage1.Size = new Size(1083, 557);
+            tabPage1.Size = new Size(1083, 541);
             tabPage1.TabIndex = 0;
             tabPage1.Text = "信息";
             tabPage1.UseVisualStyleBackColor = true;
+            // 
+            // checkBox_AutoUpdate
+            // 
+            checkBox_AutoUpdate.AutoSize = true;
+            checkBox_AutoUpdate.Location = new Point(352, 335);
+            checkBox_AutoUpdate.Name = "checkBox_AutoUpdate";
+            checkBox_AutoUpdate.Size = new Size(91, 24);
+            checkBox_AutoUpdate.TabIndex = 197;
+            checkBox_AutoUpdate.Text = "自动更新";
+            checkBox_AutoUpdate.UseVisualStyleBackColor = true;
+            // 
+            // button3
+            // 
+            button3.Font = new Font("宋体", 9F);
+            button3.ForeColor = Color.Red;
+            button3.Location = new Point(672, 139);
+            button3.Margin = new Padding(5);
+            button3.Name = "button3";
+            button3.Size = new Size(142, 31);
+            button3.TabIndex = 196;
+            button3.Text = "重启系统";
+            button3.UseVisualStyleBackColor = true;
+            button3.Click += button3_Click_1;
             // 
             // button2
             // 
@@ -667,7 +686,7 @@
             // 
             // button7
             // 
-            button7.Location = new Point(387, 398);
+            button7.Location = new Point(353, 367);
             button7.Name = "button7";
             button7.Size = new Size(55, 30);
             button7.TabIndex = 194;
@@ -677,9 +696,9 @@
             // 
             // button6
             // 
-            button6.Location = new Point(327, 298);
+            button6.Location = new Point(295, 298);
             button6.Name = "button6";
-            button6.Size = new Size(55, 30);
+            button6.Size = new Size(54, 30);
             button6.TabIndex = 193;
             button6.Text = "下载";
             button6.UseVisualStyleBackColor = true;
@@ -688,7 +707,7 @@
             // label45
             // 
             label45.AutoSize = true;
-            label45.Location = new Point(619, 336);
+            label45.Location = new Point(707, 336);
             label45.Margin = new Padding(5, 0, 5, 0);
             label45.Name = "label45";
             label45.Size = new Size(22, 20);
@@ -697,7 +716,7 @@
             // 
             // numericUpDown_p4psearchRate
             // 
-            numericUpDown_p4psearchRate.Location = new Point(527, 332);
+            numericUpDown_p4psearchRate.Location = new Point(615, 332);
             numericUpDown_p4psearchRate.Margin = new Padding(5, 4, 5, 4);
             numericUpDown_p4psearchRate.Name = "numericUpDown_p4psearchRate";
             numericUpDown_p4psearchRate.Size = new Size(87, 27);
@@ -706,7 +725,7 @@
             // checkBox_p4psearch
             // 
             checkBox_p4psearch.AutoSize = true;
-            checkBox_p4psearch.Location = new Point(394, 333);
+            checkBox_p4psearch.Location = new Point(482, 333);
             checkBox_p4psearch.Margin = new Padding(5);
             checkBox_p4psearch.Name = "checkBox_p4psearch";
             checkBox_p4psearch.Size = new Size(127, 24);
@@ -717,7 +736,7 @@
             // label44
             // 
             label44.AutoSize = true;
-            label44.Location = new Point(619, 302);
+            label44.Location = new Point(707, 302);
             label44.Margin = new Padding(5, 0, 5, 0);
             label44.Name = "label44";
             label44.Size = new Size(22, 20);
@@ -726,7 +745,7 @@
             // 
             // numericUpDown_Rfq1688Rate
             // 
-            numericUpDown_Rfq1688Rate.Location = new Point(527, 298);
+            numericUpDown_Rfq1688Rate.Location = new Point(615, 298);
             numericUpDown_Rfq1688Rate.Margin = new Padding(5, 4, 5, 4);
             numericUpDown_Rfq1688Rate.Name = "numericUpDown_Rfq1688Rate";
             numericUpDown_Rfq1688Rate.Size = new Size(87, 27);
@@ -735,7 +754,7 @@
             // checkBox_Rfq1688
             // 
             checkBox_Rfq1688.AutoSize = true;
-            checkBox_Rfq1688.Location = new Point(394, 300);
+            checkBox_Rfq1688.Location = new Point(482, 300);
             checkBox_Rfq1688.Margin = new Padding(5);
             checkBox_Rfq1688.Name = "checkBox_Rfq1688";
             checkBox_Rfq1688.Size = new Size(142, 24);
@@ -746,7 +765,7 @@
             // checkBox_IsTest
             // 
             checkBox_IsTest.AutoSize = true;
-            checkBox_IsTest.Location = new Point(701, 192);
+            checkBox_IsTest.Location = new Point(659, 192);
             checkBox_IsTest.Margin = new Padding(5);
             checkBox_IsTest.Name = "checkBox_IsTest";
             checkBox_IsTest.Size = new Size(91, 24);
@@ -766,36 +785,6 @@
             btnStartStop.UseVisualStyleBackColor = true;
             btnStartStop.Click += btnStartStop_Click;
             // 
-            // label42
-            // 
-            label42.AutoSize = true;
-            label42.Location = new Point(39, 369);
-            label42.Margin = new Padding(5, 0, 5, 0);
-            label42.Name = "label42";
-            label42.Size = new Size(73, 20);
-            label42.TabIndex = 184;
-            label42.Text = "历史版本:";
-            // 
-            // comboBox_HistoryVersionList
-            // 
-            comboBox_HistoryVersionList.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBox_HistoryVersionList.FormattingEnabled = true;
-            comboBox_HistoryVersionList.Location = new Point(117, 365);
-            comboBox_HistoryVersionList.Margin = new Padding(3, 2, 3, 2);
-            comboBox_HistoryVersionList.Name = "comboBox_HistoryVersionList";
-            comboBox_HistoryVersionList.Size = new Size(205, 28);
-            comboBox_HistoryVersionList.TabIndex = 183;
-            // 
-            // button5
-            // 
-            button5.Location = new Point(327, 364);
-            button5.Name = "button5";
-            button5.Size = new Size(55, 30);
-            button5.TabIndex = 182;
-            button5.Text = "切换";
-            button5.UseVisualStyleBackColor = true;
-            button5.Click += button5_Click;
-            // 
             // label43
             // 
             label43.AutoSize = true;
@@ -813,14 +802,14 @@
             comboBox_VersionList.Location = new Point(117, 332);
             comboBox_VersionList.Margin = new Padding(3, 2, 3, 2);
             comboBox_VersionList.Name = "comboBox_VersionList";
-            comboBox_VersionList.Size = new Size(205, 28);
+            comboBox_VersionList.Size = new Size(174, 28);
             comboBox_VersionList.TabIndex = 180;
             // 
             // btnUpdate
             // 
-            btnUpdate.Location = new Point(327, 331);
+            btnUpdate.Location = new Point(295, 331);
             btnUpdate.Name = "btnUpdate";
-            btnUpdate.Size = new Size(55, 30);
+            btnUpdate.Size = new Size(54, 30);
             btnUpdate.TabIndex = 179;
             btnUpdate.Text = "更新";
             btnUpdate.UseVisualStyleBackColor = true;
@@ -829,7 +818,7 @@
             // checkBox_NotTriggerDownload
             // 
             checkBox_NotTriggerDownload.AutoSize = true;
-            checkBox_NotTriggerDownload.Location = new Point(252, 460);
+            checkBox_NotTriggerDownload.Location = new Point(252, 429);
             checkBox_NotTriggerDownload.Margin = new Padding(5);
             checkBox_NotTriggerDownload.Name = "checkBox_NotTriggerDownload";
             checkBox_NotTriggerDownload.Size = new Size(151, 24);
@@ -840,7 +829,7 @@
             // checkBox_UseDynamicWord
             // 
             checkBox_UseDynamicWord.AutoSize = true;
-            checkBox_UseDynamicWord.Location = new Point(175, 434);
+            checkBox_UseDynamicWord.Location = new Point(175, 403);
             checkBox_UseDynamicWord.Margin = new Padding(5);
             checkBox_UseDynamicWord.Name = "checkBox_UseDynamicWord";
             checkBox_UseDynamicWord.Size = new Size(121, 24);
@@ -978,7 +967,7 @@
             // checkBox_CleaningWords
             // 
             checkBox_CleaningWords.AutoSize = true;
-            checkBox_CleaningWords.Location = new Point(252, 521);
+            checkBox_CleaningWords.Location = new Point(252, 490);
             checkBox_CleaningWords.Margin = new Padding(5);
             checkBox_CleaningWords.Name = "checkBox_CleaningWords";
             checkBox_CleaningWords.Size = new Size(106, 24);
@@ -989,7 +978,7 @@
             // checkBox_NoTrigger1688
             // 
             checkBox_NoTrigger1688.AutoSize = true;
-            checkBox_NoTrigger1688.Location = new Point(252, 491);
+            checkBox_NoTrigger1688.Location = new Point(252, 460);
             checkBox_NoTrigger1688.Margin = new Padding(5);
             checkBox_NoTrigger1688.Name = "checkBox_NoTrigger1688";
             checkBox_NoTrigger1688.Size = new Size(142, 24);
@@ -1000,7 +989,7 @@
             // checkBox_PVsTriggerOne
             // 
             checkBox_PVsTriggerOne.AutoSize = true;
-            checkBox_PVsTriggerOne.Location = new Point(39, 492);
+            checkBox_PVsTriggerOne.Location = new Point(39, 461);
             checkBox_PVsTriggerOne.Margin = new Padding(5);
             checkBox_PVsTriggerOne.Name = "checkBox_PVsTriggerOne";
             checkBox_PVsTriggerOne.Size = new Size(202, 24);
@@ -1011,7 +1000,7 @@
             // checkBox_Incognito
             // 
             checkBox_Incognito.AutoSize = true;
-            checkBox_Incognito.Location = new Point(701, 247);
+            checkBox_Incognito.Location = new Point(659, 247);
             checkBox_Incognito.Margin = new Padding(5);
             checkBox_Incognito.Name = "checkBox_Incognito";
             checkBox_Incognito.Size = new Size(91, 24);
@@ -1036,13 +1025,13 @@
             comboBox_KernelVersion.Location = new Point(117, 299);
             comboBox_KernelVersion.Margin = new Padding(3, 2, 3, 2);
             comboBox_KernelVersion.Name = "comboBox_KernelVersion";
-            comboBox_KernelVersion.Size = new Size(205, 28);
+            comboBox_KernelVersion.Size = new Size(174, 28);
             comboBox_KernelVersion.TabIndex = 151;
             // 
             // checkBox_UVsTriggerOne
             // 
             checkBox_UVsTriggerOne.AutoSize = true;
-            checkBox_UVsTriggerOne.Location = new Point(39, 463);
+            checkBox_UVsTriggerOne.Location = new Point(39, 432);
             checkBox_UVsTriggerOne.Margin = new Padding(5);
             checkBox_UVsTriggerOne.Name = "checkBox_UVsTriggerOne";
             checkBox_UVsTriggerOne.Size = new Size(204, 24);
@@ -1053,7 +1042,7 @@
             // checkBox_PriorityNon1688
             // 
             checkBox_PriorityNon1688.AutoSize = true;
-            checkBox_PriorityNon1688.Location = new Point(39, 521);
+            checkBox_PriorityNon1688.Location = new Point(39, 490);
             checkBox_PriorityNon1688.Margin = new Padding(5);
             checkBox_PriorityNon1688.Name = "checkBox_PriorityNon1688";
             checkBox_PriorityNon1688.Size = new Size(142, 24);
@@ -1063,7 +1052,7 @@
             // 
             // button1
             // 
-            button1.Location = new Point(327, 397);
+            button1.Location = new Point(295, 366);
             button1.Name = "button1";
             button1.Size = new Size(54, 30);
             button1.TabIndex = 147;
@@ -1074,7 +1063,7 @@
             // label15
             // 
             label15.AutoSize = true;
-            label15.Location = new Point(36, 402);
+            label15.Location = new Point(36, 371);
             label15.Margin = new Padding(5, 0, 5, 0);
             label15.Name = "label15";
             label15.Size = new Size(73, 20);
@@ -1084,16 +1073,16 @@
             // comboBox_WordName
             // 
             comboBox_WordName.FormattingEnabled = true;
-            comboBox_WordName.Location = new Point(117, 397);
+            comboBox_WordName.Location = new Point(117, 366);
             comboBox_WordName.Margin = new Padding(3, 2, 3, 2);
             comboBox_WordName.Name = "comboBox_WordName";
-            comboBox_WordName.Size = new Size(205, 28);
+            comboBox_WordName.Size = new Size(174, 28);
             comboBox_WordName.TabIndex = 145;
             // 
             // label38
             // 
             label38.AutoSize = true;
-            label38.Location = new Point(576, 270);
+            label38.Location = new Point(521, 270);
             label38.Margin = new Padding(5, 0, 5, 0);
             label38.Name = "label38";
             label38.Size = new Size(24, 20);
@@ -1103,7 +1092,7 @@
             // label39
             // 
             label39.AutoSize = true;
-            label39.Location = new Point(397, 270);
+            label39.Location = new Point(342, 270);
             label39.Margin = new Padding(5, 0, 5, 0);
             label39.Name = "label39";
             label39.Size = new Size(86, 20);
@@ -1112,7 +1101,7 @@
             // 
             // numericUpDown_IpTtl
             // 
-            numericUpDown_IpTtl.Location = new Point(484, 265);
+            numericUpDown_IpTtl.Location = new Point(429, 265);
             numericUpDown_IpTtl.Margin = new Padding(5, 4, 5, 4);
             numericUpDown_IpTtl.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
             numericUpDown_IpTtl.Name = "numericUpDown_IpTtl";
@@ -1122,7 +1111,7 @@
             // label34
             // 
             label34.AutoSize = true;
-            label34.Location = new Point(357, 175);
+            label34.Location = new Point(302, 175);
             label34.Margin = new Padding(5, 0, 5, 0);
             label34.Name = "label34";
             label34.Size = new Size(126, 20);
@@ -1131,7 +1120,7 @@
             // 
             // numericUpDown_HompageTrigger
             // 
-            numericUpDown_HompageTrigger.Location = new Point(484, 171);
+            numericUpDown_HompageTrigger.Location = new Point(429, 171);
             numericUpDown_HompageTrigger.Margin = new Padding(5, 4, 5, 4);
             numericUpDown_HompageTrigger.Name = "numericUpDown_HompageTrigger";
             numericUpDown_HompageTrigger.Size = new Size(87, 27);
@@ -1139,7 +1128,7 @@
             // 
             // textBox_PVOverride
             // 
-            textBox_PVOverride.Location = new Point(484, 233);
+            textBox_PVOverride.Location = new Point(429, 233);
             textBox_PVOverride.Margin = new Padding(5, 4, 5, 4);
             textBox_PVOverride.Name = "textBox_PVOverride";
             textBox_PVOverride.Size = new Size(86, 27);
@@ -1147,7 +1136,7 @@
             // 
             // textBox_UVOverride
             // 
-            textBox_UVOverride.Location = new Point(484, 202);
+            textBox_UVOverride.Location = new Point(429, 202);
             textBox_UVOverride.Margin = new Padding(5, 4, 5, 4);
             textBox_UVOverride.Name = "textBox_UVOverride";
             textBox_UVOverride.Size = new Size(86, 27);
@@ -1156,7 +1145,7 @@
             // label33
             // 
             label33.AutoSize = true;
-            label33.Location = new Point(451, 236);
+            label33.Location = new Point(396, 236);
             label33.Margin = new Padding(5, 0, 5, 0);
             label33.Name = "label33";
             label33.Size = new Size(32, 20);
@@ -1166,7 +1155,7 @@
             // label31
             // 
             label31.AutoSize = true;
-            label31.Location = new Point(449, 207);
+            label31.Location = new Point(394, 207);
             label31.Margin = new Padding(5, 0, 5, 0);
             label31.Name = "label31";
             label31.Size = new Size(34, 20);
@@ -1176,7 +1165,7 @@
             // checkBox_GetIpInfo
             // 
             checkBox_GetIpInfo.AutoSize = true;
-            checkBox_GetIpInfo.Location = new Point(594, 247);
+            checkBox_GetIpInfo.Location = new Point(552, 247);
             checkBox_GetIpInfo.Margin = new Padding(5);
             checkBox_GetIpInfo.Name = "checkBox_GetIpInfo";
             checkBox_GetIpInfo.Size = new Size(104, 24);
@@ -1187,7 +1176,7 @@
             // linkLabel2
             // 
             linkLabel2.AutoSize = true;
-            linkLabel2.Location = new Point(593, 408);
+            linkLabel2.Location = new Point(586, 450);
             linkLabel2.Margin = new Padding(4, 0, 4, 0);
             linkLabel2.Name = "linkLabel2";
             linkLabel2.Size = new Size(69, 20);
@@ -1199,7 +1188,7 @@
             // checkBox_IsRealIp
             // 
             checkBox_IsRealIp.AutoSize = true;
-            checkBox_IsRealIp.Location = new Point(701, 221);
+            checkBox_IsRealIp.Location = new Point(659, 221);
             checkBox_IsRealIp.Margin = new Padding(5);
             checkBox_IsRealIp.Name = "checkBox_IsRealIp";
             checkBox_IsRealIp.Size = new Size(74, 24);
@@ -1210,7 +1199,7 @@
             // checkBox_UseLocalWord
             // 
             checkBox_UseLocalWord.AutoSize = true;
-            checkBox_UseLocalWord.Location = new Point(39, 434);
+            checkBox_UseLocalWord.Location = new Point(39, 403);
             checkBox_UseLocalWord.Margin = new Padding(5);
             checkBox_UseLocalWord.Name = "checkBox_UseLocalWord";
             checkBox_UseLocalWord.Size = new Size(121, 24);
@@ -1322,19 +1311,6 @@
             label10.Size = new Size(82, 20);
             label10.TabIndex = 86;
             label10.Text = "失败数量:0";
-            // 
-            // button3
-            // 
-            button3.Font = new Font("宋体", 9F);
-            button3.ForeColor = Color.Red;
-            button3.Location = new Point(672, 139);
-            button3.Margin = new Padding(5);
-            button3.Name = "button3";
-            button3.Size = new Size(142, 31);
-            button3.TabIndex = 196;
-            button3.Text = "重启系统";
-            button3.UseVisualStyleBackColor = true;
-            button3.Click += button3_Click_1;
             // 
             // MainForm
             // 
@@ -1464,9 +1440,6 @@
         private Button button4;
         private Label label41;
         private TextBox textBox_ExcludeWords;
-        private Label label42;
-        private ComboBox comboBox_HistoryVersionList;
-        private Button button5;
         private Label label43;
         private ComboBox comboBox_VersionList;
         private Button btnUpdate;
@@ -1484,6 +1457,7 @@
         private Button button7;
         private Button button2;
         private Button button3;
+        private CheckBox checkBox_AutoUpdate;
     }
 }
 

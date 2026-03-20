@@ -134,6 +134,11 @@
         /// </summary>
         public bool IsTest { get; set; }
 
+        /// <summary>
+        /// 启动时是否自动执行应用更新
+        /// </summary>
+        public bool AutoUpdate { get; set; }
+
 
 
 

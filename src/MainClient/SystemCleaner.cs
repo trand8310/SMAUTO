@@ -147,22 +147,10 @@ namespace MainClient
         {
             try
             {
-                // =========================================
-                // 1️⃣ 结束 Explorer
-                // =========================================
-                KillProcessByName("explorer.exe");
-                Thread.Sleep(800);
-                // =========================================
-                // 2️⃣ 清理 Explorer 缓存
-                // =========================================
+                KillProcessByName("explorer");
+                Thread.Sleep(500);
                 ClearExplorerCache();
-                // =========================================
-                // 3️⃣ 重启 Explorer
-                // =========================================
                 StartExplorer();
-                // =========================================
-                // 4️⃣ 重启 rdpclip（剪贴板）
-                // =========================================
                 RestartRdpClip();
             }
             catch
@@ -171,30 +159,39 @@ namespace MainClient
             }
         }
 
-        // ===============================
-        // 杀进程（WMI）
-        // ===============================
         private static void KillProcessByName(string processName)
         {
-            using var searcher = new ManagementObjectSearcher(
-                $"SELECT ProcessId FROM Win32_Process WHERE Name='{processName}'");
-
-            foreach (ManagementObject obj in searcher.Get())
+            string exeName = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? processName
+                : processName + ".exe";
+            string shortName = Path.GetFileNameWithoutExtension(exeName);
+            foreach (var proc in Process.GetProcessesByName(shortName))
             {
                 try
                 {
-                    int pid = Convert.ToInt32(obj["ProcessId"]);
-                    var proc = Process.GetProcessById(pid);
-
-                    if (!proc.HasExited)
-                    {
-                        proc.Kill(true);
-                        proc.WaitForExit(3000);
-                    }
+                    proc.Kill();
+                    proc.WaitForExit(3000);
                 }
-                catch { }
+                catch
+                {
+                }
+                finally
+                {
+                    proc.Dispose();
+                }
             }
+            using var killer = Process.Start(new ProcessStartInfo
+            {
+                FileName = "taskkill",
+                Arguments = $"/F /IM \"{exeName}\" /T",
+                CreateNoWindow = true,
+                UseShellExecute = false
+            });
+
+            killer?.WaitForExit(5000);
         }
+
+
 
         // ===============================
         // 清理 Explorer 缓存
@@ -234,9 +231,6 @@ namespace MainClient
             }
             catch { }
         }
-
-
-
         /// <summary>
         /// 启动Explorer
         /// </summary>
@@ -244,87 +238,24 @@ namespace MainClient
         {
             try
             {
-                foreach (var p in Process.GetProcessesByName("explorer"))
-                {
-                    try
-                    {
-                        if (!p.HasExited)
-                        {
-                            p.Kill(true);
-                            p.WaitForExit(3000);
-                        }
-                    }
-                    catch { }
-                    finally
-                    {
-                        try { p.Dispose(); } catch { }
-                    }
-                }
-
-                Thread.Sleep(500);
-
                 string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
                 string explorerPath = Path.Combine(windowsDir, "explorer.exe");
+
+                if (!File.Exists(explorerPath))
+                    return;
 
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = explorerPath,
                     WorkingDirectory = windowsDir,
-                    Arguments = "/factory,{682159D9-C321-47CA-B3F1-30E36B9C5E5C}",
-                    UseShellExecute = true
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Normal
                 });
-                //Process.Start(new ProcessStartInfo
-                //{
-                //    FileName = explorerPath,
-                //    WorkingDirectory = windowsDir,
-                //    UseShellExecute = false,
-                //    CreateNoWindow = false
-                //});
             }
-            catch { }
-        }
-
-
-        /// <summary>
-        /// 重启explorer
-        /// </summary>
-        private static void RestartExplorer()
-        {
-            try
+            catch
             {
-                foreach (var p in Process.GetProcessesByName("explorer"))
-                {
-                    try
-                    {
-                        if (!p.HasExited)
-                        {
-                            p.Kill(true);
-                            p.WaitForExit(3000);
-                        }
-                    }
-                    catch { }
-                    finally
-                    {
-                        try { p.Dispose(); } catch { }
-                    }
-                }
-
-                Thread.Sleep(500);
-
-                string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-                string explorerPath = Path.Combine(windowsDir, "explorer.exe");
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = explorerPath,
-                    WorkingDirectory = windowsDir,
-                    UseShellExecute = false,
-                    CreateNoWindow = false
-                });
             }
-            catch { }
         }
-
         /// <summary>
         /// 重启 rdpclip
         /// </summary>
@@ -336,31 +267,55 @@ namespace MainClient
                 {
                     try
                     {
-                        if (!p.HasExited)
-                        {
-                            p.Kill(true);
-                            p.WaitForExit(2000);
-                        }
+                        p.Kill();
+                        p.WaitForExit(3000);
                     }
-                    catch { }
+                    catch
+                    {
+                    }
                     finally
                     {
-                        try { p.Dispose(); } catch { }
+                        p.Dispose();
                     }
                 }
+                // 给系统一点时间释放资源
                 Thread.Sleep(300);
+
+                EnsureRdpClipRunning();
+            }
+            catch
+            {
+                // 建议记录日志
+            }
+        }
+
+        private static void EnsureRdpClipRunning()
+        {
+            try
+            {
+                // 已存在就不启动
+                if (Process.GetProcessesByName("rdpclip").Length > 0)
+                    return;
+
                 string system32 = Environment.GetFolderPath(Environment.SpecialFolder.System);
                 string rdpclipPath = Path.Combine(system32, "rdpclip.exe");
+
+                if (!File.Exists(rdpclipPath))
+                    return;
 
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = rdpclipPath,
                     WorkingDirectory = system32,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
                 });
             }
-            catch { }
+            catch
+            {
+            }
         }
+
     }
 }

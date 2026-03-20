@@ -43,6 +43,7 @@ namespace MainClient
         private readonly TaskStatsAggregator _aggregator;
         private readonly ChineseNameGenerator _nameGenerator;
         private readonly FileCleanupQueue _fileCleanupQueue = new();
+        private int _startupAutomationTriggered = 0;
         #region 任务调度
         private PipelineRunner<JToken>? _pipeline;
         private UiTaskRunner? _uiRunner;
@@ -255,78 +256,55 @@ namespace MainClient
         }
 
 
-        public async Task InitFileVersionListAsync()
+        public async Task<List<FileVersionInfo>> GetLatestFileWithVersionAsync()
         {
+            List<FileVersionInfo> result = new List<FileVersionInfo>();
             try
             {
-                var versionList = await _fileUpdater.GetVersionListAsync(_appSettings.TaskApiUrl);
+                var versionList = await _fileUpdater.GetLatestFileWithVersionAsync(_appSettings.TaskApiUrl);
                 if (versionList != null && versionList.Success)
                 {
-                    var _fileList = versionList.Data;
-
-                    this.InvokeOnUiThreadIfRequired(() =>
-                    {
-                        comboBox_VersionList.DataSource = _fileList;
-                        comboBox_VersionList.DisplayMember = "Text";
-                        comboBox_VersionList.ValueMember = "File";
-                        if (_fileList.Count > 0)
-                            comboBox_VersionList.SelectedIndex = 0;
-                    });
+                    result.AddRange(versionList.Data);
                 }
-
-                string historyDir = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "history");
-                var historyVersionList = _fileUpdater.GetHistoryVersions(historyDir);
-                string currentVersion = $"v{AppConsts.AppVertion}";
-                this.InvokeOnUiThreadIfRequired(() =>
-                {
-                    comboBox_HistoryVersionList.Items.Clear();
-                    foreach (var version in historyVersionList)
-                    {
-                        comboBox_HistoryVersionList.Items.Add(version);
-                    }
-                    if (historyVersionList.Contains(currentVersion))
-                    {
-                        comboBox_HistoryVersionList.SelectedItem = currentVersion;
-                    }
-                    else if (historyVersionList.Count > 0)
-                    {
-                        comboBox_HistoryVersionList.SelectedIndex = 0;
-                    }
-                });
-
             }
             catch (Exception ex)
             {
-                _logger.LogError($"InitFileVersionListAsync failed: {ex.Message}");
+                _logger.LogError($"GetLatestFileWithVersionAsync failed: {ex.Message}");
             }
+            return result;
         }
         public async Task InitBrowserVersionListAsync()
         {
             try
             {
                 var versionList = await _fileUpdater.GetBrowserVersionListAsync(_appSettings.TaskApiUrl);
-                if (versionList != null && versionList.Success)
+                if (versionList != null && versionList.Success && versionList.Data != null)
                 {
-
                     this.InvokeOnUiThreadIfRequired(() =>
                     {
-                        foreach (var version in versionList.Data)
+                        var newVersions = versionList.Data
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .Distinct()
+                            .ToList();
+
+                        var targetVersion = _appSettings.KernelVersion;
+
+                        comboBox_KernelVersion.DataSource = null;
+                        comboBox_KernelVersion.DataSource = newVersions;
+
+                        if (newVersions.Count == 0)
                         {
-                            if (comboBox_KernelVersion.Items.IndexOf(version) == -1)
-                                comboBox_KernelVersion.Items.Add(version);
+                            comboBox_KernelVersion.SelectedIndex = -1;
+                            return;
                         }
 
-                        if (versionList.Data.Count > 0)
-                        {
-                            if (!string.IsNullOrWhiteSpace(_appSettings.KernelVersion) && comboBox_KernelVersion.SelectedIndex == -1)
-                            {
-                                comboBox_KernelVersion.SelectedIndex = comboBox_KernelVersion.Items.IndexOf(_appSettings.KernelVersion);
-                            }
-                            if (comboBox_KernelVersion.SelectedIndex == -1)
-                                comboBox_KernelVersion.SelectedIndex = 0;
+                        var index = !string.IsNullOrWhiteSpace(targetVersion)
+                            ? newVersions.IndexOf(targetVersion)
+                            : -1;
 
-                        }
+                        comboBox_KernelVersion.SelectedIndex = index >= 0 ? index : 0;
 
+                        _appSettings.KernelVersion = comboBox_KernelVersion.SelectedItem?.ToString() ?? "";
                     });
                 }
             }
@@ -373,6 +351,138 @@ namespace MainClient
                 _logger.LogError($"InitKernelVersion failed: {ex.Message}");
             }
         }
+
+
+        #region 自动更新
+        private async Task HandleStartupAutomationAsync(FileVersionInfo? latestVersion)
+        {
+            if (Interlocked.Exchange(ref _startupAutomationTriggered, 1) == 1)
+            {
+                return;
+            }
+            if (!_appSettings.AutoUpdate)
+            {
+                return;
+            }
+
+            try
+            {
+
+                await ExecuteUpdateAsync(isAutoUpdate: true, selectedFile: latestVersion);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void TriggerStartTask()
+        {
+            this.InvokeOnUiThreadIfRequired(() =>
+            {
+                if (btnStartStop.Enabled)
+                {
+                    btnStartStop.PerformClick();
+                }
+            });
+        }
+
+        private async Task<bool> ExecuteUpdateAsync(bool isAutoUpdate, FileVersionInfo? selectedFile = null)
+        {
+            if (selectedFile == null)
+            {
+                _logger.LogInformation(isAutoUpdate ? "自动更新未找到可用版本。" : "请先选择要更新的版本！");
+                return false;
+            }
+
+            this.InvokeOnUiThreadIfRequired(() =>
+            {
+                btnUpdate.Enabled = false;
+                toolStripProgressBarDownload.AutoSize = false;
+                toolStripProgressBarDownload.Width = 300;
+                toolStripProgressBarDownload.Visible = true;
+            });
+
+            double lastReportedProgress = 0;
+            const double minProgressStep = 1;
+            DateTime lastProgressUpdate = DateTime.Now;
+            var progressUpdateInterval = TimeSpan.FromMilliseconds(1000);
+            EventHandler<ProgressEventArgs> handler = (s, e) =>
+            {
+                bool isProgressTooSmall = Math.Abs(e.Progress - lastReportedProgress) < minProgressStep;
+                bool isTooSoon = DateTime.Now - lastProgressUpdate < progressUpdateInterval;
+                bool notFinished = e.Progress < 100;
+
+                if (isProgressTooSmall && isTooSoon && notFinished)
+                {
+                    return;
+                }
+
+                lastReportedProgress = e.Progress;
+                lastProgressUpdate = DateTime.Now;
+                _logger.LogInformation(e.Message);
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    toolStripProgressBarDownload.Value = (int)Math.Min(Math.Max(e.Progress, 0), 100);
+                });
+            };
+
+            _fileUpdater.ProgressChanged -= handler;
+            _fileUpdater.ProgressChanged += handler;
+
+            try
+            {
+                try
+                {
+                    var smaideZip = await _fileUpdater.DownloadBootstrapAsync(_appSettings.TaskApiUrl);
+                    var smaideDir = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!;
+                    ZipFile.ExtractToDirectory(smaideZip, smaideDir, true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "下载或解压引导更新程序失败，继续执行主程序更新。");
+                }
+
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    toolStripProgressBarDownload.Width = 60;
+                    toolStripProgressBarDownload.Visible = false;
+                });
+
+                var zipFilePath = await _fileUpdater.DownloadFileAsync(_appSettings.TaskApiUrl, selectedFile);
+                string updaterPath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "smaide.exe");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = updaterPath,
+                    Arguments = $"--update-version \"{Process.GetCurrentProcess().MainModule?.FileName}\" \"{zipFilePath}\" \"v{AppConsts.AppVertion}\" \"{selectedFile.Text}\"",
+                    WorkingDirectory = Path.GetDirectoryName(updaterPath),
+                    UseShellExecute = false,
+                });
+
+                Application.Exit();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, isAutoUpdate ? "自动更新失败" : "手动更新失败");
+                return false;
+            }
+            finally
+            {
+                _fileUpdater.ProgressChanged -= handler;
+                this.InvokeOnUiThreadIfRequired(() =>
+                {
+                    if (!IsDisposed && !Disposing)
+                    {
+                        btnUpdate.Enabled = true;
+                        toolStripProgressBarDownload.Width = 60;
+                        toolStripProgressBarDownload.Visible = false;
+                    }
+                });
+            }
+        }
+
+        #endregion
+
 
         public MainForm(
             IRootDomainService domainService,
@@ -504,6 +614,10 @@ namespace MainClient
             items.AddRange(CleanupCollector.CollectSingleDirectory(
                 chromeUserDataPath));
 
+
+            string historyDir = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "history");
+            items.AddRange(CleanupCollector.CollectDirectories(historyDir));
+
             // 2. 再统一入后台队列
             foreach (var item in items)
             {
@@ -520,10 +634,21 @@ namespace MainClient
 
             Task.Run(async () =>
             {
+                CommonHelper.ClearLocalChromeProcesses();
+                var latestFileList = await GetLatestFileWithVersionAsync();
+                if (latestFileList.Count > 0)
+                {
+                    this.InvokeOnUiThreadIfRequired(() =>
+                    {
+                        comboBox_VersionList.DataSource = null;
+                        comboBox_VersionList.DisplayMember = "Text";
+                        comboBox_VersionList.ValueMember = "File";
+                        comboBox_VersionList.DataSource = latestFileList;
+                        comboBox_VersionList.SelectedIndex = 0;
+                    });
+                }
                 try
                 {
-                    CommonHelper.ClearLocalChromeProcesses();
-                    await InitFileVersionListAsync();
                     await InitBrowserVersionListAsync();
                     await InitSpiderNames(_appSettings.WordType);
                     await InitCloudNames();
@@ -534,14 +659,15 @@ namespace MainClient
                 {
 
                 }
-
                 var isRestart = System.Environment.GetCommandLineArgs().Any(p => p.StartsWith("restart"));
                 if (isRestart)
                 {
-                    this.InvokeOnUiThreadIfRequired(() =>
-                    {
-                        btnStartStop.PerformClick();
-                    });
+                    TriggerStartTask();
+                }
+
+                if (latestFileList.Count > 0)
+                {
+                    await HandleStartupAutomationAsync(latestFileList.FirstOrDefault());
                 }
 
                 this.InvokeOnUiThreadIfRequired(() =>
@@ -659,6 +785,7 @@ namespace MainClient
             numericUpDown_Rfq1688Rate.Value = _appSettings.Rfq1688Rate;
             checkBox_p4psearch.Checked = _appSettings.p4psearch;
             numericUpDown_p4psearchRate.Value = _appSettings.p4psearchRate;
+            checkBox_AutoUpdate.Checked = _appSettings.AutoUpdate;
 
         }
         private static object lock_config = new object();
@@ -713,7 +840,7 @@ namespace MainClient
                 _appSettings.p4psearch = checkBox_p4psearch.Checked;
                 _appSettings.p4psearchRate = (int)numericUpDown_p4psearchRate.Value;
 
-
+                _appSettings.AutoUpdate = checkBox_AutoUpdate.Checked;
                 UserConfigService.Save("AppSettings", _appSettings);
             }
 
@@ -732,7 +859,13 @@ namespace MainClient
                 CommonHelper.DeleteDownloadDir(downloadsPath, new string[] { ".apk", ".crdownload" });
                 string tempPath = Path.GetTempPath();
                 CommonHelper.DeletePlaywrightDirs(tempPath, "playwright-");
-                CommonHelper.DeleteCacheFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Temp", "Chrome"));
+                CommonHelper.ClearDirectory(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Temp", "Chrome"));
+
+                string historyDir = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "history");
+                CommonHelper.ClearDirectory(historyDir);
+
+                CommonHelper.EmptyStandbyList();
+
                 this.InvokeOnUiThreadIfRequired(() =>
                 {
                     btnStartStop.Enabled = true;
@@ -781,7 +914,7 @@ namespace MainClient
 
         }
 
-        private void btnUpdate_Click(object sender, EventArgs e)
+        private async void btnUpdate_Click(object sender, EventArgs e)
         {
             if (comboBox_VersionList.Items.Count == 0)
             {
@@ -799,126 +932,8 @@ namespace MainClient
                 _logger.LogInformation("请先选择要更新的版本！");
                 return;
             }
-            btnUpdate.Enabled = false;
-            toolStripProgressBarDownload.AutoSize = false;
-            toolStripProgressBarDownload.Width = 300;
-            toolStripProgressBarDownload.Visible = true;
-            Task.Run(async () =>
-            {
-
-                double _lastReportedProgress = 0;
-                double MinProgressStep = 1;
-                DateTime _lastProgressUpdate = System.DateTime.Now;
-                double ProgressUpdateIntervalMs = 1000;
-                EventHandler<ProgressEventArgs> handler = (s, e) =>
-                {
-                    bool isProgressTooSmall = Math.Abs(e.Progress - _lastReportedProgress) < MinProgressStep;
-                    bool isTooSoon = (DateTime.Now - _lastProgressUpdate).TotalMilliseconds < ProgressUpdateIntervalMs;
-                    bool notFinished = e.Progress < 100;
-
-                    if (isProgressTooSmall && isTooSoon && notFinished)
-                    {
-                        return;
-                    }
-                    _lastReportedProgress = e.Progress;
-                    _lastProgressUpdate = DateTime.Now;
-                    _logger.LogInformation(e.Message);
-                    this.InvokeOnUiThreadIfRequired(() =>
-                    {
-                        toolStripProgressBarDownload.Value = (int)Math.Min(Math.Max(e.Progress, 0), 100);
-                    });
-                };
-                _fileUpdater.ProgressChanged -= handler;
-                _fileUpdater.ProgressChanged += handler;
-                try
-                {
-                    var smaideZip = await _fileUpdater.DownloadBootstrapAsync(_appSettings.TaskApiUrl);
-                    var smaideDir = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!;
-                    ZipFile.ExtractToDirectory(smaideZip, smaideDir, true);
-                }
-                catch (Exception)
-                {
-
-                }
-
-
-                this.InvokeOnUiThreadIfRequired(() =>
-                {
-                    toolStripProgressBarDownload.Width = 60;
-                    toolStripProgressBarDownload.Visible = false;
-                });
-
-                var zipFilePath = await _fileUpdater.DownloadFileAsync(_appSettings.TaskApiUrl, selectedFile);
-                string updaterPath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "smaide.exe");
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = updaterPath,
-                        Arguments = $"--update-version \"{Process.GetCurrentProcess().MainModule?.FileName}\" \"{zipFilePath}\" \"v{AppConsts.AppVertion}\" \"{selectedFile.Text}\"",
-                        WorkingDirectory = Path.GetDirectoryName(updaterPath),
-                        UseShellExecute = false,
-
-                    });
-                    Application.Exit();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex.Message);
-                }
-                this.InvokeOnUiThreadIfRequired(() =>
-                {
-                    btnUpdate.Enabled = true;
-                    toolStripProgressBarDownload.Width = 60;
-                    toolStripProgressBarDownload.Visible = false;
-                });
-            });
+            await ExecuteUpdateAsync(isAutoUpdate: false, selectedFile: selectedFile);
         }
-
-        private void button5_Click(object sender, EventArgs e)
-        {
-
-            if (comboBox_HistoryVersionList.Items.Count == 0)
-            {
-                MessageBox.Show("无可用的历史版本！");
-                return;
-            }
-            if (comboBox_HistoryVersionList.SelectedItem == null)
-            {
-                MessageBox.Show("请先选择要回滚的版本！");
-                return;
-            }
-            var selectedFile = comboBox_HistoryVersionList.Text;
-            if (selectedFile.Equals($"v{AppConsts.AppVertion}"))
-            {
-                MessageBox.Show("版本一至无须切换！");
-                return;
-            }
-
-            button5.Enabled = false;
-            string updaterPath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "smaide.exe");
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = updaterPath,
-                    Arguments = $"--switch-version \"{Process.GetCurrentProcess().MainModule?.FileName}\"  \"v{AppConsts.AppVertion}\" \"{selectedFile}\"",
-                    WorkingDirectory = Path.GetDirectoryName(updaterPath),
-                    UseShellExecute = false,
-
-
-                });
-                Application.Exit();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-            }
-            button5.Enabled = true;
-        }
-
-
-
 
 
         /// <summary>
@@ -1556,7 +1571,7 @@ namespace MainClient
 
             var pluginInstance = Activator.CreateInstance(
                 plugin.type,
-                new object[] { _domainService, _playwrightProvider,_aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
+                new object[] { _domainService, _playwrightProvider, _aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
 
             if (pluginInstance is not IQTPService pluginService)
             {
@@ -1711,7 +1726,7 @@ namespace MainClient
                 }
             }
 
-      
+
             await _aggregator.StartAsync();
 
 

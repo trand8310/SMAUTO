@@ -109,7 +109,7 @@
             MaximizeBox = false;
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "Updater(1.0.0.2)";
+            Text = "Updater(1.0.0.3)";
             Load += MainForm_Load;
             ResumeLayout(false);
             PerformLayout();

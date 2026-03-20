@@ -86,8 +86,30 @@ namespace MainClient
             }
         }
 
-
-
+        public async Task<VersionResponse?> GetLatestFileWithVersionAsync(string taskApiUrl, CancellationToken token = default)
+        {
+            try
+            {
+                //app=smad&runtime_version=1.2.3.4
+                var baseUrl = new Uri(taskApiUrl).GetLeftPart(UriPartial.Authority);
+                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_latest&prefix=SMAD_&runtime_version={AppConsts.AppVertion}&_t={DateTime.Now.Ticks}";
+                using var response = await _httpClient.GetAsync(url, token);
+                response.EnsureSuccessStatusCode();
+                var content = await response.Content.ReadAsStringAsync(token);
+                return JsonConvert.DeserializeObject<VersionResponse>(content);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("GetFileVersionListAsync: 请求被取消");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetFileVersionListAsync failed");
+                return null;
+            }
+        }
+ 
 
         public List<string> GetHistoryVersions(string historyDir)
         {

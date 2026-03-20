@@ -502,24 +502,72 @@ namespace QTP.Common
             }
         }
 
-        public static void DeleteCacheFile(string cachePath)
+        /// <summary>
+        /// 清空目录内容（不删除根目录）
+        /// </summary>
+        /// <param name="path"></param>
+        public static void ClearDirectory(string path)
         {
-            if (Directory.Exists(cachePath))
+            if (!Directory.Exists(path))
+                return;
+
+            try
             {
-                var dirsToDelete = Directory.GetDirectories(cachePath, "*", SearchOption.TopDirectoryOnly);
-                foreach (var dir in dirsToDelete)
+                // 删除所有文件
+                foreach (var file in Directory.GetFiles(path))
                 {
                     try
                     {
-                        Directory.Delete(dir, true);
+                        File.SetAttributes(file, FileAttributes.Normal);
+                        File.Delete(file);
                     }
                     catch
                     {
+                        // 可记录日志
+                    }
+                }
 
+                // 删除所有子目录
+                foreach (var dir in Directory.GetDirectories(path))
+                {
+                    try
+                    {
+                        RemoveDirectoryRecursive(dir);
+                    }
+                    catch
+                    {
+                        // 可记录日志
                     }
                 }
             }
+            catch
+            {
+                // 整体异常处理
+            }
         }
+
+        /// <summary>
+        /// 删除目录（强力递归）
+        /// </summary>
+        /// <param name="dir"></param>
+        private static void RemoveDirectoryRecursive(string dir)
+        {
+            if (!Directory.Exists(dir))
+                return;
+
+            // 清除只读属性
+            foreach (var file in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                }
+                catch { }
+            }
+
+            Directory.Delete(dir, true);
+        }
+
 
 
         public static void DeleteCookieFile(string dirRoot)
@@ -663,42 +711,156 @@ namespace QTP.Common
 
         public static void ClearLocalChromeProcesses()
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
-            string[] targets = { "chrome.exe","node.exe" };
-            using (var searcher = new ManagementObjectSearcher("SELECT ProcessId, Name, ExecutablePath FROM Win32_Process"))
+            try
             {
-                foreach (ManagementObject obj in searcher.Get())
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
+                string[] targets = { "chrome.exe", "node.exe" };
+                using (var searcher = new ManagementObjectSearcher("SELECT ProcessId, Name, ExecutablePath FROM Win32_Process"))
                 {
-                    try
+                    foreach (ManagementObject obj in searcher.Get())
                     {
-                        string name = obj["Name"]?.ToString();
-                        string path = obj["ExecutablePath"]?.ToString();
-
-                        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(path))
-                            continue;
-
-                        if (!targets.Contains(name, StringComparer.OrdinalIgnoreCase))
-                            continue;
-
-                        if (!path.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
-                            continue;
-
-                        int pid = Convert.ToInt32(obj["ProcessId"]);
-
                         try
                         {
-                            var proc = Process.GetProcessById(pid);
-                            if (!proc.HasExited)
+                            string name = obj["Name"]?.ToString();
+                            string path = obj["ExecutablePath"]?.ToString();
+
+                            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(path))
+                                continue;
+
+                            if (!targets.Contains(name, StringComparer.OrdinalIgnoreCase))
+                                continue;
+
+                            if (!path.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+                                continue;
+
+                            int pid = Convert.ToInt32(obj["ProcessId"]);
+
+                            try
                             {
-                                proc.Kill(true); // 杀子进程
-                                proc.WaitForExit(3000);
+                                var proc = Process.GetProcessById(pid);
+                                if (!proc.HasExited)
+                                {
+                                    proc.Kill(true); // 杀子进程
+                                    proc.WaitForExit(3000);
+                                }
                             }
+                            catch { }
                         }
                         catch { }
                     }
-                    catch { }
                 }
             }
+            catch (Exception)
+            {
+
+       
+            }
+
         }
+
+
+        public static void DeleteDirectoryWithRetry(string dir, int retryCount, int delayMs, bool ignoreFailure = false)
+        {
+            if (!Directory.Exists(dir))
+                return;
+
+            Exception? lastEx = null;
+
+            for (int i = 1; i <= retryCount; i++)
+            {
+                try
+                {
+                    RemoveReadOnlyAttributes(dir);
+                    Directory.Delete(dir, true);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                    Thread.Sleep(delayMs);
+                }
+            }
+
+            if (!ignoreFailure)
+                throw new IOException($"删除目录失败: {dir}", lastEx);
+        }
+
+        public static void RemoveReadOnlyAttributes(string dir)
+        {
+            if (!Directory.Exists(dir))
+                return;
+
+            foreach (var path in Directory.GetFileSystemEntries(dir, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var attr = File.GetAttributes(path);
+                    if ((attr & FileAttributes.ReadOnly) != 0)
+                    {
+                        File.SetAttributes(path, attr & ~FileAttributes.ReadOnly);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                var attr = File.GetAttributes(dir);
+                if ((attr & FileAttributes.ReadOnly) != 0)
+                {
+                    File.SetAttributes(dir, attr & ~FileAttributes.ReadOnly);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+
+
+        public static void RunMemReductAndWait()
+        {
+            string exePath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "memreduct", "memreduct.exe");
+
+            if (!File.Exists(exePath))
+                return;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = "/cleanup",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            using var p = Process.Start(psi);
+            p?.WaitForExit(TimeSpan.FromSeconds(30)); // 最多等待5秒
+        }
+
+        public static void EmptyStandbyList()
+        {
+            string exePath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "sysinternals", "EmptyStandbyList.exe");
+
+            if (!File.Exists(exePath))
+                return;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = "standbylist",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            using var p = Process.Start(psi);
+            p?.WaitForExit(TimeSpan.FromSeconds(5)); // 最多等待5秒
+        }
+
+
+        //EmptyStandbyList.exe standbylist
     }
 }
