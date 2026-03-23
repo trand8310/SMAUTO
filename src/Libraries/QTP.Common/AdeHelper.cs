@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using QTP.Common;
@@ -19,14 +21,16 @@ namespace QTP
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly AppSettings _appSettings;
         private readonly ILogger _logger;
-        public static string Host => CommonHelper.GetHostName();
+        private readonly AdeOptions _options;
+
         public static HttpClient client = new HttpClient();
         public const string _apiVersion = "_v2";
-        public AdeHelper(IHttpClientFactory httpClientFactory, AppSettings appSettings, ILogger<AdeHelper> logger)
+        public AdeHelper(IHttpClientFactory httpClientFactory, AppSettings appSettings, ILogger<AdeHelper> logger, IOptions<AdeOptions> options)
         {
             _httpClientFactory = httpClientFactory;
             _appSettings = appSettings;
             _logger = logger;
+            _options = options.Value;
         }
 
         /// <summary>
@@ -173,13 +177,15 @@ namespace QTP
         {
             try
             {
+                var host = await CommonHelper.GetHostAsync();
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
                 StringBuilder builder = new StringBuilder(baseUrl);
                 builder.Append($"/api{_apiVersion}/task-status.php?action=update_task&_t={System.DateTime.Now.Ticks}");
                 var bidRequest = new
                 {
                     id = taskId,
-                    host = Host,
+                    host = host,
+                    version = _options.AppVersion,
                     metrics = metrics
                 };
                 var postData = JsonConvert.SerializeObject(bidRequest);
@@ -225,8 +231,9 @@ namespace QTP
         {
             try
             {
+                var host = await CommonHelper.GetHostAsync();
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
-                using var response = await client.GetAsync($"{baseUrl}/api{_apiVersion}/task-status.php?action=task_status&id={taskId}&host={System.Web.HttpUtility.UrlEncode(Host)}&_t={System.DateTime.Now.Ticks}", token);
+                using var response = await client.GetAsync($"{baseUrl}/api{_apiVersion}/task-status.php?action=task_status&id={taskId}&host={System.Web.HttpUtility.UrlEncode(host)}&_t={System.DateTime.Now.Ticks}", token);
                 response.EnsureSuccessStatusCode();
                 return JObject.Parse(await response.Content.ReadAsStringAsync(token));
             }
@@ -256,6 +263,7 @@ namespace QTP
         /// <returns></returns>
         public async Task<JToken?> UpdateHostStatusAsync(Dictionary<string, long> metrics, CancellationToken token = default)
         {
+            var host = await CommonHelper.GetHostAsync();
             try
             {
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
@@ -263,7 +271,9 @@ namespace QTP
                 builder.Append($"/api{_apiVersion}/task-status.php?action=update_host&_t={System.DateTime.Now.Ticks}");
                 var bidRequest = new
                 {
-                    host = Host,
+                    host = host,
+                    task = _appSettings.TaskName,
+                    version = _options.AppVersion,
                     metrics = metrics
                 };
                 var postData = JsonConvert.SerializeObject(bidRequest);
@@ -279,7 +289,7 @@ namespace QTP
             }
             catch (Exception ex)
             {
-                _logger.LogError($"UpdateHostStatusAsync Host={Host} failed: {ex.Message}");
+                _logger.LogError($"UpdateHostStatusAsync Host={host} failed: {ex.Message}");
             }
             return null;
         }
@@ -306,10 +316,11 @@ namespace QTP
         /// <returns></returns>
         public async Task<JToken?> GetHostTodayStatusAsync(CancellationToken token = default)
         {
+            var host = await CommonHelper.GetHostAsync();
             try
             {
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
-                using var response = await client.GetAsync($"{baseUrl}/api{_apiVersion}/task-status.php?action=host_today_status&host={System.Web.HttpUtility.UrlEncode(Host)}&_t={System.DateTime.Now.Ticks}", token);
+                using var response = await client.GetAsync($"{baseUrl}/api{_apiVersion}/task-status.php?action=host_today_status&host={System.Web.HttpUtility.UrlEncode(host)}&_t={System.DateTime.Now.Ticks}", token);
                 response.EnsureSuccessStatusCode();
                 return JObject.Parse(await response.Content.ReadAsStringAsync(token));
             }
@@ -319,7 +330,7 @@ namespace QTP
             }
             catch (Exception ex)
             {
-                _logger.LogError($"GetHostTodayStatusAsync Host={Host} failed: {ex.Message}");
+                _logger.LogError($"GetHostTodayStatusAsync Host={host} failed: {ex.Message}");
             }
             return null;
         }
@@ -331,10 +342,11 @@ namespace QTP
         /// <returns></returns>
         public async Task<JToken?> GetHostHourStatusAsync(CancellationToken token = default)
         {
+            var host = await CommonHelper.GetHostAsync();
             try
             {
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
-                using var response = await client.GetAsync($"{baseUrl}/api{_apiVersion}/task-status.php?action=host_hour_status&host={System.Web.HttpUtility.UrlEncode(Host)}&_t={System.DateTime.Now.Ticks}", token);
+                using var response = await client.GetAsync($"{baseUrl}/api{_apiVersion}/task-status.php?action=host_hour_status&host={System.Web.HttpUtility.UrlEncode(host)}&_t={System.DateTime.Now.Ticks}", token);
                 response.EnsureSuccessStatusCode();
                 return JObject.Parse(await response.Content.ReadAsStringAsync(token));
             }
@@ -344,7 +356,7 @@ namespace QTP
             }
             catch (Exception ex)
             {
-                _logger.LogError($"GetHostHourStatusAsync Host={Host} failed: {ex.Message}");
+                _logger.LogError($"GetHostHourStatusAsync Host={host} failed: {ex.Message}");
             }
             return null;
         }
@@ -356,6 +368,7 @@ namespace QTP
         {
             try
             {
+                var host = await CommonHelper.GetHostAsync();
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
                 StringBuilder builder = new StringBuilder(baseUrl);
                 builder.Append($"/api{_apiVersion}/ip-status.php?action=request&id={taskId}&_t={System.DateTime.Now.Ticks}");
@@ -364,8 +377,7 @@ namespace QTP
                     ["metrics"] = metrics,
                     ["ips"] = ips
                 };
-                body["host"] = Host;
-                body["host"] = Host;
+                body["host"] = host;
                 body["agency"] = _appSettings.ProxyIpUrl;
 
                 var postData = JsonConvert.SerializeObject(body);
@@ -390,6 +402,7 @@ namespace QTP
         {
             try
             {
+                var host = await CommonHelper.GetHostAsync();
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
                 StringBuilder builder = new StringBuilder(baseUrl);
                 builder.Append($"/api{_apiVersion}/ip-status.php?action=consumed&id={taskId}&_t={System.DateTime.Now.Ticks}");
@@ -397,7 +410,8 @@ namespace QTP
                 {
                     ip = ip,
                     count = count,
-                    host = Host,
+                    host = host,
+                    version = _options.AppVersion,
                     agency = _appSettings.ProxyIpUrl,
                 };
                 var postData = JsonConvert.SerializeObject(metrics);
@@ -423,13 +437,15 @@ namespace QTP
             {
                 if (ips == null || !ips.Any())
                     return null;
+                var host = await CommonHelper.GetHostAsync();
                 var baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
                 StringBuilder builder = new StringBuilder(baseUrl);
                 builder.Append($"/api/ip-status.php?action=consumed&id={taskId}&_t={DateTime.Now.Ticks}");
                 var metrics = new
                 {
                     ips = ips.ToArray(),
-                    host = Host,
+                    host = host,
+                    version = _options.AppVersion,
                     count = count,
                     agency = _appSettings.ProxyIpUrl
                 };
@@ -805,6 +821,7 @@ namespace QTP
         {
             try
             {
+                var host = await CommonHelper.GetHostAsync();
                 string baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
                 var client = _httpClientFactory.CreateClient();
                 client.DefaultRequestHeaders.Clear();
@@ -813,9 +830,9 @@ namespace QTP
                 var bidRequest = new JObject();
                 bidRequest["words"] = JArray.FromObject(words);
                 bidRequest["cleaning_words"] = _appSettings.CleaningWords;
-                bidRequest["host"] = Host;
+                bidRequest["host"] = host;
                 bidRequest["wordname"] = _appSettings.WordName;
-                builder.Append($"/api{_apiVersion}/cloud_word.php?action=addsmkw?t={System.DateTime.Now.Ticks}");
+                builder.Append($"/api{_apiVersion}/cloud_word.php?action=addsmkw&t={System.DateTime.Now.Ticks}");
                 var postData = JsonConvert.SerializeObject(bidRequest);
                 HttpContent content = new StringContent(postData);
                 content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
@@ -842,6 +859,7 @@ namespace QTP
                 return;
             try
             {
+                var host = await CommonHelper.GetHostAsync();
                 string baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
                 var client = _httpClientFactory.CreateClient();
                 client.DefaultRequestHeaders.Clear();
@@ -849,8 +867,8 @@ namespace QTP
                 StringBuilder builder = new StringBuilder(baseUrl);
                 var bidRequest = new JObject();
                 bidRequest["items"] = JArray.FromObject(items);
-                bidRequest["host"] = Host;
-                builder.Append($"/api{_apiVersion}/test2.php?action=add_keyword_domains?t={System.DateTime.Now.Ticks}");
+                bidRequest["host"] = host;
+                builder.Append($"/api{_apiVersion}/test2.php?action=add_keyword_domains&t={System.DateTime.Now.Ticks}");
                 var postData = JsonConvert.SerializeObject(bidRequest);
                 HttpContent content = new StringContent(postData);
                 content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
@@ -939,8 +957,6 @@ namespace QTP
             }
         }
         #endregion
-
-
 
         #region 对话
 
@@ -1048,4 +1064,6 @@ namespace QTP
         }
         #endregion
     }
+
+
 }

@@ -12,7 +12,6 @@ namespace QTP.Common
         public abstract string Title { get; }
         public abstract Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
         protected readonly AppSettings _appSettings;
-        public string HostName;
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
         public event EventHandler<TaskAdWordEventArgs>? OnTaskAdWordEventHandler;
@@ -20,7 +19,6 @@ namespace QTP.Common
         public QTPServiceBase(AppSettings appSettings)
         {
             this._appSettings = appSettings;
-            this.HostName = CommonHelper.GetHostName();
         }
 
 

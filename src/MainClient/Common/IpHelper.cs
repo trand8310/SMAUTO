@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -38,8 +39,6 @@ namespace MainClient.Common
         private static JArray region_51dail;
         private static JArray region_shenlong;
 
-        public static string HostName => CommonHelper.GetHostName();
-
         static string[] delimiters = { "\r", "\n", System.Environment.NewLine };
         static SemaphoreSlim _mutex = new SemaphoreSlim(1);
         static IpHelper()
@@ -73,7 +72,7 @@ namespace MainClient.Common
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
                 var bidRequest = new JObject();
                 bidRequest["id"] = taskid;
-                bidRequest["host"] = HostName;
+                bidRequest["host"] = await CommonHelper.GetHostAsync();
                 bidRequest["agency"] = proxyIpUrl;// new Uri(proxyIpUrl).GetLeftPart(UriPartial.Authority);
                 //bidRequest["agency"] = new Uri(proxyIpUrl).GetLeftPart(UriPartial.Authority);
                 bidRequest["id"] = taskid;
@@ -98,7 +97,7 @@ namespace MainClient.Common
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
                 var bidRequest = new JObject();
                 bidRequest["id"] = taskid;
-                bidRequest["host"] = HostName;
+                bidRequest["host"] = await CommonHelper.GetHostAsync();
                 bidRequest["agency"] = proxyIpUrl;// new Uri(proxyIpUrl).GetLeftPart(UriPartial.Authority);
                 bidRequest["ip"] = realIp;
                 var postData = JsonConvert.SerializeObject(bidRequest);

@@ -22,11 +22,11 @@ namespace QTP.Common
 
 
 
-    /// <summary>
-    /// 生成一个随机数
-    /// </summary>
-    /// <returns></returns>
-    public static uint RandomNumber()
+        /// <summary>
+        /// 生成一个随机数
+        /// </summary>
+        /// <returns></returns>
+        public static uint RandomNumber()
         {
             byte[] bytes = new byte[4];
             RandomNumberGenerator.Fill(bytes);
@@ -148,7 +148,7 @@ namespace QTP.Common
         {
             return Random.Shared.NextInt64(min, max);
         }
- 
+
 
         public static double NextDouble()
         {
@@ -178,33 +178,58 @@ namespace QTP.Common
             return buf.ToString().ToUpper();
         }
 
-        private static string _localIpAddress = string.Empty;
-        public static string GetHostName()
+
+
+        private static string? _hostCache;
+        private static readonly SemaphoreSlim _host_lock = new(1, 1);
+        public static async Task<string> GetHostAsync()
         {
-            if (string.IsNullOrWhiteSpace(_localIpAddress))
+            // 快速路径（无锁）
+            if (!string.IsNullOrWhiteSpace(_hostCache))
+                return _hostCache;
+            await _host_lock.WaitAsync();
+            try
             {
+                // 双重检查
+                if (!string.IsNullOrWhiteSpace(_hostCache))
+                    return _hostCache;
+                // ① 先尝试本机公网 IPv4
                 try
                 {
-                    var hostinfo = Dns.GetHostName();
-                    IPHostEntry iPHostEntry = Dns.GetHostEntry(hostinfo);
-                    var addressV = iPHostEntry.AddressList.FirstOrDefault(q => q.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);//ip4地址
-                    if (addressV != null)
-                    {
-                        _localIpAddress = addressV.ToString();
-                    }
-                    else
-                    {
-                        _localIpAddress = "";
-                    }
-                }
-                catch (Exception)
-                {
-                    _localIpAddress = "";
-                }
-            }
-            return _localIpAddress;
+                    var localIp = NetUtil
+                        .GetPublicIPv4Addresses()
+                        .FirstOrDefault();
 
+                    if (!string.IsNullOrWhiteSpace(localIp))
+                    {
+                        _hostCache = localIp;
+                        return _hostCache;
+                    }
+                }
+                catch { }
+                // ② 请求外部接口获取公网 IP
+                try
+                {
+                    var realIp = await RealIpHelper.GetRealIpAsync();
+                    if (!string.IsNullOrWhiteSpace(realIp))
+                    {
+                        _hostCache = realIp;
+                        return _hostCache;
+                    }
+                }
+                catch { }
+                // ③ 最终兜底
+                _hostCache = "";
+                return _hostCache;
+            }
+            finally
+            {
+                _host_lock.Release();
+            }
         }
+ 
+
+
 
 
         public static void CopyFilesRecursively(DirectoryInfo source, DirectoryInfo target)
@@ -753,7 +778,7 @@ namespace QTP.Common
             catch (Exception)
             {
 
-       
+
             }
 
         }

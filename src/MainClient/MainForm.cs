@@ -36,7 +36,7 @@ namespace MainClient
         private readonly IpHelper _ipHelper;
         private readonly AdeHelper _adeHelper;
         private readonly FileUpdater _fileUpdater;
-        private ProxyTester _ipTester = new ProxyTester();
+        private readonly ProxyTester _ipTester;
         private readonly IRootDomainService _domainService;
         private readonly IPlaywrightProvider _playwrightProvider;
         private readonly ChromiumSessionManager _processManager;
@@ -453,7 +453,7 @@ namespace MainClient
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = updaterPath,
-                    Arguments = $"--update-version \"{Process.GetCurrentProcess().MainModule?.FileName}\" \"{zipFilePath}\" \"v{AppConsts.AppVertion}\" \"{selectedFile.Text}\"",
+                    Arguments = $"--update-version \"{Process.GetCurrentProcess().MainModule?.FileName}\" \"{zipFilePath}\" \"v{AppConsts.AppVersion}\" \"{selectedFile.Text}\"",
                     WorkingDirectory = Path.GetDirectoryName(updaterPath),
                     UseShellExecute = false,
                 });
@@ -492,6 +492,7 @@ namespace MainClient
             ChineseNameGenerator nameGenerator,
             FileUpdater fileUpdater,
             IpHelper ipHelper,
+            ProxyTester ipTester,
             ChromiumSessionManager processManager,
             AppSettings appSettings,
             IHttpClientFactory httpClientFactory,
@@ -508,11 +509,12 @@ namespace MainClient
             this._nameGenerator = nameGenerator;
             this._fileUpdater = fileUpdater;
             this._ipHelper = ipHelper;
+            this._ipTester = ipTester;
             this._appSettings = appSettings;
             this._processManager = processManager;
             this._logger = logger;
             this._httpClientFactory = httpClientFactory;
-            this.Text += $"{AppConsts.AppVertion}";
+            this.Text += $"{AppConsts.AppVersion}";
             LoadQTPPlugins();
             foreach (var p in allPlugins)
             {
@@ -948,9 +950,10 @@ namespace MainClient
 
             try
             {
+                var host = await CommonHelper.GetHostAsync();
                 while (!token.IsCancellationRequested)
                 {
-                    var url = $"{_appSettings.TaskApiUrl}?type=1&action=getTask&name={_appSettings.TaskName}&_t={DateTime.Now.Ticks}";
+                    var url = $"{_appSettings.TaskApiUrl}?type=1&action=getTask&name={_appSettings.TaskName}&host={System.Web.HttpUtility.UrlEncode(host)}&ver={AppConsts.AppVersion}&_t={DateTime.Now.Ticks}";
                     var res = await _adeHelper.GetTaskAsync(url, token);
                     if (string.IsNullOrWhiteSpace(res))
                     {
@@ -1091,7 +1094,7 @@ namespace MainClient
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "ConsumerAsync failed");
+                _logger.LogError(ex, $"ConsumerAsync failed:{ex.Message}");
             }
         }
 
@@ -1405,7 +1408,8 @@ namespace MainClient
         private void ApplyIpTestResult(ConsumerTaskContext ctx, dynamic result)
         {
             if (result.SuccessUrl.Equals("http://ip-api.com/json") ||
-                result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php"))
+                result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php") ||
+                result.SuccessUrl.Equals("http://211.154.24.179:9000/api/dash/ipinfo.php"))
             {
                 ctx.IpInfo = JObject.Parse(result.Data);
                 ctx.RealIp = ctx.IpInfo["query"]?.Value<string>() ?? string.Empty;

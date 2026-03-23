@@ -23,7 +23,7 @@ namespace MainClient.Common
         public static void CreateShortcut(string shortcutName)
         {
             IWshRuntimeLibrary.WshShell wsh = new IWshRuntimeLibrary.WshShell();
-            var shortcutPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), $"{shortcutName}_{string.Join("", AppConsts.AppVertion.Split('.').Take(1))}.lnk");
+            var shortcutPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), $"{shortcutName}_{string.Join("", AppConsts.AppVersion.Split('.').Take(1))}.lnk");
             if (System.IO.File.Exists(shortcutPath))
             {
                 System.IO.File.Delete(shortcutPath);

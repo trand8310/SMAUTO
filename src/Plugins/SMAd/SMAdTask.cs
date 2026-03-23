@@ -6,6 +6,7 @@ using QTP.Common.Models;
 using SMAd;
 using SMAd.Swiper;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 
 
@@ -1325,7 +1326,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://ada.baidu.com/site/wjzil0aoc/agent?imid=0e6e62a63da5f8b552f4c1cfa0e24a24&wid=4b534c47-561f-4f2a-3d1e-1773718306115_0_0#QD=BDHYYF2-HEBAO&bd_vid=Pjn1nj6drH6knHcYn1bkP1Tkg1cznW-xnNtknjKxP7tkn16dnjm4PWDLnW6&fid=Pjn1nj6drH6knHcYn1bkP1Tkg1cznW-xnf&ch=4&bd_bxst=EiaKyOnXEhX906pda0DD0n_FVfHh0cjI00000KQ0leEGkEjQLqHdseHfVnExdef0000000000000ReKnmkRf8iDj0000fcrC5z0000jBLvzx5fD00Kn0560ikEjQLtjo8ShzknZ5d5gjVPaYQtUszqO0leEG__HK1qHdseHfV7OAtnExsr8elTHTkIj0ltQs_UldvnQFzJpq3oHs000005OOOOOOOOOOmtdeXs/merchant_bot_layer";
                     //entry.FirstPageUrl = "https://cunliangtech.com/getTwo2/jiaoyu/30/538y9i3v.html?bd_vid=9456839952995755725";
                     //entry.FirstPageUrl = "https://site.u-mob.cn/211562631/7489236/25120851a4df3de2f64bf2874399e5322bf9ba.html?uctrackid=czo2NzU1ODEyMDY1NjUzNDk4MjQ7Yzo1MDAwMDAwMjQ1MzEwMzcxODtkOmRtcF81MDAyNzcxNjQyNzUzMzI3MzY0O3A6d2w=&keyword=%E4%B8%AD%E5%9B%BD%E9%BB%84%E9%87%91%E6%8A%95%E8%B5%84%E7%BD%91&query=%E7%8E%B0%E5%9C%A8%E4%B9%B0%E9%BB%84%E9%87%91%E6%8A%95%E8%B5%84%E6%80%8E%E4%B9%88&codedip=118%2E249%2E20%2E238&regioncode=17957122#/jinfan/page0";
-
+                    //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/homepage";
                 }
 
                 var gotoOk = await NavigateToEntryAsync(ctx, entry.FirstPageUrl!, token);
@@ -1398,7 +1399,7 @@ namespace QTP.Plugins
 
         private TaskConfig BuildTaskConfig(string uniqueId, JObject taskArgs, CancellationTokenSource linkedCts)
         {
-    
+
             var os = taskArgs.SelectToken("os")!.Value<int>();
 
             var sw1 = taskArgs.SelectToken("dev.sw")?.Value<int>() ?? 1080;
@@ -3182,6 +3183,7 @@ namespace QTP.Plugins
 
             await TryHandleRfq1688Async(ctx, token);
             await TryHandleQianhuFormAsync(ctx, token);
+            await TryHandleLouisvuittonAsync(ctx, token);
 
             this.QTPExecuteSuccess(ctx.Config.TaskId);
             LogWriteLine($"{this.Title}:ExecuteWorker:Success");
@@ -3227,6 +3229,7 @@ namespace QTP.Plugins
 
             DateTime start = DateTime.Now;
             PageScrollDirection direction = PageScrollDirection.Up;
+            await TryHandleAllAsync(ctx, token);
 
             while (true)
             {
@@ -3751,6 +3754,227 @@ namespace QTP.Plugins
             catch { }
         }
 
+        private async Task TryHandleLouisvuittonAsync(WorkerRunContext ctx, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+
+            if (!ctx.Page!.Url.StartsWith("https://www.louisvuitton.cn"))
+                return;
+
+            try
+            {
+                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                var cookieBtn = ctx.Page.GetByText("同意全部第三方Cookie");
+                if (await cookieBtn.CountAsync() > 0)
+                {
+                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                    await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, cookieBtn.First);
+                }
+
+                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                await HumanScrollHelper.TouchPageLongScrollAsync(
+                ctx.Page!,
+                ctx.CdpSession!,
+                scrollCount: CommonHelper.RandomRange(2, 4),
+                direction: PageScrollDirection.Up,
+                cancellationToken: token);
+                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                ClickResult? clickResult = null;
+                var options = new ClickAreaOptions
+                {
+                    MinXPercent = 0.1,
+                    MaxXPercent = 0.9,
+                    MinYPercent = 0.30,
+                    MaxYPercent = 0.70,
+                    StrictPreferredArea = false,
+                    MaxCount = 50
+                };
+                var nodes = await PlaywrightClickableHelper.GetClickableNodesAsync(ctx.Page, options);
+                if (nodes.Count() > 0)
+                {
+                    foreach (var node in nodes.Take(2).OrderByDescending(g => Guid.NewGuid()))
+                    {
+                        if (string.IsNullOrWhiteSpace(node.Selector))
+                            continue;
+                        try
+                        {
+                            var locator = ctx.Page.Locator(node.Selector).First;
+                            if (await locator.CountAsync() == 0)
+                                continue;
+                            clickResult = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
+                            if (clickResult.Navigated)
+                            {
+                                break;
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+
+                if (clickResult != null && clickResult.Navigated)
+                {
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+
+                    await HumanScrollHelper.TouchPageLongScrollAsync(
+                      ctx.Page!,
+                      ctx.CdpSession!,
+                      scrollCount: CommonHelper.RandomRange(2, 4),
+                      direction: PageScrollDirection.Up,
+                      cancellationToken: token);
+
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    nodes = await PlaywrightClickableHelper.GetClickableNodesAsync(ctx.Page, options);
+                    if (nodes.Count() > 0)
+                    {
+                        foreach (var node in nodes.Take(3).OrderByDescending(g => Guid.NewGuid()))
+                        {
+                            if (string.IsNullOrWhiteSpace(node.Selector))
+                                continue;
+                            try
+                            {
+                                var locator = ctx.Page.Locator(node.Selector).First;
+                                if (await locator.CountAsync() == 0)
+                                    continue;
+                                clickResult = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
+                                if (clickResult.Navigated)
+                                {
+                                    break;
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                }
+
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch { }
+        }
+
+
+        private async Task TryHandleAllAsync(WorkerRunContext ctx, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (ctx.Page!.Url.Contains("taobao.com") || ctx.Page!.Url.Contains("1688.com") || ctx.Page!.Url.Contains("jd.com") || ctx.Page!.Url.Contains("baidu.com"))
+                return;
+
+
+            try
+            {
+                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                var acceptBtn = ctx.Page!.Locator(
+                      "button:visible, a:visible, [role='button']:visible, input[type='button']:visible, input[type='submit']:visible, div:visible, span:visible"
+                  ).Filter(new()
+                  {
+                      HasTextRegex = new Regex(
+                          @"同意|接受|允许|我同意|我接受|允许全部|全部接受|全部同意|确认|继续|知道了|Agree|Accept|Allow|Accept All|Allow All|I Agree|I Accept|Consent|Got it|Continue|Accept Cookies|Allow Cookies",
+                          RegexOptions.IgnoreCase
+                      )
+                  }).First;
+                if (await acceptBtn.CountAsync() > 0)
+                {
+                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                    await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, acceptBtn.First);
+                }
+                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                await HumanScrollHelper.TouchPageLongScrollAsync(
+                ctx.Page!,
+                ctx.CdpSession!,
+                scrollCount: CommonHelper.RandomRange(2, 4),
+                direction: PageScrollDirection.Up,
+                cancellationToken: token);
+                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                ClickResult? clickResult = null;
+                var options = new ClickAreaOptions
+                {
+                    MinXPercent = 0.1,
+                    MaxXPercent = 0.9,
+                    MinYPercent = 0.30,
+                    MaxYPercent = 0.70,
+                    StrictPreferredArea = false,
+                    MaxCount = 50
+                };
+                var nodes = await PlaywrightClickableHelper.GetClickableNodesAsync(ctx.Page, options);
+                if (nodes.Count() > 0)
+                {
+                    foreach (var node in nodes.Take(2).OrderByDescending(g => Guid.NewGuid()))
+                    {
+                        if (string.IsNullOrWhiteSpace(node.Selector))
+                            continue;
+                        try
+                        {
+                            var locator = ctx.Page.Locator(node.Selector).First;
+                            if (await locator.CountAsync() == 0)
+                                continue;
+                            clickResult = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
+                            if (clickResult.Navigated)
+                            {
+                                break;
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                if (clickResult != null && clickResult.Navigated)
+                {
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+
+                    await HumanScrollHelper.TouchPageLongScrollAsync(
+                      ctx.Page!,
+                      ctx.CdpSession!,
+                      scrollCount: CommonHelper.RandomRange(2, 4),
+                      direction: PageScrollDirection.Up,
+                      cancellationToken: token);
+
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    nodes = await PlaywrightClickableHelper.GetClickableNodesAsync(ctx.Page, options);
+                    if (nodes.Count() > 0)
+                    {
+                        foreach (var node in nodes.Take(3).OrderByDescending(g => Guid.NewGuid()))
+                        {
+                            if (string.IsNullOrWhiteSpace(node.Selector))
+                                continue;
+                            try
+                            {
+                                var locator = ctx.Page.Locator(node.Selector).First;
+                                if (await locator.CountAsync() == 0)
+                                    continue;
+                                clickResult = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
+                                if (clickResult.Navigated)
+                                {
+                                    break;
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                }
+
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch { }
+        }
+
+
+
         #endregion
 
         #region Test Branch
@@ -3782,7 +4006,7 @@ namespace QTP.Plugins
             //await HandleLandingPageAsync(ctx, token);
 
 
-            //await ExecuteTaskSleepPhaseAsync(ctx, token);
+            await ExecuteTaskSleepPhaseAsync(ctx, token);
 
 
 

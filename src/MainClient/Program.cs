@@ -10,6 +10,7 @@ using QTP.Common.Infrastructure;
 using Serilog;
 using Serilog.Events;
 using System.Diagnostics;
+using System.Xml.Linq;
 
 
 
@@ -79,6 +80,11 @@ namespace MainClient
             var builder = new HostBuilder()
                 .ConfigureServices((context, services) =>
                 {
+                    services.Configure<QTP.Common.AdeOptions>(opt =>
+                    {
+                        opt.AppVersion = AppConsts.AppVersion;
+                    });
+
                     services.AddSingleton(appSettings);
                     services.AddHttpClient();
                     services.AddSingleton<IRootDomainService, RootDomainService>();
@@ -91,11 +97,13 @@ namespace MainClient
 
                         return new FileUpdater(httpClient, logger);
                     });
+
                     services.AddSingleton<ChineseNameGenerator>();
                     services.AddSingleton<ChromiumSessionManager>();
                     services.AddSingleton<TaskStatsAggregator>();
                     services.AddSingleton<AdeHelper>();
                     services.AddSingleton<IpHelper>();
+                    services.AddSingleton<ProxyTester>();
                     services.AddTransient<MainForm>();
 
                 })

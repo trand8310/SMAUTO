@@ -68,7 +68,7 @@ namespace MainClient
             try
             {
                 var baseUrl = new Uri(taskApiUrl).GetLeftPart(UriPartial.Authority);
-                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_version_list&runtime_version={AppConsts.AppVertion}&_t={DateTime.Now.Ticks}";
+                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_version_list&runtime_version={AppConsts.AppVersion}&_t={DateTime.Now.Ticks}";
                 using var response = await _httpClient.GetAsync(url, token);
                 response.EnsureSuccessStatusCode();
                 var content = await response.Content.ReadAsStringAsync(token);
@@ -92,7 +92,7 @@ namespace MainClient
             {
                 //app=smad&runtime_version=1.2.3.4
                 var baseUrl = new Uri(taskApiUrl).GetLeftPart(UriPartial.Authority);
-                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_latest&prefix=SMAD_&runtime_version={AppConsts.AppVertion}&_t={DateTime.Now.Ticks}";
+                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_latest&prefix=SMAD_&runtime_version={AppConsts.AppVersion}&_t={DateTime.Now.Ticks}";
                 using var response = await _httpClient.GetAsync(url, token);
                 response.EnsureSuccessStatusCode();
                 var content = await response.Content.ReadAsStringAsync(token);
@@ -141,7 +141,7 @@ namespace MainClient
             try
             {
                 var baseUrl = new Uri(taskApiUrl).GetLeftPart(UriPartial.Authority);
-                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_browser_version_list&runtime_version={AppConsts.AppVertion}&_t={DateTime.Now.Ticks}";
+                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_browser_version_list&runtime_version={AppConsts.AppVersion}&_t={DateTime.Now.Ticks}";
                 using var response = await _httpClient.GetAsync(url, token);
                 response.EnsureSuccessStatusCode();
                 var content = await response.Content.ReadAsStringAsync(token);
@@ -191,7 +191,9 @@ namespace MainClient
             }
 
             var baseUrl = new Uri(taskApiUrl).GetLeftPart(UriPartial.Authority);
-            var downloadUrl = $"{baseUrl}/upload/{selectedVersion.File}";
+            //http://211.154.24.179:9000
+            //var downloadUrl = $"{baseUrl}/upload/{selectedVersion.File}";
+            var downloadUrl = $"http://211.154.24.179:9000/upload/{selectedVersion.File}";
             string fileName = Path.GetFileName(downloadUrl);
 
             OnProgressChanged(0, downloadUrl);
