@@ -175,6 +175,12 @@ namespace MainClient
         }
         public void LogWriteLine(PluginLogEventArgs e)
         {
+            if (IsPlaywrightTraceMessage(e.Message))
+            {
+                // 额外写一份到 playwright-.log（由 Program.cs 中 [PWTRACE] 过滤规则分流）
+                _logger.LogInformation("[PWTRACE] {PluginMessage}", e.Message);
+            }
+
             switch (e.Level)
             {
                 case LogLevel.Trace: _logger.LogTrace(e.Message); break;
@@ -183,6 +189,20 @@ namespace MainClient
                 case LogLevel.Warning: _logger.LogWarning(e.Message); break;
                 case LogLevel.Error: _logger.LogError(e.Message); break;
             }
+        }
+
+        private static bool IsPlaywrightTraceMessage(string? message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return false;
+
+            return message.Contains("CDP", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("RequestFailed", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("Crash", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("args=", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("ExecuteWorker:Start", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("ExecuteWorker:Canceled", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("ExecuteWorker:Complete", StringComparison.OrdinalIgnoreCase);
         }
 
         #endregion
