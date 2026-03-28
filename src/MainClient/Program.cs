@@ -56,11 +56,18 @@ namespace MainClient
                     .WriteTo.File(
                         Path.Combine(logDir, "x5sec-.log"),
                         rollingInterval: RollingInterval.Day))
+                // ✅ Playwright 并发追踪专用日志（按消息前缀分流）
+                .WriteTo.Logger(lc => lc
+                    .Filter.ByIncludingOnly(e => e.RenderMessage().Contains("[PWTRACE]"))
+                    .WriteTo.File(
+                        Path.Combine(logDir, "playwright-.log"),
+                        rollingInterval: RollingInterval.Day))
                 // ✅ 普通日志（排除 X5Sec）
                 .WriteTo.Logger(lc => lc
                     .Filter.ByExcluding(e =>
-                        e.Properties.ContainsKey("LogType") &&
-                        e.Properties["LogType"].ToString().Contains("X5Sec"))
+                        (e.Properties.ContainsKey("LogType") &&
+                        e.Properties["LogType"].ToString().Contains("X5Sec")) ||
+                        e.RenderMessage().Contains("[PWTRACE]"))
                     .WriteTo.File(
                         Path.Combine(logDir, "app-.log"),
                         rollingInterval: RollingInterval.Day))
