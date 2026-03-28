@@ -18,7 +18,6 @@ namespace MainClient
         }
     }
 
-
     public class FileVersionInfo
     {
         public string File { get; set; } = string.Empty;

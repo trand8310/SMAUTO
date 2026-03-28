@@ -255,6 +255,17 @@ namespace QTP
 
         #region  主机状态统计&更新
 
+        private static string GetProxyHostSafely(string? proxyIpUrl)
+        {
+            if (string.IsNullOrWhiteSpace(proxyIpUrl))
+                return string.Empty;
+
+            return Uri.TryCreate(proxyIpUrl, UriKind.Absolute, out var uri)
+                ? uri.Host
+                : string.Empty;
+        }
+
+
         /// <summary>
         /// 更新主机状态
         /// </summary>
@@ -263,6 +274,20 @@ namespace QTP
         /// <returns></returns>
         public async Task<JToken?> UpdateHostStatusAsync(Dictionary<string, long> metrics, CancellationToken token = default)
         {
+            metrics ??= new Dictionary<string, long>();
+            string wordName = "default";
+            if (!string.IsNullOrWhiteSpace(_appSettings.DynamicWordName) && !_appSettings.DynamicWordName.Equals("不使用采集库"))
+            {
+                wordName = _appSettings.DynamicWordName;
+            }
+            else
+            {
+                if (_appSettings.UseLocalWord)
+                    wordName = _appSettings.WordName;
+                else
+                    wordName = "default";
+            }
+
             var host = await CommonHelper.GetHostAsync();
             try
             {
@@ -274,7 +299,10 @@ namespace QTP
                     host = host,
                     task = _appSettings.TaskName,
                     version = _options.AppVersion,
-                    metrics = metrics
+                    proxy=  GetProxyHostSafely(_appSettings.ProxyIpUrl),
+                    fullproxy = _appSettings.ProxyIpUrl,
+                    wordname = wordName,
+                    metrics = metrics,
                 };
                 var postData = JsonConvert.SerializeObject(bidRequest);
                 using var content = new StringContent(postData, Encoding.UTF8, "application/json");
@@ -504,7 +532,6 @@ namespace QTP
                         bidRequest["recently"] = _appSettings.FetchRecently;
                         bidRequest["name"] = "default";
                         bidRequest["distinct"] = _appSettings.DistinctByHour ? 1 : 0;
-
                     }
                     var postData = JsonConvert.SerializeObject(bidRequest);
                     HttpContent content = new StringContent(postData);
@@ -656,8 +683,10 @@ namespace QTP
                 if (!response.IsSuccessStatusCode)
                     return Array.Empty<string>();
 
+
                 await using var stream = await response.Content.ReadAsStreamAsync(token);
                 using var reader = new StreamReader(stream);
+
                 using var jsonReader = new JsonTextReader(reader);
                 var json = await JObject.LoadAsync(jsonReader, token);
                 if (json["data"] is not JArray dataArray)
@@ -868,7 +897,7 @@ namespace QTP
                 var bidRequest = new JObject();
                 bidRequest["items"] = JArray.FromObject(items);
                 bidRequest["host"] = host;
-                builder.Append($"/api{_apiVersion}/test2.php?action=add_keyword_domains&t={System.DateTime.Now.Ticks}");
+                builder.Append($"/api{_apiVersion}/cloud_word.php?action=add_keyword_domains&t={System.DateTime.Now.Ticks}");
                 var postData = JsonConvert.SerializeObject(bidRequest);
                 HttpContent content = new StringContent(postData);
                 content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");

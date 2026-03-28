@@ -1721,11 +1721,24 @@ namespace MainClient
             if (!Directory.Exists(chromeDir))
             {
                 await DownloadBrowserAsync(version);
-
                 if (!Directory.Exists(chromeDir))
                 {
                     _logger.LogWarning("Chrome kernel missing after download: {ChromeDir}", chromeDir);
                     MessageBox.Show("浏览器内核缺失，请检查下载配置后重试。");
+                    return;
+                }
+            }
+
+            if (_appSettings.UseLocalWord)
+            {
+                var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", $"{_appSettings.WordName}.txt");
+                if (!File.Exists(filePath))
+                {
+                    await _adeHelper.DownloadWordFileByNameAsync(_appSettings.WordName);
+                }
+                if (!File.Exists(filePath))
+                {
+                    _logger.LogWarning("缺少本地词库: {filePath}", filePath);
                     return;
                 }
             }

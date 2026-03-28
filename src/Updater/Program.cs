@@ -228,6 +228,9 @@ namespace Updater
                 if (Directory.Exists(appDir))
                 {
                     CopyPreservedFiles(appDir, tmpDir, new[] { "appsettings.json", "appsettings.user.json" });
+                   
+                    CopyDirectory(Path.Combine(appDir, "Data"), Path.Combine(tmpDir, "Data"));
+
 
                     // 当更新的版本中不含浏览器目录时，把当前版本浏览器目录拷贝到新版本中
                     var newChromeDir = Path.Combine(tmpDir, "File", "chrome-win");
