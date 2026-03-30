@@ -1636,6 +1636,7 @@ namespace MainClient
 
                 LogWriteLine(
                     $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
+                LogWriteLine($"任务追踪: taskId={ctx.TaskId}, uniqueId={uniqueId}, consumerId={consumerId}, uvIndex={uvIndex + 1}");
 
                 try
                 {
