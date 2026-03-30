@@ -624,18 +624,18 @@ namespace MainClient.UiTask
 
         private void WriteLog(string source, string message, Exception? ex = null)
         {
-            try
-            {
-                LogEmitted?.Invoke(new RunnerLogEvent
-                {
-                    Source = source,
-                    Message = message,
-                    Exception = ex
-                });
-            }
-            catch
-            {
-            }
+            //try
+            //{
+            //    LogEmitted?.Invoke(new RunnerLogEvent
+            //    {
+            //        Source = source,
+            //        Message = message,
+            //        Exception = ex
+            //    });
+            //}
+            //catch
+            //{
+            //}
         }
     }
 }

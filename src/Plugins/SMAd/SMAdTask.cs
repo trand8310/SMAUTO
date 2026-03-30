@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Options;
+ï»¿using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
 using QTP.Common;
@@ -6,6 +6,8 @@ using QTP.Common.Infrastructure;
 using QTP.Common.Models;
 using SMAd;
 using SMAd.Swiper;
+using System.Data.Common;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml.Linq;
@@ -17,6 +19,19 @@ namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
+        private static bool IsClosedPlaywrightException(PlaywrightException ex)
+        {
+            if (string.IsNullOrWhiteSpace(ex.Message))
+                return false;
+
+            return ex.Message.Contains("Target page, context or browser has been closed", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("has been closed", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("browser has been closed", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("context has been closed", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("page has been closed", StringComparison.OrdinalIgnoreCase);
+        }
+
         public static uint GetStableHash(string s)
         {
             unchecked
@@ -38,7 +53,7 @@ namespace QTP.Plugins
                 FileName = "SMAd.dll",
             };
         }
-        public override string Title => "ÉñÂíËÑË÷";
+        public override string Title => "ç¥é©¬æœç´¢";
         private readonly TaskStatsAggregator _aggregator;
         private readonly AdeHelper _adeHelper;
         private ChromiumSessionManager _processManager;
@@ -102,7 +117,7 @@ namespace QTP.Plugins
         }
 
         /// <summary>
-        /// ÏÂ»¬Ç°ÏÈ¼ì²éÊÇ·ñ½Ó½ü¶¥²¿
+        /// ä¸‹æ»‘å‰å…ˆæ£€æŸ¥æ˜¯å¦æ¥è¿‘é¡¶éƒ¨
         /// </summary>
         /// <param name="page"></param>
         /// <returns></returns>
@@ -122,7 +137,7 @@ namespace QTP.Plugins
             }
         }
         /// <summary>
-        /// ÏÂ»¬Ç°ÏÈ¼ì²éÊÇ·ñ½Ó½ü¶¥²¿
+        /// ä¸‹æ»‘å‰å…ˆæ£€æŸ¥æ˜¯å¦æ¥è¿‘é¡¶éƒ¨
         /// </summary>
         /// <param name="page"></param>
         /// <param name="threshold"></param>
@@ -145,12 +160,12 @@ namespace QTP.Plugins
 
 
         /// <summary>
-        /// ´¥Ãş»¬¶¯
+        /// è§¦æ‘¸æ»‘åŠ¨
         /// </summary>
         /// <param name="page"></param>
         /// <param name="client"></param>
         /// <param name="scrollCount"></param>
-        /// <param name="direction">1:ÏòÉÏ»¬¶¯,2:ÏòÏÂ»¬¶¯</param>
+        /// <param name="direction">1:å‘ä¸Šæ»‘åŠ¨,2:å‘ä¸‹æ»‘åŠ¨</param>
         /// <param name="predexp"></param>
         /// <returns></returns>
         private async Task TouchPageScroll(IPage page, ICDPSession client, int scrollCount, int direction, Func<IPage, Task<bool>>? predexp = null, int time_delay = 0)
@@ -159,11 +174,11 @@ namespace QTP.Plugins
             {
                 if (direction == -1)
                 {
-                    LogWriteLine($"TouchScrollDown:{scrollCount}´Î");
+                    LogWriteLine($"TouchScrollDown:{scrollCount}æ¬¡");
                 }
                 else
                 {
-                    LogWriteLine($"TouchScrollUp:{scrollCount}´Î");
+                    LogWriteLine($"TouchScrollUp:{scrollCount}æ¬¡");
                 }
 
                 for (int i = 0; i < scrollCount; i++)
@@ -234,7 +249,7 @@ namespace QTP.Plugins
 
 
         /// <summary>
-        /// ´¥Ãş»¬¶¯
+        /// è§¦æ‘¸æ»‘åŠ¨
         /// </summary>
         /// <param name="page"></param>
         /// <param name="client"></param>
@@ -277,7 +292,7 @@ namespace QTP.Plugins
                         }
                     }
 
-                    // ÏòÏÂ»¬Ç°£¬ÏÈÅĞ¶ÏÊÇ·ñÒÑ½Ó½ü¶¥²¿
+                    // å‘ä¸‹æ»‘å‰ï¼Œå…ˆåˆ¤æ–­æ˜¯å¦å·²æ¥è¿‘é¡¶éƒ¨
                     if (direction == PageScrollDirection.Down)
                     {
                         bool nearTop = await IsNearTopAsync(page, 10);
@@ -336,7 +351,7 @@ namespace QTP.Plugins
 
 
         /// <summary>
-        /// Ò³ÃæÏòÉÏ»¬¶¯Ò»µã
+        /// é¡µé¢å‘ä¸Šæ»‘åŠ¨ä¸€ç‚¹
         /// </summary>
         /// <param name="page"></param>
         /// <param name="client"></param>
@@ -372,7 +387,7 @@ namespace QTP.Plugins
         }
 
         /// <summary>
-        /// Ò³ÃæÏòÏÂ»¬¶¯Ò»µã
+        /// é¡µé¢å‘ä¸‹æ»‘åŠ¨ä¸€ç‚¹
         /// </summary>
         /// <param name="page"></param>
         /// <param name="client"></param>
@@ -444,8 +459,8 @@ namespace QTP.Plugins
             try
             {
                 LogWriteLine(direction == -1
-                    ? $"TouchScrollDown:{scrollCount}´Î"
-                    : $"TouchScrollUp:{scrollCount}´Î");
+                    ? $"TouchScrollDown:{scrollCount}æ¬¡"
+                    : $"TouchScrollUp:{scrollCount}æ¬¡");
 
                 int delayMsAfterScroll = timeDelay > 0
                     ? timeDelay
@@ -469,7 +484,7 @@ namespace QTP.Plugins
                         100,
                         260);
 
-                    // ÕâÀïÕı¸º·½ÏòĞèÒª°´ÄãÒ³ÃæÊµ¼Ê²âÊÔÒ»´Î
+                    // è¿™é‡Œæ­£è´Ÿæ–¹å‘éœ€è¦æŒ‰ä½ é¡µé¢å®é™…æµ‹è¯•ä¸€æ¬¡
                     int yDistance = direction >= 0 ? distancePx : -distancePx;
 
                     await client.SendAsync("Input.synthesizeScrollGesture", new Dictionary<string, object>
@@ -571,33 +586,33 @@ namespace QTP.Plugins
 
 
 
-
-
         /// <summary>
-        /// ´¦ÀíÒ³ÃæÔªËØ
+        /// å¤„ç†é¡µé¢å…ƒç´ 
         /// </summary>
         /// <param name="page"></param>
         /// <param name="cdpSession"></param>
-        private void ProcessingPageElementTask(IPage page, ICDPSession cdpSession)
+        /// <param name="token"></param>
+
+        private void ProcessingPageElementTask(IPage page, ICDPSession cdpSession, CancellationToken token)
         {
             _ = Task.Run(async () =>
             {
-                int redo_try_count = 0;
-                while (redo_try_count++ < 10)
+                int redoTryCount = 0;
+
+                while (redoTryCount++ < 10 && !token.IsCancellationRequested)
                 {
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200));
                     try
                     {
+                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                        if (page == null || page.IsClosed)
+                            break;
+
                         var closeBtn = page.Locator(".androidOpenModal .closeBtn, .iosOpenModal .closeIcon");
-                        if (await closeBtn.CountAsync() > 0)
-                        {
-                            var target = closeBtn.First;
-                            if (await target.IsVisibleAsync())
-                            {
-                                await CDPHelper.MouseClickAsync(page, cdpSession, target);
-                                break;
-                            }
-                        }
+                        if (await closeBtn.CountAsync() <= 0)
+                            continue;
+
+
                         //else if (await page.Locator(".enquiryFormContentnew").CountAsync() > 0 && await page.Locator(".successTipNew_close_new").CountAsync() > 0)
                         //{
                         //    var closeBtn = page.Locator(".successTipNew_close_new");
@@ -608,17 +623,36 @@ namespace QTP.Plugins
                         //    }
                         //}
 
+                        var target = closeBtn.First;
+                        if (!await target.IsVisibleAsync())
+                            continue;
+
+                        if (page.IsClosed)
+                            break;
+
+                        await CDPHelper.MouseClickAsync(page, cdpSession, target);
+                        break;
                     }
-                    catch (Exception)
+                    catch (OperationCanceledException)
                     {
                         break;
                     }
+                    catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
+                    {
+                        LogWriteLine($"{this.Title}:ProcessingPageElementTask é¡µé¢å·²å…³é—­: {ex.Message}");
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        LogWriteLine($"{this.Title}:ProcessingPageElementTaskå¼‚å¸¸: {ex.Message}");
+                        break;
+                    }
                 }
-            });
+            }, token);
         }
 
         /// <summary>
-        /// Çå³ı1688APPÏÂÔØ
+        /// æ¸…é™¤1688APPä¸‹è½½
         /// </summary>
         /// <param name="page"></param>
         /// <param name="cdpSession"></param>
@@ -645,7 +679,7 @@ namespace QTP.Plugins
         }
 
         /// <summary>
-        /// Çå³ı1688Ñ¯¼Û¶Ô»°¿ò
+        /// æ¸…é™¤1688è¯¢ä»·å¯¹è¯æ¡†
         /// </summary>
         /// <param name="page"></param>
         /// <param name="cdpSession"></param>
@@ -688,7 +722,7 @@ namespace QTP.Plugins
 
 
 
-            #region Ö¸ÎÆ²ÎÊıÉèÖÃ
+            #region æŒ‡çº¹å‚æ•°è®¾ç½®
 
             /*
             --platform="Android" 
@@ -983,7 +1017,7 @@ namespace QTP.Plugins
 
                     const threshold = 5;
 
-                    // ========= 1. Ò³Ãæ±¾ÉíÊÇ·ñ¿É¹ö¶¯ =========
+                    // ========= 1. é¡µé¢æœ¬èº«æ˜¯å¦å¯æ»šåŠ¨ =========
                     const doc = document.documentElement;
                     const body = document.body;
 
@@ -1001,7 +1035,7 @@ namespace QTP.Plugins
                         return true;
 
 
-                    // ========= 2. ÊÇ·ñ´æÔÚ¿É¹ö¶¯ÈİÆ÷ =========
+                    // ========= 2. æ˜¯å¦å­˜åœ¨å¯æ»šåŠ¨å®¹å™¨ =========
                     const elements = document.querySelectorAll('*');
 
                     for (const el of elements) {
@@ -1046,27 +1080,19 @@ namespace QTP.Plugins
                 await Task.Delay(durationMs, cancellationToken);
                 return;
             }
-
-            PageScrollDirection[] scrollSteps = [
-                PageScrollDirection.Up, PageScrollDirection.Up, PageScrollDirection.Down,
-                PageScrollDirection.Up, PageScrollDirection.Up, PageScrollDirection.Down,
-                PageScrollDirection.Up, PageScrollDirection.Up, PageScrollDirection.Down,
-                PageScrollDirection.Up];
             var endTime = Environment.TickCount64 + durationMs;
             while (Environment.TickCount64 < endTime)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                PageScrollDirection step = scrollSteps[CommonHelper.RandomRange(0, scrollSteps.Length)];
-                int timeDelay = CommonHelper.RandomRange(10, 20);
-
-                await TouchPageScroll(page, cdpSession, scrollCount: 1, direction: 1, time_delay: timeDelay);
-                // await TouchPageScrollAsync(page, cdpSession, scrollCount: 1, direction: step, timeDelay: timeDelay);
-
+                await HumanScrollHelper.TouchPageLongScrollAsync(
+                            page!,
+                            cdpSession!,
+                            scrollCount: 1,
+                            direction: PageScrollDirection.Up,
+                            cancellationToken: cancellationToken);
                 int remainMs = (int)Math.Max(0, endTime - Environment.TickCount64);
                 if (remainMs <= 0)
                     break;
-
                 int delayMs = Math.Min(CommonHelper.RandomRange(1000, 2000), remainMs);
                 await Task.Delay(delayMs, cancellationToken);
             }
@@ -1102,7 +1128,7 @@ namespace QTP.Plugins
 
                 try
                 {
-                    LogWriteLine($"CDPÁ¬½Ó³¢ÊÔ {attempt}/{maxAttempts}: {endpoint}");
+                    LogWriteLine($"CDPè¿æ¥å°è¯• {attempt}/{maxAttempts}: {endpoint}");
 
                     browser = await playwright.Chromium.ConnectOverCDPAsync(endpoint);
 
@@ -1114,13 +1140,13 @@ namespace QTP.Plugins
 
                     if (requireUsableContext)
                     {
-                        // ÖÁÉÙµÈ´ıµ½ contexts ¿É·ÃÎÊ
+                        // è‡³å°‘ç­‰å¾…åˆ° contexts å¯è®¿é—®
                         var contexts = browser.Contexts;
                         if (contexts == null)
                             throw new InvalidOperationException("Browser contexts is null.");
 
-                        // ÓĞĞ©³¡¾°¸ÕÁ¬ÉÏÊ± contexts Îª¿Õ£¬µ«Í¨³£ºÜ¿ì¾Í»á³öÏÖÄ¬ÈÏ context
-                        // ¸øÒ»¸öºÜ¶ÌµÄÎÈ¶¨´°¿Ú£¬²»ÔÙ×ö³¤ÖØÊÔ
+                        // æœ‰äº›åœºæ™¯åˆšè¿ä¸Šæ—¶ contexts ä¸ºç©ºï¼Œä½†é€šå¸¸å¾ˆå¿«å°±ä¼šå‡ºç°é»˜è®¤ context
+                        // ç»™ä¸€ä¸ªå¾ˆçŸ­çš„ç¨³å®šçª—å£ï¼Œä¸å†åšé•¿é‡è¯•
                         if (contexts.Count == 0)
                         {
                             await Task.Delay(100, token);
@@ -1131,7 +1157,7 @@ namespace QTP.Plugins
                             throw new InvalidOperationException("Browser has no available contexts after CDP connect.");
                     }
 
-                    LogWriteLine($"CDPÁ¬½Ó³É¹¦: {endpoint}");
+                    LogWriteLine($"CDPè¿æ¥æˆåŠŸ: {endpoint}");
                     return browser;
                 }
                 catch (OperationCanceledException)
@@ -1156,7 +1182,7 @@ namespace QTP.Plugins
                     }
                     catch { }
 
-                    LogWriteLine($"CDPÁ¬½ÓÊ§°Ü {attempt}/{maxAttempts}: {ex.Message}");
+                    LogWriteLine($"CDPè¿æ¥å¤±è´¥ {attempt}/{maxAttempts}: {ex.Message}");
 
                     if (attempt >= maxAttempts)
                         break;
@@ -1167,7 +1193,7 @@ namespace QTP.Plugins
 
             if (lastException != null)
             {
-                LogWriteLine($"CDPÁ¬½Ó×îÖÕÊ§°Ü: {lastException}");
+                LogWriteLine($"CDPè¿æ¥æœ€ç»ˆå¤±è´¥: {lastException}");
             }
 
             return null;
@@ -1213,22 +1239,15 @@ namespace QTP.Plugins
 
         #region ExecuteWorkerAsync
 
-        /// <summary>
-        /// ¹¤×÷ÈÎÎñ
-        /// </summary>
-        /// <param name="uniqueId"></param>
-        /// <param name="taskArgs"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
         public override async Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token)
         {
-
             WorkerRunContext? ctx = null;
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
             try
             {
                 var config = BuildTaskConfig(uniqueId, taskArgs, linkedCts);
+
                 ctx = new WorkerRunContext(config)
                 {
                     LandingDispatcher = new LandingPageStrategyDispatcher(new ILandingPageStrategy[]
@@ -1243,58 +1262,175 @@ namespace QTP.Plugins
                 this.QTPExecuteStart(config.TaskId);
                 LogWriteLine($"{this.Title}:ExecuteWorker:Start");
 
-                //using var playwright = await Playwright.CreateAsync();
-                //ctx.Playwright = playwright;
-
                 ctx.Playwright = await _playwrightProvider.GetAsync();
                 linkedCts.Token.ThrowIfCancellationRequested();
 
                 var browser = await StartAndConnectBrowserAsync(ctx, linkedCts.Token);
                 if (browser == null)
+                {
+                    if (ctx.ProxyFailed)
+                    {
+                        LogWriteLine($"{this.Title}:ExecuteWorker:æµè§ˆå™¨/CDPå»ºç«‹å¤±è´¥ï¼Œç–‘ä¼¼ä»£ç†å¼‚å¸¸: {ctx.ProxyFailedReason}");
+                    }
+                    else
+                    {
+                        LogWriteLine($"{this.Title}:ExecuteWorker:æµè§ˆå™¨å¯åŠ¨æˆ–CDPè¿æ¥å¤±è´¥");
+                    }
+
                     return (false, false, 0);
+                }
 
                 ctx.Browser = browser;
-                ctx.Context = browser.Contexts[0];
+
+                if (!ctx.Browser.IsConnected)
+                {
+                    ctx.ProxyFailed = true;
+                    ctx.ProxyFailedReason ??= "Browser.IsConnected == false";
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Browseræœªè¿æ¥: {ctx.ProxyFailedReason}");
+                    return (false, false, 0);
+                }
+
+                if (ctx.Browser.Contexts == null || ctx.Browser.Contexts.Count == 0)
+                {
+                    ctx.ProxyFailed = true;
+                    ctx.ProxyFailedReason ??= "Browser.Contexts.Count == 0";
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Browseræ— å¯ç”¨Context: {ctx.ProxyFailedReason}");
+                    return (false, false, 0);
+                }
+
+                ctx.Context = ctx.Browser.Contexts[0];
                 ctx.CdpManager = new CDPSessionManager(ctx.Context);
 
                 await ConfigureContextAsync(ctx, linkedCts.Token);
-
                 await AttachLifecycleEventsAsync(ctx, linkedCts.Token);
 
+                if (ctx.ProxyFailed)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:åˆå§‹åŒ–é˜¶æ®µå·²åˆ¤å®šä»£ç†å¼‚å¸¸: {ctx.ProxyFailedReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
+                if (ctx.PageCrashed)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:åˆå§‹åŒ–é˜¶æ®µé¡µé¢å´©æºƒ: {ctx.LastFailureReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
                 var ok = await RunMainFlowAsync(ctx, linkedCts.Token);
+
+                if (!ok)
+                {
+                    if (ctx.ProxyFailed)
+                    {
+                        LogWriteLine($"{this.Title}:ExecuteWorker:ä»»åŠ¡å¤±è´¥ï¼Œä»£ç†å¼‚å¸¸: {ctx.ProxyFailedReason}");
+                    }
+                    else if (ctx.PageCrashed)
+                    {
+                        LogWriteLine($"{this.Title}:ExecuteWorker:ä»»åŠ¡å¤±è´¥ï¼Œé¡µé¢å´©æºƒ: {ctx.LastFailureReason}");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(ctx.LastFailureReason))
+                    {
+                        LogWriteLine($"{this.Title}:ExecuteWorker:ä»»åŠ¡å¤±è´¥: {ctx.LastFailureReason}");
+                    }
+                }
 
                 return (ok, ctx.PageTriggerClick, ctx.PageAdsCount);
             }
             catch (OperationCanceledException)
             {
+                if (ctx?.ProxyFailed == true)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Canceled(ä»£ç†å¼‚å¸¸): {ctx.ProxyFailedReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
+                if (ctx?.PageCrashed == true)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Canceled(é¡µé¢å´©æºƒ): {ctx.LastFailureReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
+                if (ctx != null && !string.IsNullOrWhiteSpace(ctx.LastFailureReason))
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Canceled: {ctx.LastFailureReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
                 LogWriteLine($"{this.Title}:ExecuteWorker:Canceled");
+                return (false, ctx?.PageTriggerClick ?? false, ctx?.PageAdsCount ?? 0);
+            }
+            catch (PlaywrightException ex)
+            {
+                if (ctx != null)
+                    ctx.LastFailureReason = ex.Message;
+
+                if (ctx?.ProxyFailed == true)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:PlaywrightException(ä»£ç†å¼‚å¸¸): {ctx.ProxyFailedReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
+                if (ctx?.PageCrashed == true)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:PlaywrightException(é¡µé¢å´©æºƒ): {ctx.LastFailureReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
+                LogWriteLine($"{this.Title}:ExecuteWorker:PlaywrightException: {ex}");
                 return (false, ctx?.PageTriggerClick ?? false, ctx?.PageAdsCount ?? 0);
             }
             catch (Exception ex)
             {
+                if (ctx != null)
+                    ctx.LastFailureReason = ex.Message;
+
+                if (ctx?.ProxyFailed == true)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:å¼‚å¸¸(ä»£ç†å¼‚å¸¸): {ctx.ProxyFailedReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
+                if (ctx?.PageCrashed == true)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:å¼‚å¸¸(é¡µé¢å´©æºƒ): {ctx.LastFailureReason}");
+                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+
                 LogWriteLine(ex.ToString());
                 return (false, ctx?.PageTriggerClick ?? false, ctx?.PageAdsCount ?? 0);
             }
             finally
             {
+                try
+                {
+                    if (!linkedCts.IsCancellationRequested)
+                        linkedCts.Cancel();
+                }
+                catch
+                {
+                }
+
                 if (ctx != null)
                 {
                     try
                     {
-                        if (ctx.Browser != null)
+                        if (ctx.Browser != null && ctx.Browser.IsConnected)
                             await ctx.Browser.CloseAsync();
                     }
-                    catch { }
+                    catch
+                    {
+                    }
 
                     try
                     {
                         await CloseBrowserProcess(uniqueId);
                     }
-                    catch { }
+                    catch
+                    {
+                    }
                 }
             }
         }
-
         #endregion
 
         #region Main Flow
@@ -1305,9 +1441,21 @@ namespace QTP.Plugins
             {
                 token.ThrowIfCancellationRequested();
 
-                LogWriteLine($"{this.Title}:pv£º{ctx.Config.TotalPV}/{ctx.PvIndex}");
+                LogWriteLine($"{this.Title}:pvï¼š{ctx.Config.TotalPV}/{ctx.PvIndex}");
 
                 await EnsureSinglePageAsync(ctx, token);
+
+                if (ctx.Page == null || ctx.Page.IsClosed)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: EnsureSinglePageå Pageä¸ºç©ºæˆ–å·²å…³é—­");
+                    return false;
+                }
+
+                if (ctx.Browser == null || !ctx.Browser.IsConnected)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: EnsureSinglePageå Browserä¸ºç©ºæˆ–å·²æ–­å¼€");
+                    return false;
+                }
 
                 var entry = await PrepareEntryAsync(ctx, token);
                 if (!entry.Success)
@@ -1317,6 +1465,7 @@ namespace QTP.Plugins
 
                     continue;
                 }
+
                 if (ctx.Config.IsTest)
                 {
                     //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=%E6%BF%80%E7%B4%A0%E4%BE%9D%E8%B5%96%E6%80%A7%E7%9A%AE%E7%82%8E";
@@ -1332,11 +1481,41 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.ncpjy.cn/content.html?q=%E7%A0%94%E7%A9%B6%E7%94%9F&keywordid=1361648768492&site=23&bd_vid=11661194032580761324";
                     //entry.FirstPageUrl = "http://prom.sjk520.top/db_p_h5/v1/keysearch.html?app_id=9001&content_id=50700164&keyword=%E5%92%A8%E8%AF%A2%E5%85%AC%E5%8F%B8&plan=4&bd_vid=8521736992881948758";
                     //entry.FirstPageUrl = "https://aisite.wejianzhan.com/site/wjzsorv8/8fde5eff-530e-43ad-a8be-37ab96c77d4b?q=AI%E5%9F%B9%E8%AE%AD&pm_key=47622062&multi_key=5_211314986_70005&page_scene=48&bword=%E5%B9%B3%E9%9D%A2%E8%AE%BE%E8%AE%A1ai%E8%BD%AF%E4%BB%B6%E6%95%99%E7%A8%8B&intent=%E5%AD%A6%E4%B9%A0%E6%9C%9F-1&adGroupId=124118580&campaignId=1501472115&planname=20250423_%E7%A5%9E%E9%A9%AC_ocpc_AI%E5%9F%B9%E8%AE%AD_wise&kid=-1&ip=113.121.217.233&clickid=18286375348828523544&uctrackid=czo3MjU4OTY0ODE0NDk2MDMyMjA3O2M6NTAwMDAwMDIzODMwMTY1Nzg7ZDpkbXBfMzk4MTAwNDA5MDE3NjMzNzk5OTtwOnds&flowfrom=shenma&wid=19669bb7138d4ce3834a9f198b6ff99e_0_0#showRetainPopup";
-
-
                 }
 
-                var gotoOk = await NavigateToEntryAsync(ctx, entry.FirstPageUrl!, token);
+                if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: FirstPageUrlä¸ºç©º");
+                    continue;
+                }
+
+                if (ctx.Page == null || ctx.Page.IsClosed)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: Navigateå‰ Pageä¸ºç©ºæˆ–å·²å…³é—­");
+                    continue;
+                }
+
+                if (ctx.Browser == null || !ctx.Browser.IsConnected)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: Navigateå‰ Browserä¸ºç©ºæˆ–å·²æ–­å¼€");
+                    continue;
+                }
+
+                bool gotoOk;
+                try
+                {
+                    gotoOk = await NavigateToEntryAsync(ctx, entry.FirstPageUrl!, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: NavigateToEntryAsync é¡µé¢å·²å…³é—­: {ex.Message}");
+                    continue;
+                }
+
                 if (!gotoOk)
                     continue;
 
@@ -1348,7 +1527,13 @@ namespace QTP.Plugins
 
                 ctx.ResetPerPvState();
 
-                if (ctx.Page!.Url.Contains("punish?x5secdata"))
+                if (ctx.Page == null || ctx.Page.IsClosed)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: å¯¼èˆªå Pageä¸ºç©ºæˆ–å·²å…³é—­");
+                    continue;
+                }
+
+                if (ctx.Page.Url.Contains("punish?x5secdata"))
                 {
                     this.X5Secdata(ctx.Config.TaskId, 1, ctx.Page.Url);
                     return CompleteSuccess(ctx);
@@ -1356,20 +1541,70 @@ namespace QTP.Plugins
 
                 if (entry.IsHomepageTrigger)
                 {
+                    LogWriteLine($"{this.Title}:ExecuteWorker: ExecuteHomepageTriggerAsync");
                     var homepageOk = await ExecuteHomepageTriggerAsync(ctx, entry.QueryWord, token);
                     if (!homepageOk)
                         continue;
                 }
                 else
                 {
-                    LogWriteLine($"{this.Title}:ExecuteWorker:ÆØ¹â½øÈëÒ³ÃæÍ£Áô{((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}Ãë");
+                    LogWriteLine($"{this.Title}:ExecuteWorker: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}");
                     token.ThrowIfCancellationRequested();
-                    await ScrollWithTimeoutAsync(ctx.Page!, ctx.CdpManager!, Math.Abs(ctx.Config.PageLoadedDelayMs));
+
+                    if (ctx.Page == null || ctx.Page.IsClosed)
+                    {
+                        LogWriteLine($"{this.Title}:RunMainFlow: æ»šåŠ¨å‰ Pageä¸ºç©ºæˆ–å·²å…³é—­");
+                        continue;
+                    }
+
+                    if (ctx.Browser == null || !ctx.Browser.IsConnected)
+                    {
+                        LogWriteLine($"{this.Title}:RunMainFlow: æ»šåŠ¨å‰ Browserå·²æ–­å¼€");
+                        continue;
+                    }
+
+                    try
+                    {
+                        await ScrollWithTimeoutAsync(ctx.Page, ctx.CdpManager!, Math.Abs(ctx.Config.PageLoadedDelayMs));
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
+                    {
+                        LogWriteLine($"{this.Title}:RunMainFlow: ScrollWithTimeoutAsync é¡µé¢å·²å…³é—­: {ex.Message}");
+                        continue;
+                    }
+                }
+
+                if (ctx.Page == null || ctx.Page.IsClosed)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: å¹¿å‘Šæ£€æµ‹å‰ Pageä¸ºç©ºæˆ–å·²å…³é—­");
+                    continue;
+                }
+
+                if (ctx.Browser == null || !ctx.Browser.IsConnected)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: å¹¿å‘Šæ£€æµ‹å‰ Browserå·²æ–­å¼€");
+                    continue;
                 }
 
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
                 if (!adsOk)
                     continue;
+
+                if (ctx.Page == null || ctx.Page.IsClosed)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: DecideJumpClickå‰ Pageä¸ºç©ºæˆ–å·²å…³é—­");
+                    continue;
+                }
+
+                if (ctx.Browser == null || !ctx.Browser.IsConnected)
+                {
+                    LogWriteLine($"{this.Title}:RunMainFlow: DecideJumpClickå‰ Browserå·²æ–­å¼€");
+                    continue;
+                }
 
                 await DecideJumpClickAsync(ctx, token);
 
@@ -1392,6 +1627,7 @@ namespace QTP.Plugins
 
             return CompleteSuccess(ctx);
         }
+
 
         private bool CompleteSuccess(WorkerRunContext ctx)
         {
@@ -1701,7 +1937,7 @@ namespace QTP.Plugins
             {
                 try
                 {
-                    LogWriteLine("ä¯ÀÀÆ÷ÒÑ¹Ø±Õ»ò¶Ï¿ªÁ¬½Ó£¡");
+                    LogWriteLine("æµè§ˆå™¨å·²å…³é—­æˆ–æ–­å¼€è¿æ¥ï¼");
                     if (!ctx.Config.LinkedCts.IsCancellationRequested)
                         ctx.Config.LinkedCts.Cancel();
                 }
@@ -1719,6 +1955,52 @@ namespace QTP.Plugins
                 catch { }
             };
         }
+
+        private static bool IsLikelyProxyFailureText(string? errorText)
+        {
+            if (string.IsNullOrWhiteSpace(errorText))
+                return false;
+
+            return
+                errorText.Contains("ERR_INVALID_AUTH_CREDENTIALS", StringComparison.OrdinalIgnoreCase) ||
+                errorText.Contains("ERR_TUNNEL_CONNECTION_FAILED", StringComparison.OrdinalIgnoreCase) ||
+                errorText.Contains("ERR_PROXY_CONNECTION_FAILED", StringComparison.OrdinalIgnoreCase) ||
+                errorText.Contains("ERR_NO_SUPPORTED_PROXIES", StringComparison.OrdinalIgnoreCase) ||
+                errorText.Contains("ERR_SOCKS_CONNECTION_FAILED", StringComparison.OrdinalIgnoreCase) ||
+                errorText.Contains("ERR_PROXY_CERTIFICATE_INVALID", StringComparison.OrdinalIgnoreCase) ||
+                errorText.Contains("ERR_EMPTY_RESPONSE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsMainPageRequest(IRequest request, IPage page)
+        {
+            try
+            {
+                if (request == null || page == null)
+                    return false;
+
+                if (request.IsNavigationRequest &&
+                    string.Equals(request.ResourceType, "document", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                var reqUrl = request.Url ?? string.Empty;
+                var pageUrl = page.Url ?? string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(reqUrl) &&
+                    !string.IsNullOrWhiteSpace(pageUrl) &&
+                    string.Equals(reqUrl, pageUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
 
         private async Task InitPageAsync(WorkerRunContext ctx, IPage page, CancellationToken token)
         {
@@ -1747,7 +2029,10 @@ namespace QTP.Plugins
             {
                 try
                 {
-                    LogWriteLine("Crash£¡");
+                    LogWriteLine("Crashï¼");
+                    ctx.PageCrashed = true;
+                    ctx.LastFailureReason = "Page crashed";
+
                     if (!ctx.Config.LinkedCts.IsCancellationRequested)
                         ctx.Config.LinkedCts.Cancel();
                 }
@@ -1758,17 +2043,54 @@ namespace QTP.Plugins
             {
                 try
                 {
-                    if (!string.IsNullOrWhiteSpace(e.Failure) &&
-                        (e.Failure.Contains("ERR_INVALID_AUTH_CREDENTIALS") ||
-                         (e.Failure.Contains("ERR_TUNNEL_CONNECTION_FAILED") && page.Url.Equals(e.Url))))
-                    {
-                        LogWriteLine($"page.RequestFailed:{e.Failure},{e.Url},{page.Url}");
-                        if (!ctx.Config.LinkedCts.IsCancellationRequested)
-                            ctx.Config.LinkedCts.Cancel();
-                    }
+                    var failure = e.Failure ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(failure))
+                        return;
+
+                    var reqUrl = e.Url ?? string.Empty;
+                    var pageUrl = page.Url ?? string.Empty;
+
+                    // ç»Ÿä¸€è®°å½•æœ€åå¤±è´¥åŸå› ï¼Œä¾¿äºæ’æŸ¥
+                    ctx.LastFailureReason = $"RequestFailed: {failure}, req={reqUrl}, page={pageUrl}";
+
+                    // åªåˆ¤æ–­ä¸»é¡µé¢ï¼ˆåœ°å€æ æ‰“å¼€çš„ document è¯·æ±‚ï¼‰
+                    if (!IsMainPageRequest(e, page))
+                        return;
+
+                    // åªå¯¹ç–‘ä¼¼ä»£ç†å¼‚å¸¸åšæ ‡è®°ä¸å–æ¶ˆ
+                    if (!IsLikelyProxyFailureText(failure))
+                        return;
+
+                    ctx.ProxyFailed = true;
+                    ctx.ProxyFailedReason = $"ä¸»é¡µé¢è¯·æ±‚å¤±è´¥: {failure}, req={reqUrl}, page={pageUrl}";
+
+                    LogWriteLine($"page.RequestFailed(ä¸»é¡µé¢ä»£ç†å¼‚å¸¸): {failure}, req={reqUrl}, page={pageUrl}");
+
+                    if (!ctx.Config.LinkedCts.IsCancellationRequested)
+                        ctx.Config.LinkedCts.Cancel();
                 }
-                catch { }
+                catch
+                {
+                }
             };
+
+
+            //page.RequestFailed += (_, e) =>
+            //{
+
+            //    //try
+            //    //{
+            //    //    if (!string.IsNullOrWhiteSpace(e.Failure) &&
+            //    //        (e.Failure.Contains("ERR_INVALID_AUTH_CREDENTIALS") ||
+            //    //         (e.Failure.Contains("ERR_TUNNEL_CONNECTION_FAILED") && page.Url.Equals(e.Url))))
+            //    //    {
+            //    //        LogWriteLine($"page.RequestFailed:{e.Failure},{e.Url},{page.Url}");
+            //    //        if (!ctx.Config.LinkedCts.IsCancellationRequested)
+            //    //            ctx.Config.LinkedCts.Cancel();
+            //    //    }
+            //    //}
+            //    //catch { }
+            //};
 
             page.Download += async (_, download) =>
             {
@@ -1832,16 +2154,16 @@ namespace QTP.Plugins
                 onRetry: (attempt, ex) =>
                 {
                     if (ex != null)
-                        LogWriteLine($"»ñÈ¡´ÊÌõÖØÊÔ:{attempt}, ex={ex.Message}");
+                        LogWriteLine($"è·å–è¯æ¡é‡è¯•:{attempt}, ex={ex.Message}");
                     else
-                        LogWriteLine($"»ñÈ¡´ÊÌõÖØÊÔ:{attempt}");
+                        LogWriteLine($"è·å–è¯æ¡é‡è¯•:{attempt}");
                 },
                 delayMsFactory: _ => CommonHelper.RandomRange(100, 200),
                 token: token);
 
             if (!retry.IsSuccess || string.IsNullOrWhiteSpace(retry.Value))
             {
-                LogWriteLine("ÎŞ·¨»ñÈ¡´ÊÌõ,Çë¼ì²é·şÎñÆ÷");
+                LogWriteLine("æ— æ³•è·å–è¯æ¡,è¯·æ£€æŸ¥æœåŠ¡å™¨");
                 await Task.Delay(TimeSpan.FromSeconds(30), token);
                 result.Success = false;
                 result.EndTask = true;
@@ -1850,7 +2172,7 @@ namespace QTP.Plugins
 
             result.QueryWord = retry.Value;
             result.FirstPageUrl = result.FirstPageUrl.Replace("[QUERY]", retry.Value);
-            LogWriteLine($"{this.Title}:ËÑË÷´ÊÌõ{retry.Value}");
+            LogWriteLine($"{this.Title}:æœç´¢è¯æ¡{retry.Value}");
 
             return result;
         }
@@ -1869,9 +2191,9 @@ namespace QTP.Plugins
             }
             catch (TimeoutException ex)
             {
-                LogWriteLine($"¼ÓÔØ³¬Ê±:{ex.Message}");
+                LogWriteLine($"åŠ è½½è¶…æ—¶:{ex.Message}");
                 var title = await ctx.Page!.TitleAsync();
-                if (!title.StartsWith("ÍøÒ³ËÑË÷") && !title.StartsWith("ËÑË÷"))
+                if (!title.StartsWith("ç½‘é¡µæœç´¢") && !title.StartsWith("æœç´¢"))
                     return false;
             }
 
@@ -1900,7 +2222,7 @@ namespace QTP.Plugins
                     var input = ctx.Page!.Locator("textarea#kw");
                     if (await input.CountAsync() == 0)
                     {
-                        LogWriteLine($"{this.Title}:ÊäÈë¿ò²»´æÔÚ");
+                        LogWriteLine($"{this.Title}:è¾“å…¥æ¡†ä¸å­˜åœ¨");
                         return false;
                     }
 
@@ -1917,7 +2239,7 @@ namespace QTP.Plugins
                     var btn = ctx.Page.Locator("div.submit");
                     if (await btn.CountAsync() == 0)
                     {
-                        LogWriteLine($"{this.Title}:ËÑË÷°´Å¥²»´æÔÚ");
+                        LogWriteLine($"{this.Title}:æœç´¢æŒ‰é’®ä¸å­˜åœ¨");
                         return false;
                     }
 
@@ -1936,7 +2258,7 @@ namespace QTP.Plugins
                     }
                     catch (TimeoutException) { }
 
-                    LogWriteLine($"{this.Title}:ËÑË÷Íê³É");
+                    LogWriteLine($"{this.Title}:æœç´¢å®Œæˆ");
                     await Task.Delay(CommonHelper.RandomRange(5000, 8000), ct);
                     return true;
                 },
@@ -1944,9 +2266,9 @@ namespace QTP.Plugins
                 onRetry: (attempt, ex) =>
                 {
                     if (ex != null)
-                        LogWriteLine($"{this.Title}:ËÑË÷²Ù×÷ÖØÊÔ,{attempt},{ex.Message}");
+                        LogWriteLine($"{this.Title}:æœç´¢æ“ä½œé‡è¯•,{attempt},{ex.Message}");
                     else
-                        LogWriteLine($"{this.Title}:ËÑË÷²Ù×÷ÖØÊÔ,{attempt}");
+                        LogWriteLine($"{this.Title}:æœç´¢æ“ä½œé‡è¯•,{attempt}");
                 },
                 token: token);
 
@@ -1958,7 +2280,7 @@ namespace QTP.Plugins
         #region Ads / JumpClick
 
         /// <summary>
-        /// ¼ì²âÒ³Ãæ¹ã¸æ´Ê±ê¼Ç
+        /// æ£€æµ‹é¡µé¢å¹¿å‘Šè¯æ ‡è®°
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="q"></param>
@@ -1968,96 +2290,132 @@ namespace QTP.Plugins
         {
             token.ThrowIfCancellationRequested();
 
-            var adDotUrls = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
-            ctx.PageAdsCount = await adDotUrls.CountAsync();
-
-            if (ctx.PageAdsCount <= 0)
+            if (ctx.Page == null || ctx.Page.IsClosed)
             {
-                LogWriteLine("Ã»ÓĞ¹ã¸æ±ê¼Ç,ÖØÊÔ");
+                LogWriteLine("å¹¿å‘Šæ£€æµ‹ç»ˆæ­¢: Pageä¸ºç©ºæˆ–å·²å…³é—­");
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(q))
+            if (ctx.Browser == null || !ctx.Browser.IsConnected)
+            {
+                LogWriteLine("å¹¿å‘Šæ£€æµ‹ç»ˆæ­¢: Browserä¸ºç©ºæˆ–å·²æ–­å¼€");
+                return false;
+            }
+
+            try
+            {
+                var adDotUrls = ctx.Page.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
+                ctx.PageAdsCount = await adDotUrls.CountAsync();
+
+                if (ctx.PageAdsCount <= 0)
+                {
+                    LogWriteLine("æ²¡æœ‰å¹¿å‘Šæ ‡è®°,é‡è¯•");
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(q))
+                    return true;
+
+                int ad1688 = 0;
+                int adOther = 0;
+
+                var domains1688 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var domainsOther = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var brandsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var i in Enumerable.Range(0, ctx.PageAdsCount))
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    if (ctx.Page == null || ctx.Page.IsClosed)
+                    {
+                        LogWriteLine("å¹¿å‘Šæ£€æµ‹ä¸­æ–­: Pageå·²å…³é—­");
+                        return false;
+                    }
+
+                    if (ctx.Browser == null || !ctx.Browser.IsConnected)
+                    {
+                        LogWriteLine("å¹¿å‘Šæ£€æµ‹ä¸­æ–­: Browserå·²æ–­å¼€");
+                        return false;
+                    }
+
+                    var item = adDotUrls.Nth(i);
+
+                    var (anchor, tagText) = await AdTagHelper.TryGetAdTagAsync(item);
+                    if (anchor == null)
+                        brandsSet.Add("å¹¿å‘Š");
+                    else
+                        brandsSet.Add(tagText);
+
+                    var links = item.Locator("a[data-url]");
+                    if (await links.CountAsync() == 0)
+                        continue;
+
+                    var dataUrl = await links.First.GetAttributeAsync("data-url");
+                    if (string.IsNullOrWhiteSpace(dataUrl))
+                        continue;
+
+                    if (!Uri.TryCreate(dataUrl, UriKind.Absolute, out var uri))
+                        continue;
+
+                    if (!_domainService.TryGetRootDomain(uri.Host, out var rootDomain))
+                        continue;
+
+                    if (rootDomain.Equals("1688.com", StringComparison.OrdinalIgnoreCase))
+                    {
+                        domains1688.Add(rootDomain);
+                        ad1688++;
+                    }
+                    else
+                    {
+                        domainsOther.Add(rootDomain);
+                        adOther++;
+                    }
+                }
+
+                if (domainsOther.Count > 0 && domains1688.Count == 0)
+                    QTPUploadAdWord("no1688", q);
+
+                if (domainsOther.Count > 0)
+                    QTPUploadAdWord("other", q);
+
+                if (domains1688.Count > 0)
+                    QTPUploadAdWord("1688", q);
+
+                var allDomains = domains1688.Concat(domainsOther).ToList();
+                if (allDomains.Count > 0)
+                {
+                    var allBrands = brandsSet.ToList();
+                    _aggregator.EnqueueAdKeywordDomain(new AdKeywordDomain
+                    {
+                        Keyword = q,
+                        Domains = allDomains,
+                        Brands = allBrands
+                    });
+                }
+
+                if (ctx.Config.NoTrigger1688 && adOther == 0)
+                {
+                    LogWriteLine("åªæœ‰1688å¹¿å‘Šæ ‡è®°,é‡è¯•");
+                    return false;
+                }
+
                 return true;
-
-            int ad1688 = 0;
-            int adOther = 0;
-
-            var domains1688 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var domainsOther = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var brandsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var i in Enumerable.Range(0, ctx.PageAdsCount))
-            {
-                token.ThrowIfCancellationRequested();
-
-                var item = adDotUrls.Nth(i);
-                //¹ã¸æ,Æ·ÅÆ¹ã¸æ,»ã´¨¹ã¸æ
-                var (anchor, tagText) = await AdTagHelper.TryGetAdTagAsync(item);
-                if (anchor == null)
-                {
-                    brandsSet.Add("¹ã¸æ");
-                }
-                else
-                {
-                    brandsSet.Add(tagText);
-                }
-
-                var links = item.Locator("a[data-url]");
-                if (await links.CountAsync() == 0)
-                    continue;
-
-                var dataUrl = await links.First.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
-                    continue;
-
-                if (!Uri.TryCreate(dataUrl, UriKind.Absolute, out var uri))
-                    continue;
-
-                // ====== »ñÈ¡Ò»¼¶Óò ======
-                if (!_domainService.TryGetRootDomain(uri.Host, out var rootDomain))
-                    continue;
-
-                if (rootDomain.Equals("1688.com", StringComparison.OrdinalIgnoreCase))
-                {
-                    domains1688.Add(rootDomain);
-                    ad1688++;
-                }
-                else
-                {
-                    domainsOther.Add(rootDomain);
-                    adOther++;
-                }
             }
-
-
-            if (domainsOther.Count > 0 && domains1688.Count == 0)
-                QTPUploadAdWord("no1688", q);
-
-            if (domainsOther.Count > 0)
-                QTPUploadAdWord("other", q);
-
-            if (domains1688.Count > 0)
-                QTPUploadAdWord("1688", q);
-
-            var allDomains = domains1688.Concat(domainsOther).ToList();
-            if (allDomains.Count > 0)
+            catch (OperationCanceledException)
             {
-                var allBrands = brandsSet.ToList();
-                _aggregator.EnqueueAdKeywordDomain(new AdKeywordDomain { Keyword = q, Domains = allDomains, Brands = allBrands });
+                throw;
             }
-
-            if (ctx.Config.NoTrigger1688 && adOther == 0)
+            catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
             {
-                LogWriteLine("Ö»ÓĞ1688¹ã¸æ±ê¼Ç,ÖØÊÔ");
+                LogWriteLine($"å¹¿å‘Šæ£€æµ‹å¤±è´¥: é¡µé¢/ä¸Šä¸‹æ–‡/æµè§ˆå™¨å·²å…³é—­, {ex.Message}");
                 return false;
             }
-
-            return true;
         }
 
+
         /// <summary>
-        /// ´¦Àíµã»÷±ÈÀı
+        /// å¤„ç†ç‚¹å‡»æ¯”ä¾‹
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="token"></param>
@@ -2074,12 +2432,12 @@ namespace QTP.Plugins
                 return;
 
             var ctr = await _aggregator.GetClickRatioAsync(ctx.Config.TaskId, clickRate);
-            LogWriteLine($"µã»÷±ÈÂÊ:{(ctr * 100):N2}%");
+            LogWriteLine($"ç‚¹å‡»æ¯”ç‡:{(ctr * 100):N2}%");
             ctx.JumpClick = await _aggregator.CanClickthroughAsync(ctx.Config.TaskId, clickRate);
         }
 
         /// <summary>
-        /// ´¥·¢¹ã¸æ
+        /// è§¦å‘å¹¿å‘Š
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="token"></param>
@@ -2099,9 +2457,16 @@ namespace QTP.Plugins
             {
                 token.ThrowIfCancellationRequested();
 
-                await SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, sponsored);
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                await HumanScrollHelper.TouchPageLongScrollAsync(
+                                         ctx.Page!,
+                                         ctx.CdpSession!,
+                                         scrollCount: CommonHelper.RandomRange(0, 2),
+                                         direction: PageScrollDirection.Up,
+                                         cancellationToken: token);
 
+
+                await sponsored.ScrollIntoViewIfNeededAsync();
+                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 var target = await PickSponsoredTargetAsync(sponsored, token);
                 if (target == null)
                     continue;
@@ -2114,9 +2479,9 @@ namespace QTP.Plugins
                 var box = await target.BoundingBoxAsync();
 
                 if (box != null)
-                    LogWriteLine($"´¥·¢¹ã¸æÎ»:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
+                    LogWriteLine($"è§¦å‘å¹¿å‘Šä½:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
                 else
-                    LogWriteLine($"´¥·¢¹ã¸æÎ»:{text}");
+                    LogWriteLine($"è§¦å‘å¹¿å‘Šä½:{text}");
 
                 var click = await ClickAndDetectNavigationAsync(ctx, target, token);
                 if (!click.Attempted)
@@ -2144,7 +2509,7 @@ namespace QTP.Plugins
         }
 
         /// <summary>
-        /// ²âÊÔ_´¥·¢¹ã¸æ
+        /// æµ‹è¯•_è§¦å‘å¹¿å‘Š
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="token"></param>
@@ -2179,9 +2544,9 @@ namespace QTP.Plugins
                 var box = await target.BoundingBoxAsync();
 
                 if (box != null)
-                    LogWriteLine($"´¥·¢¹ã¸æÎ»:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
+                    LogWriteLine($"è§¦å‘å¹¿å‘Šä½:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
                 else
-                    LogWriteLine($"´¥·¢¹ã¸æÎ»:{text}");
+                    LogWriteLine($"è§¦å‘å¹¿å‘Šä½:{text}");
 
                 var click = await ClickAndDetectNavigationAsync(ctx, target, token);
                 if (!click.Attempted)
@@ -2210,7 +2575,7 @@ namespace QTP.Plugins
 
 
         /// <summary>
-        /// »ñÈ¡ºòÑ¡µÄ¹ã¸æ
+        /// è·å–å€™é€‰çš„å¹¿å‘Š
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="sponsoreds"></param>
@@ -2402,7 +2767,7 @@ namespace QTP.Plugins
 
                 if (!ctx.Config.NotTriggerDownload)
                 {
-                    var button = ctx.Page.Locator(":text('ÏÂÔØ')");
+                    var button = ctx.Page.Locator(":text('ä¸‹è½½')");
                     if (await button.CountAsync() > 0)
                     {
                         if (new[] { 1, 3, 5, 7, 9 }.Contains(CommonHelper.RandomRange(0, 10)))
@@ -2432,16 +2797,16 @@ namespace QTP.Plugins
             {
                 token.ThrowIfCancellationRequested();
                 await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                var no_result_title = ctx.Page!.GetByText("±§Ç¸£¬Î´ÄÜÆ¥Åäµ½ºÏÊÊµÄ¿Î³Ì");
+                var no_result_title = ctx.Page!.GetByText("æŠ±æ­‰ï¼Œæœªèƒ½åŒ¹é…åˆ°åˆé€‚çš„è¯¾ç¨‹");
                 if (await no_result_title.CountAsync() > 0)
                 {
-                    var refreshBtn = ctx.Page!.Locator(".no-result-btn").GetByText("Ë¢ĞÂ");
+                    var refreshBtn = ctx.Page!.Locator(".no-result-btn").GetByText("åˆ·æ–°");
                     if (await refreshBtn.CountAsync() > 0)
                     {
                         await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, refreshBtn.First);
                         await ctx.Page.WaitForTimeoutAsync(2000);
                     }
-                    no_result_title = ctx.Page!.GetByText("±§Ç¸£¬Î´ÄÜÆ¥Åäµ½ºÏÊÊµÄ¿Î³Ì");
+                    no_result_title = ctx.Page!.GetByText("æŠ±æ­‰ï¼Œæœªèƒ½åŒ¹é…åˆ°åˆé€‚çš„è¯¾ç¨‹");
                     if (await no_result_title.CountAsync() > 0)
                     {
                         return FlowControl.Continue;
@@ -2574,7 +2939,7 @@ namespace QTP.Plugins
         }
 
         /// <summary>
-        /// Í¨ÓÃµÄÂäµØÒ³´¦Àí²ßÂÔ
+        /// é€šç”¨çš„è½åœ°é¡µå¤„ç†ç­–ç•¥
         /// </summary>
         private sealed class GenericLandingPageStrategy : ILandingPageStrategy
         {
@@ -2653,7 +3018,7 @@ namespace QTP.Plugins
                                 }
                             }
 
-                            _owner.ProcessingPageElementTask(ctx.Page!, ctx.CdpSession!);
+                            _owner.ProcessingPageElementTask(ctx.Page!, ctx.CdpSession!, token);
                             await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                         }
                     }
@@ -2684,7 +3049,7 @@ namespace QTP.Plugins
             var metrics = _aggregator.GetLocalMetrics(ctx.Config.TaskId, "dsp_p4psearch", "dsp_p4psearch_click");
 
             if (metrics["dsp_p4psearch"] > 0)
-                LogWriteLine($"1688Ñ¯¼Û±ÈÂÊ:{(metrics["dsp_p4psearch_click"] / (double)metrics["dsp_p4psearch"] * 100):N2}%");
+                LogWriteLine($"1688è¯¢ä»·æ¯”ç‡:{(metrics["dsp_p4psearch_click"] / (double)metrics["dsp_p4psearch"] * 100):N2}%");
 
             bool canClick = _appSettings.p4psearchRate == 100
                 || metrics["dsp_p4psearch_click"] == 0
@@ -2794,7 +3159,7 @@ namespace QTP.Plugins
                 //https://ada.baidu.com/site
                 await Task.Delay(CommonHelper.RandomRange(3000, 5000));
                 var info = ctx.Page!.GetByText(
-                    new Regex(@"·¨ÂÉ×ÉÑ¯|ÂÉÊ¦|¿Í·ş")
+                    new Regex(@"æ³•å¾‹å’¨è¯¢|å¾‹å¸ˆ|å®¢æœ")
                 );
                 var info_count = await info.CountAsync();
                 if (info_count > 0)
@@ -2819,7 +3184,7 @@ namespace QTP.Plugins
                         }
                         else
                         {
-                            await input_area.PressSequentiallyAsync("ÄãºÃ,ÓĞÊÂ×ÉÑ¯");
+                            await input_area.PressSequentiallyAsync("ä½ å¥½,æœ‰äº‹å’¨è¯¢");
                         }
                     }
                     var send_btn = ctx.Page!.Locator(".input-area .send-btn");
@@ -2937,7 +3302,7 @@ namespace QTP.Plugins
                     try
                     {
                         var info = ctx.Page!.GetByText(
-                            new Regex(@"·¨ÂÉ×ÉÑ¯|ÂÉÊ¦|¿Í·ş")
+                            new Regex(@"æ³•å¾‹å’¨è¯¢|å¾‹å¸ˆ|å®¢æœ")
                         );
                         var info_count = await info.CountAsync();
                         if (info_count > 0)
@@ -2962,7 +3327,7 @@ namespace QTP.Plugins
                                 }
                                 else
                                 {
-                                    await input_area.PressSequentiallyAsync("ÄãºÃ,ÓĞÊÂ×ÉÑ¯");
+                                    await input_area.PressSequentiallyAsync("ä½ å¥½,æœ‰äº‹å’¨è¯¢");
                                 }
                             }
                             var send_btn = ctx.Page!.Locator(".input-area .send-btn");
@@ -2984,7 +3349,7 @@ namespace QTP.Plugins
                 };
 
                 var locator_list = ctx.Page!.GetByText(
-                    new Regex(@"²é¿´¸ü¶à")
+                    new Regex(@"æŸ¥çœ‹æ›´å¤š")
                 );
                 var locator_count = await locator_list.CountAsync();
                 if (locator_count > 0)
@@ -3017,7 +3382,7 @@ namespace QTP.Plugins
                     {
                         try
                         {
-                            var loc = frame.GetByText(new Regex(@"²é¿´¸ü¶à"));
+                            var loc = frame.GetByText(new Regex(@"æŸ¥çœ‹æ›´å¤š"));
                             var count = await loc.CountAsync();
                             if (count > 0)
                             {
@@ -3027,7 +3392,7 @@ namespace QTP.Plugins
                         }
                         catch
                         {
-                            // Ä³Ğ© frame ¿ÉÄÜÁÙÊ±²»¿ÉÓÃ£¬Ìø¹ı
+                            // æŸäº› frame å¯èƒ½ä¸´æ—¶ä¸å¯ç”¨ï¼Œè·³è¿‡
                         }
                     }
 
@@ -3102,8 +3467,8 @@ namespace QTP.Plugins
         private async Task<bool> HandleJdActivePageAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var his1 = ctx.Page!.Locator("*:has-text('Ò½Ôº')");
-            var his2 = ctx.Page.Locator("*:has-text('ÎÊÕï')");
+            var his1 = ctx.Page!.Locator("*:has-text('åŒ»é™¢')");
+            var his2 = ctx.Page.Locator("*:has-text('é—®è¯Š')");
             bool medical = await his1.CountAsync() > 0 || await his2.CountAsync() > 0;
             ClickResult? result = null;
             token.ThrowIfCancellationRequested();
@@ -3119,8 +3484,8 @@ namespace QTP.Plugins
             await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
             if (medical)
             {
-                //|Í¼ÎÄ.*Æğ|µç»°.*Æğ
-                var locator_list = ctx.Page.Locator("text=/Ê£.*¸öÃû¶î/").Filter(new() { Visible = true });
+                //|å›¾æ–‡.*èµ·|ç”µè¯.*èµ·
+                var locator_list = ctx.Page.Locator("text=/å‰©.*ä¸ªåé¢/").Filter(new() { Visible = true });
                 var locator_count = await locator_list.CountAsync();
                 if (locator_count > 0)
                 {
@@ -3244,7 +3609,7 @@ namespace QTP.Plugins
             }
             if (ctx.Page!.Url.StartsWith("https://h5.m.taobao.com"))
             {
-                if (await ctx.Page.GetByText("»ñÈ¡ÑéÖ¤Âë").CountAsync() > 0)
+                if (await ctx.Page.GetByText("è·å–éªŒè¯ç ").CountAsync() > 0)
                 {
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                     return FlowControl.EndTask;
@@ -3252,8 +3617,8 @@ namespace QTP.Plugins
             }
             DateTime start = DateTime.Now;
             await TryHandleAllAsync(ctx, token);
-            LogWriteLine("ÑÓÊ±Í£Áô");
-            LogWriteLine("×¼±¸»¬¶¯");
+            LogWriteLine("å»¶æ—¶åœç•™");
+            LogWriteLine("å‡†å¤‡æ»‘åŠ¨");
             PageScrollDirection direction = PageScrollDirection.Up;
             while (true)
             {
@@ -3261,7 +3626,7 @@ namespace QTP.Plugins
 
                 try
                 {
-                    LogWriteLine("»¬¶¯²Ù×÷");
+                    LogWriteLine("æ»‘åŠ¨æ“ä½œ");
 
                     await HumanScrollHelper.TouchPageLongScrollAsync(
                     ctx.Page!,
@@ -3295,7 +3660,7 @@ namespace QTP.Plugins
                 }
             }
 
-            LogWriteLine("¶¯×÷Íê³É");
+            LogWriteLine("åŠ¨ä½œå®Œæˆ");
             return FlowControl.EndTask;
         }
 
@@ -3316,16 +3681,16 @@ namespace QTP.Plugins
                     direction: PageScrollDirection.Up,
                     cancellationToken: token);
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                    var locator = ctx.Page.Locator("*:text-is('È«²¿ÉÌÆ·')");
+                    var locator = ctx.Page.Locator("*:text-is('å…¨éƒ¨å•†å“')");
                     var locator_count = await locator.CountAsync();
                     if (locator_count == 0)
                     {
-                        locator = ctx.Page.Locator("*:text-is('½øµê¿´¿´')");
+                        locator = ctx.Page.Locator("*:text-is('è¿›åº—çœ‹çœ‹')");
                         locator_count = await locator.CountAsync();
                     }
                     if (locator_count == 0)
                     {
-                        locator = ctx.Page.Locator("*:text-is('½øµê¿´³§')");
+                        locator = ctx.Page.Locator("*:text-is('è¿›åº—çœ‹å‚')");
                         locator_count = await locator.CountAsync();
                     }
                     if (locator_count == 0)
@@ -3420,16 +3785,16 @@ namespace QTP.Plugins
                     direction: PageScrollDirection.Up,
                     cancellationToken: token);
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                    var locator = ctx.Page.Locator("*:text-is('È«²¿ÉÌÆ·')");
+                    var locator = ctx.Page.Locator("*:text-is('å…¨éƒ¨å•†å“')");
                     var locator_count = await locator.CountAsync();
                     if (locator_count == 0)
                     {
-                        locator = ctx.Page.Locator("*:text-is('½øµê¿´¿´')");
+                        locator = ctx.Page.Locator("*:text-is('è¿›åº—çœ‹çœ‹')");
                         locator_count = await locator.CountAsync();
                     }
                     if (locator_count == 0)
                     {
-                        locator = ctx.Page.Locator("*:text-is('½øµê¿´³§')");
+                        locator = ctx.Page.Locator("*:text-is('è¿›åº—çœ‹å‚')");
                         locator_count = await locator.CountAsync();
                     }
                     if (locator_count == 0)
@@ -3516,7 +3881,7 @@ namespace QTP.Plugins
             {
                 var metrics = _aggregator.GetLocalMetrics(ctx.Config.TaskId, "dsp_rfq1688", "dsp_rfq1688_click");
                 if (metrics["dsp_rfq1688"] > 0)
-                    LogWriteLine($"1688Ñ¯¼Û±ÈÂÊ:{(metrics["dsp_rfq1688_click"] / (double)metrics["dsp_rfq1688"] * 100):N2}%");
+                    LogWriteLine($"1688è¯¢ä»·æ¯”ç‡:{(metrics["dsp_rfq1688_click"] / (double)metrics["dsp_rfq1688"] * 100):N2}%");
 
                 bool canClick = _appSettings.Rfq1688Rate == 100
                     || metrics["dsp_rfq1688_click"] == 0
@@ -3532,7 +3897,7 @@ namespace QTP.Plugins
                 {
                     var queryBtn = ctx.Page.Locator(".queryBtnTitleTop");
                     if (await queryBtn.CountAsync() == 0)
-                        queryBtn = ctx.Page.GetByText("Á¢¼´Ñ¯¼Û");
+                        queryBtn = ctx.Page.GetByText("ç«‹å³è¯¢ä»·");
 
                     if (await queryBtn.CountAsync() > 0)
                     {
@@ -3568,8 +3933,8 @@ namespace QTP.Plugins
                 {
                     var texts = new[]
                     {
-                        "ÓĞÃ»ÓĞÏÖ»õ","¼Û¸ñ»¹ÓĞ¿Õ¼äÂğ","Ê²Ã´Ê±¼ä·¢»õ","ÓĞ»î¶¯Âğ","¹¤³§ÔÚÄÄÀï","ÊµÎïÍ¼ÊÇ·ñÒ»ÖÂ",
-                        "ÄÜ·ñÌá¹©ÖÊ¼ì","¿ÉÒÔ¼ÄÑùÆ·¸øÎÒÂğ","Åú·¢¼ÛÊÇ¶àÉÙ","¿ÉÒÔ¿ª·¢Æ±°É","Õâ¿îÖ§³ÖÒ»¼ş´ú·¢Âğ","°üÓÊÂğ"
+                        "æœ‰æ²¡æœ‰ç°è´§","ä»·æ ¼è¿˜æœ‰ç©ºé—´å—","ä»€ä¹ˆæ—¶é—´å‘è´§","æœ‰æ´»åŠ¨å—","å·¥å‚åœ¨å“ªé‡Œ","å®ç‰©å›¾æ˜¯å¦ä¸€è‡´",
+                        "èƒ½å¦æä¾›è´¨æ£€","å¯ä»¥å¯„æ ·å“ç»™æˆ‘å—","æ‰¹å‘ä»·æ˜¯å¤šå°‘","å¯ä»¥å¼€å‘ç¥¨å§","è¿™æ¬¾æ”¯æŒä¸€ä»¶ä»£å‘å—","åŒ…é‚®å—"
                     };
 
                     el = ctx.Page.Locator("textarea#new_od_xst_msg_input_val_new_message,textarea#od_xst_msg_input_val_new_message");
@@ -3590,7 +3955,7 @@ namespace QTP.Plugins
                         await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, el.First, timeout: 2000);
                         await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
 
-                        var sms = ctx.Page.GetByText("»ñÈ¡ÑéÖ¤Âë");
+                        var sms = ctx.Page.GetByText("è·å–éªŒè¯ç ");
                         if (await sms.CountAsync() > 0)
                         {
                             var close1 = ctx.Page.Locator(".successTipNew_close_new,.newSuccessTipNew_close_new");
@@ -3620,16 +3985,16 @@ namespace QTP.Plugins
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
 
-                var locator = ctx.Page.Locator("*:text-is('½øµê¿´¿´')");
+                var locator = ctx.Page.Locator("*:text-is('è¿›åº—çœ‹çœ‹')");
                 var locator_count = await locator.CountAsync();
                 if (locator_count == 0)
                 {
-                    locator = ctx.Page.Locator("*:text-is('½øµê¿´³§')");
+                    locator = ctx.Page.Locator("*:text-is('è¿›åº—çœ‹å‚')");
                     locator_count = await locator.CountAsync();
                 }
                 if (locator_count == 0)
                 {
-                    locator = ctx.Page.Locator("*:text-is('È«²¿ÉÌÆ·')");
+                    locator = ctx.Page.Locator("*:text-is('å…¨éƒ¨å•†å“')");
                     locator_count = await locator.CountAsync();
                 }
                 if (locator_count == 0)
@@ -3744,7 +4109,7 @@ namespace QTP.Plugins
 
                 var surname = _nameGenerator.GetDisplayName(phone);
 
-                var inputName = ctx.Page.Locator("input[placeholder='ÇëÊäÈëÄúµÄ³Æºô']").First;
+                var inputName = ctx.Page.Locator("input[placeholder='è¯·è¾“å…¥æ‚¨çš„ç§°å‘¼']").First;
                 if (await inputName.CountAsync() > 0)
                 {
                     await inputName.FillAsync("");
@@ -3753,7 +4118,7 @@ namespace QTP.Plugins
 
                 await Task.Delay(CommonHelper.RandomRange(300, 500), token);
 
-                var inputPhone = ctx.Page.Locator("input[placeholder='ÇëÊäÈëÊÖ»úºÅ']").First;
+                var inputPhone = ctx.Page.Locator("input[placeholder='è¯·è¾“å…¥æ‰‹æœºå·']").First;
                 if (await inputPhone.CountAsync() > 0)
                 {
                     await inputPhone.FillAsync("");
@@ -3764,7 +4129,7 @@ namespace QTP.Plugins
                 if (await radio.CountAsync() > 0)
                     await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, radio.First);
 
-                var btnSubmit = ctx.Page.Locator("div:has-text('Ãâ·ÑÁìÆ±')").First;
+                var btnSubmit = ctx.Page.Locator("div:has-text('å…è´¹é¢†ç¥¨')").First;
                 if (await btnSubmit.CountAsync() > 0)
                 {
                     await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, btnSubmit);
@@ -3788,7 +4153,7 @@ namespace QTP.Plugins
             try
             {
                 await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                var cookieBtn = ctx.Page.GetByText("Í¬ÒâÈ«²¿µÚÈı·½Cookie");
+                var cookieBtn = ctx.Page.GetByText("åŒæ„å…¨éƒ¨ç¬¬ä¸‰æ–¹Cookie");
                 if (await cookieBtn.CountAsync() > 0)
                 {
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
@@ -3900,7 +4265,7 @@ namespace QTP.Plugins
                   ).Filter(new()
                   {
                       HasTextRegex = new Regex(
-                          @"Í¬Òâ|½ÓÊÜ|ÔÊĞí|ÎÒÍ¬Òâ|ÎÒ½ÓÊÜ|ÔÊĞíÈ«²¿|È«²¿½ÓÊÜ|È«²¿Í¬Òâ|È·ÈÏ|¼ÌĞø|ÖªµÀÁË|Agree|Accept|Allow|Accept All|Allow All|I Agree|I Accept|Consent|Got it|Continue|Accept Cookies|Allow Cookies",
+                          @"åŒæ„|æ¥å—|å…è®¸|æˆ‘åŒæ„|æˆ‘æ¥å—|å…è®¸å…¨éƒ¨|å…¨éƒ¨æ¥å—|å…¨éƒ¨åŒæ„|ç¡®è®¤|ç»§ç»­|çŸ¥é“äº†|Agree|Accept|Allow|Accept All|Allow All|I Agree|I Accept|Consent|Got it|Continue|Accept Cookies|Allow Cookies",
                           RegexOptions.IgnoreCase
                       )
                   }).First;
@@ -4059,7 +4424,7 @@ namespace QTP.Plugins
         #region Test Branch
 
         /// <summary>
-        /// ²âÊÔ·½·¨
+        /// æµ‹è¯•æ–¹æ³•
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="entry"></param>
@@ -4099,7 +4464,7 @@ namespace QTP.Plugins
         #region Click Helpers
 
         /// <summary>
-        /// µã»÷Ä¿±ê,´¦Àíµ¯´°
+        /// ç‚¹å‡»ç›®æ ‡,å¤„ç†å¼¹çª—
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="locator"></param>
@@ -4113,7 +4478,6 @@ namespace QTP.Plugins
             {
                 ctx.PagesCount = ctx.Context!.Pages.Count;
                 ctx.CurrentPageUrl = ctx.Page!.Url;
-
                 await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, locator);
                 await Task.Delay(CommonHelper.RandomRange(50, 100), token);
 
@@ -4468,6 +4832,12 @@ namespace QTP.Plugins
             public int PagesCount { get; set; }
             public string CurrentPageUrl { get; set; } = "";
             public int PvIndex { get; set; }
+
+            public bool ProxyFailed { get; set; }
+            public string? ProxyFailedReason { get; set; }
+            public bool PageCrashed { get; set; }
+            public string? LastFailureReason { get; set; }
+
 
             public void ResetPerPvState()
             {

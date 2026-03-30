@@ -14,6 +14,7 @@ using QTP.Common.Plugins;
 using QTP.Extensions;
 using QTP.Models;
 using Serilog.Events;
+using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Compression;
@@ -21,6 +22,7 @@ using System.Management;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
+using System.Threading.Tasks;
 
 
 
@@ -175,11 +177,11 @@ namespace MainClient
         }
         public void LogWriteLine(PluginLogEventArgs e)
         {
-            if (IsPlaywrightTraceMessage(e.Message))
-            {
-                // 额外写一份到 playwright-.log（由 Program.cs 中 [PWTRACE] 过滤规则分流）
-                _logger.LogInformation("[PWTRACE] {PluginMessage}", e.Message);
-            }
+            //if (IsPlaywrightTraceMessage(e.Message))
+            //{
+            //    // 额外写一份到 playwright-.log（由 Program.cs 中 [PWTRACE] 过滤规则分流）
+            //    _logger.LogInformation("[PWTRACE] {PluginMessage}", e.Message);
+            //}
 
             switch (e.Level)
             {
@@ -1050,6 +1052,13 @@ namespace MainClient
 
                 var ctx = parseResult.Context!;
                 ApplyUvPvOverrides(ctx);
+                ///检测设备接口是否可用
+                var check_dev = await GetDeviceForTaskAsync(ctx.OS, ctx.TaskId, 0, token);
+                if (check_dev == null)
+                {
+                    _logger.LogWarning("ConsumerAsync get device failed after retries. taskId={TaskId}, uv={Uv}", ctx.TaskId, 1);
+                    return;
+                }
 
                 await PrepareProxyContextAsync(ctx, task, token);
 
