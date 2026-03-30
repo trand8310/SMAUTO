@@ -1074,15 +1074,23 @@ namespace QTP.Plugins
             if (page == null) throw new ArgumentNullException(nameof(page));
             if (cdpManager == null) throw new ArgumentNullException(nameof(cdpManager));
             if (durationMs <= 0) return;
+            var stageSw = Stopwatch.StartNew();
+            var startUrl = page.Url;
+            LogWriteLine($"{this.Title}:ScrollWithTimeout:start durationMs={durationMs}, url={startUrl}");
             var cdpSession = await cdpManager.GetOrCreateSessionAsync(page);
-            if (!await CanPageScrollAsync(page))
+            var canScroll = await CanPageScrollAsync(page);
+            LogWriteLine($"{this.Title}:ScrollWithTimeout:canScroll={canScroll}, elapsedMs={stageSw.ElapsedMilliseconds}, url={startUrl}");
+            if (!canScroll)
             {
                 await Task.Delay(durationMs, cancellationToken);
+                LogWriteLine($"{this.Title}:ScrollWithTimeout:delayOnly durationMs={durationMs}, totalElapsedMs={stageSw.ElapsedMilliseconds}, url={startUrl}");
                 return;
             }
             var endTime = Environment.TickCount64 + durationMs;
+            var loop = 0;
             while (Environment.TickCount64 < endTime)
             {
+                loop++;
                 cancellationToken.ThrowIfCancellationRequested();
                 await HumanScrollHelper.TouchPageLongScrollAsync(
                             page!,
@@ -1091,11 +1099,13 @@ namespace QTP.Plugins
                             direction: PageScrollDirection.Up,
                             cancellationToken: cancellationToken);
                 int remainMs = (int)Math.Max(0, endTime - Environment.TickCount64);
+                LogWriteLine($"{this.Title}:ScrollWithTimeout:loop={loop}, remainMs={remainMs}, elapsedMs={stageSw.ElapsedMilliseconds}, url={page.Url}");
                 if (remainMs <= 0)
                     break;
                 int delayMs = Math.Min(CommonHelper.RandomRange(1000, 2000), remainMs);
                 await Task.Delay(delayMs, cancellationToken);
             }
+            LogWriteLine($"{this.Title}:ScrollWithTimeout:done loops={loop}, totalElapsedMs={stageSw.ElapsedMilliseconds}, url={page.Url}");
         }
 
 
@@ -1443,11 +1453,15 @@ namespace QTP.Plugins
         {
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
             {
+                var pvSw = Stopwatch.StartNew();
                 token.ThrowIfCancellationRequested();
 
                 LogWriteLine($"{this.Title}:pv：{ctx.Config.TotalPV}/{ctx.PvIndex}");
+                Trace(ctx, $"Stage=PvStart pv={ctx.PvIndex}/{ctx.Config.TotalPV}");
 
+                var ensureSw = Stopwatch.StartNew();
                 await EnsureSinglePageAsync(ctx, token);
+                Trace(ctx, $"Stage=EnsureSinglePageDone elapsedMs={ensureSw.ElapsedMilliseconds} pageUrl={ctx.Page?.Url}");
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
@@ -1461,7 +1475,9 @@ namespace QTP.Plugins
                     return false;
                 }
 
+                var prepareSw = Stopwatch.StartNew();
                 var entry = await PrepareEntryAsync(ctx, token);
+                Trace(ctx, $"Stage=PrepareEntryDone elapsedMs={prepareSw.ElapsedMilliseconds} success={entry.Success} endTask={entry.EndTask} homepage={entry.IsHomepageTrigger} hasUrl={!string.IsNullOrWhiteSpace(entry.FirstPageUrl)}");
                 if (!entry.Success)
                 {
                     if (entry.EndTask)
@@ -1508,7 +1524,9 @@ namespace QTP.Plugins
                 bool gotoOk;
                 try
                 {
+                    var navSw = Stopwatch.StartNew();
                     gotoOk = await NavigateToEntryAsync(ctx, entry.FirstPageUrl!, token);
+                    Trace(ctx, $"Stage=NavigateDone elapsedMs={navSw.ElapsedMilliseconds} gotoOk={gotoOk} pageUrl={ctx.Page?.Url}");
                 }
                 catch (OperationCanceledException)
                 {
@@ -1546,7 +1564,9 @@ namespace QTP.Plugins
                 if (entry.IsHomepageTrigger)
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker: ExecuteHomepageTriggerAsync");
+                    var homeSw = Stopwatch.StartNew();
                     var homepageOk = await ExecuteHomepageTriggerAsync(ctx, entry.QueryWord, token);
+                    Trace(ctx, $"Stage=HomepageTriggerDone elapsedMs={homeSw.ElapsedMilliseconds} ok={homepageOk} pageUrl={ctx.Page?.Url}");
                     if (!homepageOk)
                         continue;
                 }
@@ -1569,7 +1589,9 @@ namespace QTP.Plugins
 
                     try
                     {
+                        var scrollSw = Stopwatch.StartNew();
                         await ScrollWithTimeoutAsync(ctx.Page, ctx.CdpManager!, Math.Abs(ctx.Config.PageLoadedDelayMs));
+                        Trace(ctx, $"Stage=ScrollWithTimeoutDone elapsedMs={scrollSw.ElapsedMilliseconds} configuredDelayMs={Math.Abs(ctx.Config.PageLoadedDelayMs)} pageUrl={ctx.Page?.Url}");
                     }
                     catch (OperationCanceledException)
                     {
@@ -1594,7 +1616,9 @@ namespace QTP.Plugins
                     continue;
                 }
 
+                var detectSw = Stopwatch.StartNew();
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
+                Trace(ctx, $"Stage=DetectAdDone elapsedMs={detectSw.ElapsedMilliseconds} adsOk={adsOk} pageAdsCount={ctx.PageAdsCount} pageUrl={ctx.Page?.Url}");
                 if (!adsOk)
                     continue;
 
@@ -1610,22 +1634,32 @@ namespace QTP.Plugins
                     continue;
                 }
 
+                var decideSw = Stopwatch.StartNew();
                 await DecideJumpClickAsync(ctx, token);
+                Trace(ctx, $"Stage=DecideJumpClickDone elapsedMs={decideSw.ElapsedMilliseconds} jumpClick={ctx.JumpClick} pageTriggerClick={ctx.PageTriggerClick}");
 
                 if (ctx.JumpClick)
                 {
+                    var clickSw = Stopwatch.StartNew();
                     var clickFlow = await TryExecuteJumpClickAsync(ctx, token);
+                    Trace(ctx, $"Stage=JumpClickDone elapsedMs={clickSw.ElapsedMilliseconds} flow={clickFlow} jumpClick={ctx.JumpClick} pageTriggerClick={ctx.PageTriggerClick}");
                     if (clickFlow == FlowControl.EndTask)
                         return CompleteSuccess(ctx);
                 }
 
+                var sleepSw = Stopwatch.StartNew();
                 var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
+                Trace(ctx, $"Stage=SleepPhaseDone elapsedMs={sleepSw.ElapsedMilliseconds} flow={sleepFlow} triggerDownload={ctx.TriggerDownloadSign} pageUrl={ctx.Page?.Url}");
                 if (sleepFlow == FlowControl.EndTask)
                     return CompleteSuccess(ctx);
 
                 if (sleepFlow == FlowControl.NextPv)
+                {
+                    Trace(ctx, $"Stage=PvContinue elapsedMs={pvSw.ElapsedMilliseconds}");
                     continue;
+                }
 
+                Trace(ctx, $"Stage=PvDone elapsedMs={pvSw.ElapsedMilliseconds}");
                 return CompleteSuccess(ctx);
             }
 
@@ -2321,6 +2355,8 @@ namespace QTP.Plugins
         private async Task<bool> DetectAndUploadAdWordsAsync(WorkerRunContext ctx, string? q, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            var sw = Stopwatch.StartNew();
+            Trace(ctx, $"Stage=DetectAdStart qEmpty={string.IsNullOrWhiteSpace(q)} pageUrl={ctx.Page?.Url}");
 
             if (ctx.Page == null || ctx.Page.IsClosed)
             {
@@ -2342,6 +2378,7 @@ namespace QTP.Plugins
                 if (ctx.PageAdsCount <= 0)
                 {
                     LogWriteLine("没有广告标记,重试");
+                    Trace(ctx, $"Stage=DetectAdNoMarker elapsedMs={sw.ElapsedMilliseconds}");
                     return false;
                 }
 
@@ -2429,18 +2466,22 @@ namespace QTP.Plugins
                 if (ctx.Config.NoTrigger1688 && adOther == 0)
                 {
                     LogWriteLine("只有1688广告标记,重试");
+                    Trace(ctx, $"Stage=DetectAdOnly1688 elapsedMs={sw.ElapsedMilliseconds} ad1688={ad1688} adOther={adOther}");
                     return false;
                 }
 
+                Trace(ctx, $"Stage=DetectAdResult elapsedMs={sw.ElapsedMilliseconds} ads={ctx.PageAdsCount} ad1688={ad1688} adOther={adOther}");
                 return true;
             }
             catch (OperationCanceledException)
             {
+                Trace(ctx, $"Stage=DetectAdCanceled elapsedMs={sw.ElapsedMilliseconds}");
                 throw;
             }
             catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
             {
                 LogWriteLine($"广告检测失败: 页面/上下文/浏览器已关闭, {ex.Message}");
+                Trace(ctx, $"Stage=DetectAdClosed elapsedMs={sw.ElapsedMilliseconds} reason={ex.Message}");
                 return false;
             }
         }
@@ -2455,17 +2496,22 @@ namespace QTP.Plugins
         private async Task DecideJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            var sw = Stopwatch.StartNew();
 
             int clickRate = ctx.Config.TaskArgs.SelectToken("task.click_rate")!.Value<int>();
             ctx.JumpClick = false;
             ctx.PageTriggerClick = false;
 
             if (clickRate <= 0)
+            {
+                Trace(ctx, $"Stage=DecideJumpClickSkip elapsedMs={sw.ElapsedMilliseconds} clickRate={clickRate}");
                 return;
+            }
 
             var ctr = await _aggregator.GetClickRatioAsync(ctx.Config.TaskId, clickRate);
             LogWriteLine($"点击比率:{(ctr * 100):N2}%");
             ctx.JumpClick = await _aggregator.CanClickthroughAsync(ctx.Config.TaskId, clickRate);
+            Trace(ctx, $"Stage=DecideJumpClickResult elapsedMs={sw.ElapsedMilliseconds} clickRate={clickRate} ctr={ctr:N4} jumpClick={ctx.JumpClick}");
         }
 
         /// <summary>
@@ -2477,13 +2523,18 @@ namespace QTP.Plugins
         private async Task<FlowControl> TryExecuteJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            var sw = Stopwatch.StartNew();
 
             var sponsoreds = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
             var sponsoredCount = await sponsoreds.CountAsync();
             if (sponsoredCount <= 0)
+            {
+                Trace(ctx, $"Stage=JumpClickSkip elapsedMs={sw.ElapsedMilliseconds} sponsoredCount={sponsoredCount}");
                 return FlowControl.Continue;
+            }
 
             var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
+            Trace(ctx, $"Stage=JumpClickCandidates elapsedMs={sw.ElapsedMilliseconds} sponsoredCount={sponsoredCount} candidateCount={candidates.Count}");
 
             foreach (var sponsored in candidates)
             {
@@ -2524,6 +2575,7 @@ namespace QTP.Plugins
                     this.QTPExecuteClickthrough(ctx.Config.TaskId);
                     LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
                     ctx.PageTriggerClick = true;
+                    Trace(ctx, $"Stage=JumpClickTriggered elapsedMs={sw.ElapsedMilliseconds} dataUrl={dataUrl} byDownload=true");
                     return FlowControl.EndTask;
                 }
 
@@ -2532,11 +2584,13 @@ namespace QTP.Plugins
                     this.QTPExecuteClickthrough(ctx.Config.TaskId);
                     LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
                     ctx.PageTriggerClick = true;
+                    Trace(ctx, $"Stage=JumpClickTriggered elapsedMs={sw.ElapsedMilliseconds} dataUrl={dataUrl} byDownload=false");
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                     return await HandleLandingPageAsync(ctx, token);
                 }
             }
 
+            Trace(ctx, $"Stage=JumpClickNoHit elapsedMs={sw.ElapsedMilliseconds}");
             return FlowControl.Continue;
         }
 
@@ -3606,6 +3660,8 @@ namespace QTP.Plugins
         private async Task<FlowControl> ExecuteTaskSleepPhaseAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            var sw = Stopwatch.StartNew();
+            Trace(ctx, $"Stage=SleepPhaseStart sleepMs={ctx.Config.SleepMs} pageUrl={ctx.Page?.Url}");
 
             await TryHandleRfq1688Async(ctx, token);
             await TryHandleQianhuFormAsync(ctx, token);
@@ -3652,9 +3708,11 @@ namespace QTP.Plugins
             LogWriteLine("延时停留");
             LogWriteLine("准备滑动");
             PageScrollDirection direction = PageScrollDirection.Up;
+            var loop = 0;
             while (true)
             {
                 token.ThrowIfCancellationRequested();
+                loop++;
 
                 try
                 {
@@ -3678,21 +3736,25 @@ namespace QTP.Plugins
                         break;
 
                     await Task.Delay(CommonHelper.RandomRange(1000, 2000), token);
+                    Trace(ctx, $"Stage=SleepLoop loop={loop} elapsedMs={sw.ElapsedMilliseconds} direction={direction} pageUrl={ctx.Page?.Url}");
 
                     if (ctx.TriggerDownloadSign > 0)
                         return FlowControl.EndTask;
                 }
                 catch (OperationCanceledException)
                 {
+                    Trace(ctx, $"Stage=SleepCanceled loop={loop} elapsedMs={sw.ElapsedMilliseconds}");
                     throw;
                 }
                 catch
                 {
+                    Trace(ctx, $"Stage=SleepLoopBreak loop={loop} elapsedMs={sw.ElapsedMilliseconds}");
                     break;
                 }
             }
 
             LogWriteLine("动作完成");
+            Trace(ctx, $"Stage=SleepPhaseEnd elapsedMs={sw.ElapsedMilliseconds} loops={loop} triggerDownload={ctx.TriggerDownloadSign}");
             return FlowControl.EndTask;
         }
 
