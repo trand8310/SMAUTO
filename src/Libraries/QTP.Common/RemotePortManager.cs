@@ -8,8 +8,8 @@ namespace QTP.Common
  
     public static class RemotePortManager
     {
-        private const int MinPort = 34567;
-        private const int MaxPort = 45678;
+        private const int MinPort = 23456;
+        private const int MaxPort = 34567;
 
         // 下一个优先尝试的新端口
         private static int _next = MinPort - 1;

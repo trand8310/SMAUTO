@@ -1063,40 +1063,121 @@ namespace QTP.Plugins
         }
 
 
-
-
         public async Task ScrollWithTimeoutAsync(
-            IPage page,
-            CDPSessionManager cdpManager,
-            int durationMs,
-            CancellationToken cancellationToken = default)
+        IPage page,
+        CDPSessionManager cdpManager,
+        int durationMs,
+        CancellationToken cancellationToken = default)
         {
             if (page == null) throw new ArgumentNullException(nameof(page));
             if (cdpManager == null) throw new ArgumentNullException(nameof(cdpManager));
             if (durationMs <= 0) return;
+
+            var startUrl = page.Url;
+            LogWriteLine($"{this.Title}:ScrollWithTimeout:start durationMs={durationMs}, url={startUrl}");
+
             var cdpSession = await cdpManager.GetOrCreateSessionAsync(page);
-            if (!await CanPageScrollAsync(page))
+
+            var canScroll = await CanPageScrollAsync(page);
+            if (!canScroll)
             {
                 await Task.Delay(durationMs, cancellationToken);
                 return;
             }
+
             var endTime = Environment.TickCount64 + durationMs;
+            var loop = 0;
+
             while (Environment.TickCount64 < endTime)
             {
+                loop++;
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // 先判断：页面是否还能继续“向上滑动手势 => 页面继续向下滚动”
+                // 如果已经到底部，就直接返回，不再空滑
+                var scrollStateBefore = await GetPageScrollStateAsync(page);
+                if (!scrollStateBefore.CanScrollDown)
+                {
+                    break;
+                }
+
+                var beforeY = scrollStateBefore.ScrollY;
+
                 await HumanScrollHelper.TouchPageLongScrollAsync(
-                            page!,
-                            cdpSession!,
-                            scrollCount: 1,
-                            direction: PageScrollDirection.Up,
-                            cancellationToken: cancellationToken);
+                    page,
+                    cdpSession,
+                    scrollCount: 1,
+                    direction: PageScrollDirection.Up,
+                    cancellationToken: cancellationToken);
+
+                var scrollStateAfter = await GetPageScrollStateAsync(page);
+                var afterY = scrollStateAfter.ScrollY;
+                var moved = afterY > beforeY;
+
                 int remainMs = (int)Math.Max(0, endTime - Environment.TickCount64);
+                // 如果本次手势后没有继续往下移动，并且已经不能再往下滚了，说明到底了，直接结束
+                if (!moved && !scrollStateAfter.CanScrollDown)
+                {
+                    break;
+                }
                 if (remainMs <= 0)
                     break;
+
                 int delayMs = Math.Min(CommonHelper.RandomRange(1000, 2000), remainMs);
                 await Task.Delay(delayMs, cancellationToken);
             }
         }
+
+        private sealed class PageScrollState
+        {
+            public double ScrollY { get; set; }
+            public double ClientHeight { get; set; }
+            public double ScrollHeight { get; set; }
+            public bool CanScrollDown { get; set; }
+        }
+
+        private static async Task<PageScrollState> GetPageScrollStateAsync(IPage page)
+        {
+            try
+            {
+                return await page.EvaluateAsync<PageScrollState>(@"() => {
+                    const doc = document.documentElement;
+                    const body = document.body;
+
+                    const scrollY = window.scrollY || window.pageYOffset || doc.scrollTop || body?.scrollTop || 0;
+                    const clientHeight = window.innerHeight || doc.clientHeight || body?.clientHeight || 0;
+                    const scrollHeight = Math.max(
+                        doc.scrollHeight || 0,
+                        body?.scrollHeight || 0,
+                        doc.offsetHeight || 0,
+                        body?.offsetHeight || 0,
+                        doc.clientHeight || 0
+                    );
+
+                    // 留一点容差，避免小数误差导致明明到底了还继续滑
+                    const canScrollDown = (scrollY + clientHeight) < (scrollHeight - 2);
+
+                    return {
+                        scrollY,
+                        clientHeight,
+                        scrollHeight,
+                        canScrollDown
+                    };
+                }");
+            }
+            catch
+            {
+                return new PageScrollState
+                {
+                    ScrollY = 0,
+                    ClientHeight = 0,
+                    ScrollHeight = 0,
+                    CanScrollDown = false
+                };
+            }
+        }
+
+
 
 
 
@@ -1262,7 +1343,6 @@ namespace QTP.Plugins
 
                 this.QTPExecuteStart(config.TaskId);
                 LogWriteLine($"{this.Title}:ExecuteWorker:Start");
-                Trace(ctx, "Stage=ExecuteWorkerStart");
 
                 ctx.Playwright = await _playwrightProvider.GetAsync();
                 linkedCts.Token.ThrowIfCancellationRequested();
@@ -1302,7 +1382,6 @@ namespace QTP.Plugins
 
                 ctx.Context = ctx.Browser.Contexts[0];
                 ctx.CdpManager = new CDPSessionManager(ctx.Context);
-                Trace(ctx, $"Stage=ContextReady contexts={ctx.Browser.Contexts.Count} pages={ctx.Context.Pages.Count}");
 
                 await ConfigureContextAsync(ctx, linkedCts.Token);
                 await AttachLifecycleEventsAsync(ctx, linkedCts.Token);
@@ -1320,8 +1399,6 @@ namespace QTP.Plugins
                 }
 
                 var ok = await RunMainFlowAsync(ctx, linkedCts.Token);
-                Trace(ctx, $"Stage=RunMainFlowCompleted ok={ok} proxyFailed={ctx.ProxyFailed} pageCrashed={ctx.PageCrashed}");
-
                 if (!ok)
                 {
                     if (ctx.ProxyFailed)
@@ -1444,9 +1521,7 @@ namespace QTP.Plugins
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
             {
                 token.ThrowIfCancellationRequested();
-
                 LogWriteLine($"{this.Title}:pv：{ctx.Config.TotalPV}/{ctx.PvIndex}");
-
                 await EnsureSinglePageAsync(ctx, token);
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
@@ -1485,6 +1560,9 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.ncpjy.cn/content.html?q=%E7%A0%94%E7%A9%B6%E7%94%9F&keywordid=1361648768492&site=23&bd_vid=11661194032580761324";
                     //entry.FirstPageUrl = "http://prom.sjk520.top/db_p_h5/v1/keysearch.html?app_id=9001&content_id=50700164&keyword=%E5%92%A8%E8%AF%A2%E5%85%AC%E5%8F%B8&plan=4&bd_vid=8521736992881948758";
                     //entry.FirstPageUrl = "https://aisite.wejianzhan.com/site/wjzsorv8/8fde5eff-530e-43ad-a8be-37ab96c77d4b?q=AI%E5%9F%B9%E8%AE%AD&pm_key=47622062&multi_key=5_211314986_70005&page_scene=48&bword=%E5%B9%B3%E9%9D%A2%E8%AE%BE%E8%AE%A1ai%E8%BD%AF%E4%BB%B6%E6%95%99%E7%A8%8B&intent=%E5%AD%A6%E4%B9%A0%E6%9C%9F-1&adGroupId=124118580&campaignId=1501472115&planname=20250423_%E7%A5%9E%E9%A9%AC_ocpc_AI%E5%9F%B9%E8%AE%AD_wise&kid=-1&ip=113.121.217.233&clickid=18286375348828523544&uctrackid=czo3MjU4OTY0ODE0NDk2MDMyMjA3O2M6NTAwMDAwMDIzODMwMTY1Nzg7ZDpkbXBfMzk4MTAwNDA5MDE3NjMzNzk5OTtwOnds&flowfrom=shenma&wid=19669bb7138d4ce3834a9f198b6ff99e_0_0#showRetainPopup";
+                    //entry.FirstPageUrl = "https://b2b.baidu.com/m/aitf/s?q=%E6%89%8B%E6%9C%BA%E6%9D%A1%E7%A0%81%E6%89%AB%E6%8F%8F%E5%99%A8&fid=519938827&styl=b&sid=90311_811014_70004_70027&a_keywordid=77982777850&creativeId=50000002365855081&clickid=5426022486127520210&uctrackid=czoxNjQzNjA1NTU1MTExNzcyNDUyMTtjOjUwMDAwMDAyMzY1ODU1MDgxO2Q6ZG1wXy02NjAzMDY3MTY1MjQ2NTA3NzY3O3A6d2w=&flowfrom=shenma";
+                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=wm100000&q=%E6%9C%89%E6%B2%A1%E6%9C%89%E7%90%86%E8%B4%A2%E7%9A%84%E8%BD%AF%E4%BB%B6";
+
                 }
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1569,7 +1647,7 @@ namespace QTP.Plugins
 
                     try
                     {
-                        await ScrollWithTimeoutAsync(ctx.Page, ctx.CdpManager!, Math.Abs(ctx.Config.PageLoadedDelayMs));
+                        await ScrollWithTimeoutAsync(ctx.Page, ctx.CdpManager!, Math.Abs(ctx.Config.PageLoadedDelayMs), token);
                     }
                     catch (OperationCanceledException)
                     {
@@ -1611,7 +1689,6 @@ namespace QTP.Plugins
                 }
 
                 await DecideJumpClickAsync(ctx, token);
-
                 if (ctx.JumpClick)
                 {
                     var clickFlow = await TryExecuteJumpClickAsync(ctx, token);
@@ -1624,8 +1701,9 @@ namespace QTP.Plugins
                     return CompleteSuccess(ctx);
 
                 if (sleepFlow == FlowControl.NextPv)
+                {
                     continue;
-
+                }
                 return CompleteSuccess(ctx);
             }
 
@@ -1817,13 +1895,8 @@ namespace QTP.Plugins
         private async Task<IBrowser?> StartAndConnectBrowserAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-
             var args = BuildChromiumArgs(ctx.Config, out var proxyServer);
-            Trace(ctx, $"Stage=StartChromium args={string.Join(" ", args)}");
-
             var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", ctx.Config.KernelVersion, "chrome.exe");
-            var startTs = DateTime.UtcNow;
-
             var session = await _processManager.StartChromium(
             ctx.Config.UniqueId,
             chromePath,
@@ -1833,10 +1906,7 @@ namespace QTP.Plugins
             proxyServer,
             readyTimeout: TimeSpan.FromSeconds(15),
             token: token);
-
             ctx.DebugPort = session.DebugPort;
-            Trace(ctx, $"Stage=StartChromiumDone port={ctx.DebugPort} elapsedMs={(DateTime.UtcNow - startTs).TotalMilliseconds:N0}");
-
             var endpoint = $"http://localhost:{session.DebugPort}";
             token.ThrowIfCancellationRequested();
 
@@ -1933,34 +2003,47 @@ namespace QTP.Plugins
             await InitPageAsync(ctx, ctx.Page, token);
         }
 
-        private async Task AttachLifecycleEventsAsync(WorkerRunContext ctx, CancellationToken token)
+        private Task AttachLifecycleEventsAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
             if (ctx.Browser == null || ctx.Context == null)
-                return;
+                return Task.CompletedTask;
 
             ctx.Browser.Disconnected += (_, _) =>
             {
                 try
                 {
-                    Trace(ctx, "BrowserDisconnected");
                     CancelLinkedContext(ctx, "BrowserDisconnected");
                 }
-                catch { }
+                catch
+                {
+                }
             };
 
-            ctx.Context.Page += async (_, newPage) =>
+            ctx.Context.Page += (_, newPage) =>
             {
-                try
-                {
-                    if (!ctx.Config.LinkedCts.IsCancellationRequested)
-                        await InitPageAsync(ctx, newPage, ctx.Config.LinkedCts.Token);
-                }
-                catch (OperationCanceledException) { }
-                catch { }
+                _ = HandleContextPageAsync(ctx, newPage);
             };
+
+            return Task.CompletedTask;
         }
+
+        private async Task HandleContextPageAsync(WorkerRunContext ctx, IPage newPage)
+        {
+            try
+            {
+                if (!ctx.Config.LinkedCts.IsCancellationRequested)
+                    await InitPageAsync(ctx, newPage, ctx.Config.LinkedCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+            }
+        }
+
 
         private static bool IsLikelyProxyFailureText(string? errorText)
         {
@@ -1977,7 +2060,48 @@ namespace QTP.Plugins
                 errorText.Contains("ERR_EMPTY_RESPONSE", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsProxyAuthOrTunnelFailure(string? failure)
+        {
+            if (string.IsNullOrWhiteSpace(failure))
+                return false;
+
+            return failure.Contains("ERR_INVALID_AUTH_CREDENTIALS", StringComparison.OrdinalIgnoreCase)
+                || failure.Contains("ERR_TUNNEL_CONNECTION_FAILED", StringComparison.OrdinalIgnoreCase);
+        }
         private static bool IsMainPageRequest(IRequest request, IPage page)
+        {
+            try
+            {
+                if (request == null || page == null)
+                    return false;
+
+                // 最优先：主 Frame 的 document 导航请求
+                if (request.IsNavigationRequest &&
+                    string.Equals(request.ResourceType, "document", StringComparison.OrdinalIgnoreCase) &&
+                    request.Frame == page.MainFrame)
+                {
+                    return true;
+                }
+
+                // 兜底：URL 完全一致时，也认为是当前主页面请求
+                var reqUrl = request.Url ?? string.Empty;
+                var pageUrl = page.Url ?? string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(reqUrl) &&
+                    !string.IsNullOrWhiteSpace(pageUrl) &&
+                    string.Equals(reqUrl, pageUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static bool IsMainPageRequest2(IRequest request, IPage page)
         {
             try
             {
@@ -2013,9 +2137,7 @@ namespace QTP.Plugins
             token.ThrowIfCancellationRequested();
 
             await page.SetViewportSizeAsync(ctx.Config.Sw, ctx.Config.Sh);
-
             var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(page);
-            Trace(ctx, $"InitPage pageHash={page.GetHashCode()} cdpHash={cdpSession.GetHashCode()} url={page.Url}");
             await cdpSession.SendAsync("Page.enable");
 
             cdpSession.Event("Page.downloadWillBegin").OnEvent += (_, _) =>
@@ -2036,7 +2158,6 @@ namespace QTP.Plugins
             {
                 try
                 {
-                    Trace(ctx, $"PageCrash pageHash={page.GetHashCode()}");
                     ctx.PageCrashed = true;
                     ctx.LastFailureReason = "Page crashed";
                     CancelLinkedContext(ctx, "PageCrashed");
@@ -2058,24 +2179,32 @@ namespace QTP.Plugins
                     // 统一记录最后失败原因，便于排查
                     ctx.LastFailureReason = $"RequestFailed: {failure}, req={reqUrl}, page={pageUrl}";
 
-                    // 只判断主页面（地址栏打开的 document 请求）
-                    if (!IsMainPageRequest(e, page))
+                    bool isProxyFailureAnyRequest =
+                        failure.Contains("ERR_INVALID_AUTH_CREDENTIALS", StringComparison.OrdinalIgnoreCase) ||
+                        failure.Contains("ERR_TUNNEL_CONNECTION_FAILED", StringComparison.OrdinalIgnoreCase);
+
+                    bool isMainPageEmptyResponse =
+                        failure.Contains("ERR_EMPTY_RESPONSE", StringComparison.OrdinalIgnoreCase) &&
+                        IsMainPageRequest(e, page);
+
+                    if (!isProxyFailureAnyRequest && !isMainPageEmptyResponse)
                         return;
 
-                    // 只对疑似代理异常做标记与取消
-                    if (!IsLikelyProxyFailureText(failure))
+                    if (ctx.ProxyFailed)
                         return;
 
                     ctx.ProxyFailed = true;
-                    ctx.ProxyFailedReason = $"主页面请求失败: {failure}, req={reqUrl}, page={pageUrl}";
+                    ctx.ProxyFailedReason = $"请求失败: {failure}, req={reqUrl}, page={pageUrl}";
 
-                    Trace(ctx, $"MainRequestFailedProxy failure={failure}, req={reqUrl}, page={pageUrl}");
-                    CancelLinkedContext(ctx, "MainRequestFailedProxy");
+                    CancelLinkedContext(ctx, "RequestFailedProxy");
                 }
                 catch
                 {
                 }
             };
+
+
+
 
 
             //page.RequestFailed += (_, e) =>
@@ -2121,17 +2250,11 @@ namespace QTP.Plugins
 
             ctx.Page = ctx.Context.Pages[0];
             ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-            Trace(ctx, $"EnsureSinglePage pages={ctx.Context.Pages.Count} pageHash={ctx.Page.GetHashCode()} cdpHash={ctx.CdpSession.GetHashCode()}");
         }
 
         private string BuildTraceTag(WorkerRunContext ctx)
         {
             return $"{this.Title}[taskId={ctx.Config.TaskId},uniqueId={ctx.Config.UniqueId},uv={ctx.Config.CurrentUV},pv={ctx.PvIndex},port={ctx.DebugPort}]";
-        }
-
-        private void Trace(WorkerRunContext ctx, string message)
-        {
-            LogWriteLine($"{BuildTraceTag(ctx)} {message}");
         }
 
         private void CancelLinkedContext(WorkerRunContext ctx, string reason)
@@ -2143,7 +2266,6 @@ namespace QTP.Plugins
                     if (string.IsNullOrWhiteSpace(ctx.LastFailureReason))
                         ctx.LastFailureReason = reason;
 
-                    Trace(ctx, $"CancelLinkedCts reason={reason}");
                     ctx.Config.LinkedCts.Cancel();
                 }
             }
@@ -2431,7 +2553,6 @@ namespace QTP.Plugins
                     LogWriteLine("只有1688广告标记,重试");
                     return false;
                 }
-
                 return true;
             }
             catch (OperationCanceledException)
@@ -2455,13 +2576,14 @@ namespace QTP.Plugins
         private async Task DecideJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-
             int clickRate = ctx.Config.TaskArgs.SelectToken("task.click_rate")!.Value<int>();
             ctx.JumpClick = false;
             ctx.PageTriggerClick = false;
 
             if (clickRate <= 0)
+            {
                 return;
+            }
 
             var ctr = await _aggregator.GetClickRatioAsync(ctx.Config.TaskId, clickRate);
             LogWriteLine($"点击比率:{(ctr * 100):N2}%");
@@ -2477,11 +2599,12 @@ namespace QTP.Plugins
         private async Task<FlowControl> TryExecuteJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-
             var sponsoreds = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
             var sponsoredCount = await sponsoreds.CountAsync();
             if (sponsoredCount <= 0)
+            {
                 return FlowControl.Continue;
+            }
 
             var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
 
@@ -2534,71 +2657,6 @@ namespace QTP.Plugins
                     ctx.PageTriggerClick = true;
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                     return await HandleLandingPageAsync(ctx, token);
-                }
-            }
-
-            return FlowControl.Continue;
-        }
-
-        /// <summary>
-        /// 测试_触发广告
-        /// </summary>
-        /// <param name="ctx"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        private async Task<FlowControl> TryTestExecuteJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            var sponsoreds = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
-            var sponsoredCount = await sponsoreds.CountAsync();
-            if (sponsoredCount <= 0)
-                return FlowControl.Continue;
-
-            var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
-
-            foreach (var sponsored in candidates)
-            {
-                token.ThrowIfCancellationRequested();
-
-                await SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, sponsored);
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-
-                var target = await PickSponsoredTargetAsync(sponsored, token);
-                if (target == null)
-                    continue;
-
-                var dataUrl = await target.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
-                    continue;
-
-                var text = await target.InnerTextAsync();
-                var box = await target.BoundingBoxAsync();
-
-                if (box != null)
-                    LogWriteLine($"触发广告位:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
-                else
-                    LogWriteLine($"触发广告位:{text}");
-
-                var click = await ClickAndDetectNavigationAsync(ctx, target, token);
-                if (!click.Attempted)
-                    continue;
-
-                if (ctx.TriggerDownloadSign > 0)
-                {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
-                    return FlowControl.EndTask;
-                }
-
-                if (click.Navigated)
-                {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
-                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                    return FlowControl.Continue;
                 }
             }
             return FlowControl.Continue;
@@ -3003,7 +3061,8 @@ namespace QTP.Plugins
                     {
                         int count = await offerItems.CountAsync();
                         var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
-                        await SwipeEmulator.SwipeToElementAsync(ctx.Page!, ctx.CdpSession!, item);
+                        await SwipeEmulator.SwipeToElementAsync(ctx.Page!, ctx.CdpSession!, item, maxSwipes: CommonHelper.RandomRange(1, 3));
+                        await item.ScrollIntoViewIfNeededAsync();
                         await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
                         var click = await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
@@ -3606,13 +3665,12 @@ namespace QTP.Plugins
         private async Task<FlowControl> ExecuteTaskSleepPhaseAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            this.QTPExecuteSuccess(ctx.Config.TaskId);
+            LogWriteLine($"{this.Title}:ExecuteWorker:Success");
 
             await TryHandleRfq1688Async(ctx, token);
             await TryHandleQianhuFormAsync(ctx, token);
             await TryHandleLouisvuittonAsync(ctx, token);
-
-            this.QTPExecuteSuccess(ctx.Config.TaskId);
-            LogWriteLine($"{this.Title}:ExecuteWorker:Success");
 
             if (ctx.Config.TotalPV > 1)
             {
@@ -3650,11 +3708,12 @@ namespace QTP.Plugins
             DateTime start = DateTime.Now;
             await TryHandleAllAsync(ctx, token);
             LogWriteLine("延时停留");
-            LogWriteLine("准备滑动");
             PageScrollDirection direction = PageScrollDirection.Up;
+            var loop = 0;
             while (true)
             {
                 token.ThrowIfCancellationRequested();
+                loop++;
 
                 try
                 {
@@ -3678,7 +3737,6 @@ namespace QTP.Plugins
                         break;
 
                     await Task.Delay(CommonHelper.RandomRange(1000, 2000), token);
-
                     if (ctx.TriggerDownloadSign > 0)
                         return FlowControl.EndTask;
                 }
