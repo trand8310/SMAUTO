@@ -1104,6 +1104,7 @@ namespace QTP.Plugins
         private async Task<IBrowser?> ConnectOverCDPWithRetryAsync(
         IPlaywright playwright,
         string endpoint,
+        string traceTag,
         CancellationToken token,
         int maxAttempts = 3,
         int delayMs = 200,
@@ -1128,7 +1129,7 @@ namespace QTP.Plugins
 
                 try
                 {
-                    LogWriteLine($"CDP连接尝试 {attempt}/{maxAttempts}: {endpoint}");
+                    LogWriteLine($"{traceTag} CDP连接尝试 {attempt}/{maxAttempts}: {endpoint}");
 
                     browser = await playwright.Chromium.ConnectOverCDPAsync(endpoint);
 
@@ -1157,7 +1158,7 @@ namespace QTP.Plugins
                             throw new InvalidOperationException("Browser has no available contexts after CDP connect.");
                     }
 
-                    LogWriteLine($"CDP连接成功: {endpoint}");
+                    LogWriteLine($"{traceTag} CDP连接成功: {endpoint}");
                     return browser;
                 }
                 catch (OperationCanceledException)
@@ -1182,7 +1183,7 @@ namespace QTP.Plugins
                     }
                     catch { }
 
-                    LogWriteLine($"CDP连接失败 {attempt}/{maxAttempts}: {ex.Message}");
+                    LogWriteLine($"{traceTag} CDP连接失败 {attempt}/{maxAttempts}: {ex.Message}");
 
                     if (attempt >= maxAttempts)
                         break;
@@ -1193,7 +1194,7 @@ namespace QTP.Plugins
 
             if (lastException != null)
             {
-                LogWriteLine($"CDP连接最终失败: {lastException}");
+                LogWriteLine($"{traceTag} CDP连接最终失败: {lastException}");
             }
 
             return null;
@@ -1261,6 +1262,7 @@ namespace QTP.Plugins
 
                 this.QTPExecuteStart(config.TaskId);
                 LogWriteLine($"{this.Title}:ExecuteWorker:Start");
+                Trace(ctx, "Stage=ExecuteWorkerStart");
 
                 ctx.Playwright = await _playwrightProvider.GetAsync();
                 linkedCts.Token.ThrowIfCancellationRequested();
@@ -1300,6 +1302,7 @@ namespace QTP.Plugins
 
                 ctx.Context = ctx.Browser.Contexts[0];
                 ctx.CdpManager = new CDPSessionManager(ctx.Context);
+                Trace(ctx, $"Stage=ContextReady contexts={ctx.Browser.Contexts.Count} pages={ctx.Context.Pages.Count}");
 
                 await ConfigureContextAsync(ctx, linkedCts.Token);
                 await AttachLifecycleEventsAsync(ctx, linkedCts.Token);
@@ -1317,6 +1320,7 @@ namespace QTP.Plugins
                 }
 
                 var ok = await RunMainFlowAsync(ctx, linkedCts.Token);
+                Trace(ctx, $"Stage=RunMainFlowCompleted ok={ok} proxyFailed={ctx.ProxyFailed} pageCrashed={ctx.PageCrashed}");
 
                 if (!ok)
                 {
@@ -1815,9 +1819,10 @@ namespace QTP.Plugins
             token.ThrowIfCancellationRequested();
 
             var args = BuildChromiumArgs(ctx.Config, out var proxyServer);
-            LogWriteLine($"args={string.Join(" ", args)}");
+            Trace(ctx, $"Stage=StartChromium args={string.Join(" ", args)}");
 
             var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", ctx.Config.KernelVersion, "chrome.exe");
+            var startTs = DateTime.UtcNow;
 
             var session = await _processManager.StartChromium(
             ctx.Config.UniqueId,
@@ -1830,6 +1835,7 @@ namespace QTP.Plugins
             token: token);
 
             ctx.DebugPort = session.DebugPort;
+            Trace(ctx, $"Stage=StartChromiumDone port={ctx.DebugPort} elapsedMs={(DateTime.UtcNow - startTs).TotalMilliseconds:N0}");
 
             var endpoint = $"http://localhost:{session.DebugPort}";
             token.ThrowIfCancellationRequested();
@@ -1837,6 +1843,7 @@ namespace QTP.Plugins
             return await ConnectOverCDPWithRetryAsync(
                    ctx.Playwright!,
                    endpoint,
+                   BuildTraceTag(ctx),
                    token,
                    maxAttempts: 3,
                    delayMs: 200,
@@ -1937,9 +1944,8 @@ namespace QTP.Plugins
             {
                 try
                 {
-                    LogWriteLine("浏览器已关闭或断开连接！");
-                    if (!ctx.Config.LinkedCts.IsCancellationRequested)
-                        ctx.Config.LinkedCts.Cancel();
+                    Trace(ctx, "BrowserDisconnected");
+                    CancelLinkedContext(ctx, "BrowserDisconnected");
                 }
                 catch { }
             };
@@ -2009,6 +2015,7 @@ namespace QTP.Plugins
             await page.SetViewportSizeAsync(ctx.Config.Sw, ctx.Config.Sh);
 
             var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(page);
+            Trace(ctx, $"InitPage pageHash={page.GetHashCode()} cdpHash={cdpSession.GetHashCode()} url={page.Url}");
             await cdpSession.SendAsync("Page.enable");
 
             cdpSession.Event("Page.downloadWillBegin").OnEvent += (_, _) =>
@@ -2029,12 +2036,10 @@ namespace QTP.Plugins
             {
                 try
                 {
-                    LogWriteLine("Crash！");
+                    Trace(ctx, $"PageCrash pageHash={page.GetHashCode()}");
                     ctx.PageCrashed = true;
                     ctx.LastFailureReason = "Page crashed";
-
-                    if (!ctx.Config.LinkedCts.IsCancellationRequested)
-                        ctx.Config.LinkedCts.Cancel();
+                    CancelLinkedContext(ctx, "PageCrashed");
                 }
                 catch { }
             };
@@ -2064,10 +2069,8 @@ namespace QTP.Plugins
                     ctx.ProxyFailed = true;
                     ctx.ProxyFailedReason = $"主页面请求失败: {failure}, req={reqUrl}, page={pageUrl}";
 
-                    LogWriteLine($"page.RequestFailed(主页面代理异常): {failure}, req={reqUrl}, page={pageUrl}");
-
-                    if (!ctx.Config.LinkedCts.IsCancellationRequested)
-                        ctx.Config.LinkedCts.Cancel();
+                    Trace(ctx, $"MainRequestFailedProxy failure={failure}, req={reqUrl}, page={pageUrl}");
+                    CancelLinkedContext(ctx, "MainRequestFailedProxy");
                 }
                 catch
                 {
@@ -2118,6 +2121,35 @@ namespace QTP.Plugins
 
             ctx.Page = ctx.Context.Pages[0];
             ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
+            Trace(ctx, $"EnsureSinglePage pages={ctx.Context.Pages.Count} pageHash={ctx.Page.GetHashCode()} cdpHash={ctx.CdpSession.GetHashCode()}");
+        }
+
+        private string BuildTraceTag(WorkerRunContext ctx)
+        {
+            return $"{this.Title}[taskId={ctx.Config.TaskId},uniqueId={ctx.Config.UniqueId},uv={ctx.Config.CurrentUV},pv={ctx.PvIndex},port={ctx.DebugPort}]";
+        }
+
+        private void Trace(WorkerRunContext ctx, string message)
+        {
+            LogWriteLine($"{BuildTraceTag(ctx)} {message}");
+        }
+
+        private void CancelLinkedContext(WorkerRunContext ctx, string reason)
+        {
+            try
+            {
+                if (!ctx.Config.LinkedCts.IsCancellationRequested)
+                {
+                    if (string.IsNullOrWhiteSpace(ctx.LastFailureReason))
+                        ctx.LastFailureReason = reason;
+
+                    Trace(ctx, $"CancelLinkedCts reason={reason}");
+                    ctx.Config.LinkedCts.Cancel();
+                }
+            }
+            catch
+            {
+            }
         }
 
         private async Task<EntryPreparationResult> PrepareEntryAsync(WorkerRunContext ctx, CancellationToken token)
