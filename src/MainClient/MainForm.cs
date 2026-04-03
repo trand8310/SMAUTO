@@ -388,8 +388,6 @@ namespace MainClient
                 var serverUrl = "ws://117.21.200.221:9502";
                 var token = "abc123";
 
-
-
                 _wsClient = new WsClientService(
                 serverUrl: serverUrl,
                 clientId: clientId,
@@ -413,9 +411,6 @@ namespace MainClient
 
                 _wsClient.SetMainWindowHandle(wnd_handel);
 
-
-
-
                 _wsClient.OnLog += msg => LogWriteLine(msg);
                 _wsClient.OnConnecting += () => LogWriteLine("正在连接服务器...");
                 _wsClient.OnConnected += () => LogWriteLine("首次连接成功");
@@ -438,7 +433,11 @@ namespace MainClient
 
         private void RegisterWsHandlers(WsClientService wsClient)
         {
-            wsClient.RegisterGetConfigHandler(() => _appSettings);
+            wsClient.RegisterGetConfigHandler(() => {
+
+                LogWriteLine("获取配置");
+                return _appSettings;
+            });
 
             wsClient.RegisterSetConfigHandler(payload =>
             {
@@ -738,7 +737,7 @@ namespace MainClient
             }
             #endregion
 
-            ///InitWsClient();
+            InitWsClient();
         }
         public async Task InitGlobalStatus()
         {
@@ -2262,21 +2261,21 @@ namespace MainClient
             SystemCleaner.RestartComputer();
         }
 
-        //protected override async void OnFormClosing(FormClosingEventArgs e)
-        //{
-        //    if (_wsClient != null)
-        //    {
-        //        try
-        //        {
-        //            await _wsClient.StopAsync();
-        //            await _wsClient.DisposeAsync();
-        //        }
-        //        catch
-        //        {
-        //        }
-        //    }
+        protected override async void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (_wsClient != null)
+            {
+                try
+                {
+                    await _wsClient.StopAsync();
+                    await _wsClient.DisposeAsync();
+                }
+                catch
+                {
+                }
+            }
 
-        //    base.OnFormClosing(e);
-        //}
+            base.OnFormClosing(e);
+        }
     }
 }
