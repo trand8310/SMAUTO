@@ -305,17 +305,6 @@ namespace SMAd.Swiper
 
         #region Public - Swipe To Element
 
-        /// <summary>
-        /// 兼容旧方法名，内部转新版
-        /// </summary>
-        public static async Task<List<(List<Vector2> points, Vector2 cp1, Vector2 cp2, Vector2 start, Vector2 end)>> SwipeToElement2Async(
-            IPage page,
-            ICDPSession client,
-            ILocator element,
-            int maxSwipes = 10)
-        {
-            return await SwipeToElementAsync(page, client, element, maxSwipes, CancellationToken.None);
-        }
 
         /// <summary>
         /// 将元素尽量滑到视口中部区域。

@@ -2,6 +2,7 @@
 using MainClient.Logging;
 using MainClient.LogViewer;
 using MainClient.Models;
+using MainClient.Net;
 using MainClient.UiTask;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -19,7 +20,9 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Management;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -46,6 +49,7 @@ namespace MainClient
         private readonly ChineseNameGenerator _nameGenerator;
         private readonly FileCleanupQueue _fileCleanupQueue = new();
         private int _startupAutomationTriggered = 0;
+        private WsClientService? _wsClient;
         #region 任务调度
         private PipelineRunner<JToken>? _pipeline;
         private UiTaskRunner? _uiRunner;
@@ -375,6 +379,192 @@ namespace MainClient
         }
 
 
+        private void InitWsClient()
+        {
+            var wnd_handel = this.Handle;
+            _ = Task.Run(async () =>
+            {
+                var clientId = await CommonHelper.GetHostAsync();
+                var serverUrl = "ws://117.21.200.221:9502";
+                var token = "abc123";
+
+
+
+                _wsClient = new WsClientService(
+                serverUrl: serverUrl,
+                clientId: clientId,
+                token: token,
+                machineName: clientId,
+                version: Application.ProductVersion,
+                group: "default",
+                localIp: clientId,
+                heartbeatInterval: TimeSpan.FromSeconds(15),
+                heartbeatTimeout: TimeSpan.FromSeconds(45),
+                reconnectOptions: new WsReconnectOptions
+                {
+                    EnableAutoReconnect = true,
+                    MaxRetryCount = 0,
+                    InitialDelay = TimeSpan.FromSeconds(2),
+                    MaxDelay = TimeSpan.FromSeconds(30),
+                    UseExponentialBackoff = true,
+                    BackoffFactor = 2.0,
+                    RetryImmediatelyFirstTime = false
+                });
+
+                _wsClient.SetMainWindowHandle(wnd_handel);
+
+
+
+
+                _wsClient.OnLog += msg => LogWriteLine(msg);
+                _wsClient.OnConnecting += () => LogWriteLine("正在连接服务器...");
+                _wsClient.OnConnected += () => LogWriteLine("首次连接成功");
+                _wsClient.OnDisconnected += reason => LogWriteLine("连接断开: " + reason);
+                _wsClient.OnReconnecting += (_, e) =>
+                    LogWriteLine($"第 {e.RetryCount} 次重连中，{e.Delay.TotalSeconds} 秒后重试，原因: {e.Reason}");
+                _wsClient.OnReconnectSucceeded += count =>
+                    LogWriteLine($"重连成功，之前累计重试次数: {count}");
+                _wsClient.OnHeartbeatTimeout += timeout =>
+                    LogWriteLine($"心跳超时: {timeout.TotalSeconds} 秒");
+                _wsClient.OnStopped += () => LogWriteLine("客户端已停止");
+
+                RegisterWsHandlers(_wsClient);
+
+                await _wsClient.StartAsync();
+
+            });
+
+        }
+
+        private void RegisterWsHandlers(WsClientService wsClient)
+        {
+            wsClient.RegisterGetConfigHandler(() => _appSettings);
+
+            wsClient.RegisterSetConfigHandler(payload =>
+            {
+                if (payload.ValueKind == JsonValueKind.Object)
+                {
+                    //if (payload.TryGetProperty("serverUrl", out var p1))
+                    //    config.ServerUrl = p1.GetString() ?? config.ServerUrl;
+
+                    //if (payload.TryGetProperty("clientId", out var p2))
+                    //    config.ClientId = p2.GetString() ?? config.ClientId;
+
+                    //if (payload.TryGetProperty("token", out var p3))
+                    //    config.Token = p3.GetString() ?? config.Token;
+
+                    //if (payload.TryGetProperty("deviceName", out var p4))
+                    //    config.DeviceName = p4.GetString() ?? config.DeviceName;
+
+                    //if (payload.TryGetProperty("timeout", out var p5) && p5.TryGetInt32(out var timeout))
+                    //    config.Timeout = timeout;
+                }
+
+                //ClientConfigStore.Save(_configFile, config);
+                LogWriteLine("配置已保存到本地");
+                return (object)_appSettings;
+            });
+
+            wsClient.RegisterAppStartHandler(args =>
+            {
+                string name = "";
+                string filePath = "";
+                string arguments = "";
+
+                if (args.ValueKind == JsonValueKind.Object)
+                {
+                    if (args.TryGetProperty("name", out var p1))
+                        name = p1.GetString() ?? "";
+
+                    if (args.TryGetProperty("filePath", out var p2))
+                        filePath = p2.GetString() ?? "";
+
+                    if (args.TryGetProperty("arguments", out var p3))
+                        arguments = p3.GetString() ?? "";
+                }
+
+                if (string.IsNullOrWhiteSpace(filePath))
+                    throw new InvalidOperationException("filePath 不能为空");
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = filePath,
+                    Arguments = arguments,
+                    UseShellExecute = true
+                };
+
+                var p = Process.Start(psi);
+                if (p == null)
+                    throw new InvalidOperationException("应用启动失败");
+
+                return (object)new
+                {
+                    name,
+                    filePath,
+                    processId = p.Id,
+                    message = "应用已启动"
+                };
+            });
+
+            wsClient.RegisterAppStopHandler(args =>
+            {
+                string name = "";
+                int processId = 0;
+
+                if (args.ValueKind == JsonValueKind.Object)
+                {
+                    if (args.TryGetProperty("name", out var p1))
+                        name = p1.GetString() ?? "";
+
+                    if (args.TryGetProperty("processId", out var p2) && p2.TryGetInt32(out var pid))
+                        processId = pid;
+                }
+
+                int killed = 0;
+
+                if (processId > 0)
+                {
+                    try
+                    {
+                        var p = Process.GetProcessById(processId);
+                        p.Kill(true);
+                        killed++;
+                    }
+                    catch
+                    {
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(name))
+                {
+                    foreach (var p in Process.GetProcessesByName(name))
+                    {
+                        try
+                        {
+                            p.Kill(true);
+                            killed++;
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException("name 或 processId 至少传一个");
+                }
+
+                return (object)new
+                {
+                    name,
+                    processId,
+                    killed,
+                    message = killed > 0 ? "应用已停止" : "未找到可停止的进程"
+                };
+            });
+        }
+
+
+
         #region 自动更新
         private async Task HandleStartupAutomationAsync(FileVersionInfo? latestVersion)
         {
@@ -521,9 +711,6 @@ namespace MainClient
             ILogger<MainForm> logger)
         {
             InitializeComponent();
-
-
-
             this._domainService = domainService;
             this._playwrightProvider = playwrightProvider;
             this._aggregator = aggregator;
@@ -551,6 +738,7 @@ namespace MainClient
             }
             #endregion
 
+            ///InitWsClient();
         }
         public async Task InitGlobalStatus()
         {
@@ -763,6 +951,9 @@ namespace MainClient
         #region 应用设置
         private void LoadAppSetting()
         {
+            //  if (_appSettings.Rfq1688Rate > 1)
+            //      _appSettings.Rfq1688Rate = 1;
+
             comboBox_QTPName.Text = _appSettings.QTPName;
             textBox_ProxyIpUrl.Text = _appSettings.ProxyIpUrl;
             textBox_TaskApiUrl.Text = _appSettings.TaskApiUrl;
@@ -810,6 +1001,8 @@ namespace MainClient
             checkBox_p4psearch.Checked = _appSettings.p4psearch;
             numericUpDown_p4psearchRate.Value = _appSettings.p4psearchRate;
             checkBox_AutoUpdate.Checked = _appSettings.AutoUpdate;
+
+
 
         }
         private static object lock_config = new object();
@@ -1497,24 +1690,33 @@ namespace MainClient
 
             if (os == OSType.ANDROID)
             {
+
                 var m1 = Regex.Match(ua, @"(?<=Android\s+)([\d.]+);([\S\s]+)(?=Build)");
                 if (m1.Success && m1.Groups.Count == 3)
                 {
                     var model = m1.Groups[2].Value.Trim();
                     model = Regex.Replace(model, "^.*?;\\s*", "");
-
                     dev["osv"] = m1.Groups[1].Value.Trim();
                     dev["model"] = model.Trim();
                 }
                 else
                 {
-                    dev["osv"] = "13";
+                    if (dev.SelectToken("osv") != null && dev.SelectToken("model") != null)
+                    {
+                        dev["osv"] = dev["osv"]!.Value<string>();
+                        dev["model"] = dev["model"]!.Value<string>();
+                    }
+                    else
+                    {
+                        dev["osv"] = "13";
+                    }
+
                 }
 
                 var m2 = Regex.Match(ua, @"Chrome/([\d.]+)");
                 dev["full_version"] = m2.Success && m2.Groups.Count == 2
                     ? m2.Groups[1].Value.Trim()
-                    : "132.0.6834.186";
+                    : _appSettings.KernelVersion;
             }
             else if (os == OSType.IOS)
             {
@@ -2059,5 +2261,22 @@ namespace MainClient
         {
             SystemCleaner.RestartComputer();
         }
+
+        //protected override async void OnFormClosing(FormClosingEventArgs e)
+        //{
+        //    if (_wsClient != null)
+        //    {
+        //        try
+        //        {
+        //            await _wsClient.StopAsync();
+        //            await _wsClient.DisposeAsync();
+        //        }
+        //        catch
+        //        {
+        //        }
+        //    }
+
+        //    base.OnFormClosing(e);
+        //}
     }
 }

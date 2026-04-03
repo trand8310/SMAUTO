@@ -285,7 +285,7 @@ namespace QTP
                 if (_appSettings.UseLocalWord)
                     wordName = _appSettings.WordName;
                 else
-                    wordName = "default";
+                    wordName = $"default_{_appSettings.WordType}_{_appSettings.FetchRecently}天{(_appSettings.DistinctByHour ? "去重" : "")}";
             }
 
             var host = await CommonHelper.GetHostAsync();
@@ -299,7 +299,7 @@ namespace QTP
                     host = host,
                     task = _appSettings.TaskName,
                     version = _options.AppVersion,
-                    proxy=  GetProxyHostSafely(_appSettings.ProxyIpUrl),
+                    proxy = GetProxyHostSafely(_appSettings.ProxyIpUrl),
                     fullproxy = _appSettings.ProxyIpUrl,
                     wordname = wordName,
                     metrics = metrics,

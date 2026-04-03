@@ -1038,6 +1038,226 @@ namespace SMAd.Swiperv3
         }
 
         #endregion
+
+
+
+        public static async Task<List<SwipeTrace>> SwipeToElementAsync(
+        IPage page,
+        ICDPSession client,
+        ILocator element,
+        int maxSwipes = 10,
+        CancellationToken cancellationToken = default)
+        {
+            var traces = new List<SwipeTrace>();
+
+            if (page == null || page.IsClosed || client == null || element == null || page.ViewportSize == null || maxSwipes <= 0)
+                return traces;
+
+            int vw = page.ViewportSize.Width;
+            int vh = page.ViewportSize.Height;
+
+            float comfortTop = vh * 0.22f;
+            float comfortBottom = vh * 0.72f;
+
+            try
+            {
+                // 先确保元素至少挂在 DOM 中
+                if (await element.CountAsync() <= 0)
+                    return traces;
+            }
+            catch
+            {
+                return traces;
+            }
+
+            for (int i = 0; i < maxSwipes; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (page.IsClosed)
+                    return traces;
+
+                try
+                {
+                    var box = await element.BoundingBoxAsync();
+
+                    // 元素拿不到 box，通常是还没进视口，先根据 DOM 位置判断大致方向
+                    if (box == null)
+                    {
+                        var pos = await GetElementViewportPositionAsync(page, element);
+                        if (pos == null)
+                            return traces;
+
+                        ScrollDirection direction = pos.CenterY < 0
+                            ? ScrollDirection.Down   // 元素在屏幕上方，手指下滑，让页面往上回
+                            : ScrollDirection.Up;    // 元素在屏幕下方，手指上滑，让页面往下走
+
+                        bool micro = false;
+                        int? distance = (int)Math.Clamp(vh * 0.42, vh * 0.24, vh * 0.58);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: direction,
+                            area: SwipeArea.Normal,
+                            microSwipe: micro,
+                            totalDistancePx: distance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                            return traces;
+
+                        traces.Add(trace);
+
+                        await Task.Delay(RandomUtil.NextInt(120, 260), cancellationToken);
+                        continue;
+                    }
+
+                    float top = (float)box.Y;
+                    float bottom = (float)(box.Y + box.Height);
+                    float centerY = (float)(box.Y + box.Height / 2.0);
+
+                    // 已经在舒适区，直接结束
+                    if (centerY >= comfortTop && centerY <= comfortBottom)
+                        return traces;
+
+                    // 在视口里，但不在舒适区：做微调/中调
+                    if (bottom >= 0 && top <= vh)
+                    {
+                        double distanceToComfort = centerY < comfortTop
+                            ? comfortTop - centerY
+                            : centerY - comfortBottom;
+
+                        ScrollDirection direction = centerY < comfortTop
+                            ? ScrollDirection.Down
+                            : ScrollDirection.Up;
+
+                        bool useMicro = distanceToComfort < vh * 0.20;
+
+                        int? targetDistance = useMicro
+                            ? (int)Math.Clamp(distanceToComfort * 0.90, vh * 0.08, vh * 0.18)
+                            : (int)Math.Clamp(distanceToComfort * 0.95, vh * 0.18, vh * 0.42);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: direction,
+                            area: useMicro ? SwipeArea.Micro : SwipeArea.Normal,
+                            microSwipe: useMicro,
+                            totalDistancePx: targetDistance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                            return traces;
+
+                        traces.Add(trace);
+
+                        await Task.Delay(RandomUtil.NextInt(100, 220), cancellationToken);
+                        continue;
+                    }
+
+                    // 完全在视口下方
+                    if (top > vh)
+                    {
+                        double distance = top - comfortBottom;
+                        int? targetDistance = (int)Math.Clamp(distance * 0.92, vh * 0.22, vh * 0.58);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: ScrollDirection.Up,
+                            area: SwipeArea.Normal,
+                            microSwipe: false,
+                            totalDistancePx: targetDistance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                            return traces;
+
+                        traces.Add(trace);
+
+                        await Task.Delay(RandomUtil.NextInt(120, 260), cancellationToken);
+                        continue;
+                    }
+
+                    // 完全在视口上方
+                    if (bottom < 0)
+                    {
+                        double distance = comfortTop - bottom;
+                        int? targetDistance = (int)Math.Clamp(distance * 0.92, vh * 0.18, vh * 0.46);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: ScrollDirection.Down,
+                            area: SwipeArea.Normal,
+                            microSwipe: false,
+                            totalDistancePx: targetDistance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                            return traces;
+
+                        traces.Add(trace);
+
+                        await Task.Delay(RandomUtil.NextInt(120, 260), cancellationToken);
+                        continue;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    return traces;
+                }
+            }
+
+            return traces;
+        }
+
+
+        private sealed class ElementViewportPosition
+        {
+            public double Top { get; set; }
+            public double Bottom { get; set; }
+            public double CenterY { get; set; }
+            public double ViewportHeight { get; set; }
+        }
+
+        private static async Task<ElementViewportPosition?> GetElementViewportPositionAsync(IPage page, ILocator element)
+        {
+            if (page == null || page.IsClosed || element == null)
+                return null;
+
+            try
+            {
+                return await page.EvaluateAsync<ElementViewportPosition>(@"
+                (el) => {
+                    try {
+                        if (!el) return null;
+                        const r = el.getBoundingClientRect();
+                        return {
+                            Top: Number(r.top || 0),
+                            Bottom: Number(r.bottom || 0),
+                            CenterY: Number((r.top + r.bottom) / 2 || 0),
+                            ViewportHeight: Number(window.innerHeight || document.documentElement.clientHeight || 0)
+                        };
+                    } catch {
+                        return null;
+                    }
+                }", await element.ElementHandleAsync());
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 
     public static class SwipeTraceRenderer
