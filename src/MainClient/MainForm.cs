@@ -433,7 +433,8 @@ namespace MainClient
 
         private void RegisterWsHandlers(WsClientService wsClient)
         {
-            wsClient.RegisterGetConfigHandler(() => {
+            wsClient.RegisterGetConfigHandler(() =>
+            {
 
                 LogWriteLine("获取配置");
                 return _appSettings;
@@ -737,7 +738,7 @@ namespace MainClient
             }
             #endregion
 
-            InitWsClient();
+            //InitWsClient();
         }
         public async Task InitGlobalStatus()
         {
@@ -952,6 +953,8 @@ namespace MainClient
         {
             //  if (_appSettings.Rfq1688Rate > 1)
             //      _appSettings.Rfq1688Rate = 1;
+            if (_appSettings.MinFrequency == 0)
+                _appSettings.MinFrequency = 1;
 
             comboBox_QTPName.Text = _appSettings.QTPName;
             textBox_ProxyIpUrl.Text = _appSettings.ProxyIpUrl;
@@ -1000,7 +1003,7 @@ namespace MainClient
             checkBox_p4psearch.Checked = _appSettings.p4psearch;
             numericUpDown_p4psearchRate.Value = _appSettings.p4psearchRate;
             checkBox_AutoUpdate.Checked = _appSettings.AutoUpdate;
-
+            numericUpDown_MinFrequency.Value = _appSettings.MinFrequency;
 
 
         }
@@ -1057,6 +1060,7 @@ namespace MainClient
                 _appSettings.p4psearchRate = (int)numericUpDown_p4psearchRate.Value;
 
                 _appSettings.AutoUpdate = checkBox_AutoUpdate.Checked;
+                _appSettings.MinFrequency = (int)numericUpDown_MinFrequency.Value;
                 UserConfigService.Save("AppSettings", _appSettings);
             }
 
@@ -1721,18 +1725,11 @@ namespace MainClient
             {
                 dev["full_version"] = dev["osv"];
             }
-            else
+            else if (os == OSType.PC)
             {
-                if ((dev["width"]?.Value<int>() ?? 0) < 1920)
-                {
-                    dev["width"] = 1920;
-                    dev["height"] = 1080;
-                }
+                dev["gpu"] = dev["renderer"];
+                dev["vendor"] = dev["vender"];
 
-                dev["full_version"] =
-                    dev["fullVersionList"]?
-                        .FirstOrDefault(p => p["brand"]?.Value<string>() == "Chromium")?["version"]?.Value<string>()
-                    ?? "132.0.6834.186";
             }
         }
 
@@ -2261,21 +2258,21 @@ namespace MainClient
             SystemCleaner.RestartComputer();
         }
 
-        protected override async void OnFormClosing(FormClosingEventArgs e)
-        {
-            if (_wsClient != null)
-            {
-                try
-                {
-                    await _wsClient.StopAsync();
-                    await _wsClient.DisposeAsync();
-                }
-                catch
-                {
-                }
-            }
+        //protected override async void OnFormClosing(FormClosingEventArgs e)
+        //{
+        //    if (_wsClient != null)
+        //    {
+        //        try
+        //        {
+        //            await _wsClient.StopAsync();
+        //            await _wsClient.DisposeAsync();
+        //        }
+        //        catch
+        //        {
+        //        }
+        //    }
 
-            base.OnFormClosing(e);
-        }
+        //    base.OnFormClosing(e);
+        //}
     }
 }

@@ -449,6 +449,60 @@ namespace QTP.Common
             return false;
         }
 
+        public static async Task DispatchMouseMoveAsync(
+        ICDPSession cdp,
+        double x,
+        double y,
+        CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await cdp.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
+            {
+                ["type"] = "mouseMoved",
+                ["x"] = x,
+                ["y"] = y,
+                ["button"] = "none",
+                ["buttons"] = 0,
+                ["pointerType"] = "mouse"
+            });
+        }
+
+
+        public static async Task DispatchMouseClickAsync(
+           ICDPSession cdp,
+           double x,
+           double y,
+           CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await cdp.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
+            {
+                ["type"] = "mousePressed",
+                ["x"] = x,
+                ["y"] = y,
+                ["button"] = "left",
+                ["buttons"] = 1,
+                ["clickCount"] = 1,
+                ["pointerType"] = "mouse"
+            });
+
+            await Task.Delay(50, cancellationToken);
+
+            await cdp.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
+            {
+                ["type"] = "mouseReleased",
+                ["x"] = x,
+                ["y"] = y,
+                ["button"] = "left",
+                ["buttons"] = 1,
+                ["clickCount"] = 1,
+                ["pointerType"] = "mouse"
+            });
+        }
+
+
 
 
         public static async Task<bool> MouseClickAsync(IFrame page, ICDPSession cdpSession, ILocator element, int dir = 0, Action<string>? action = null)

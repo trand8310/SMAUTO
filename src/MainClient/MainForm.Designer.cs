@@ -90,13 +90,14 @@
             checkBox_NotTriggerDownload = new CheckBox();
             checkBox_UseDynamicWord = new CheckBox();
             groupBox1 = new GroupBox();
+            label13 = new Label();
+            numericUpDown_MinFrequency = new NumericUpDown();
             label41 = new Label();
             textBox_ExcludeWords = new TextBox();
             button4 = new Button();
             checkBox_DistinctByHour = new CheckBox();
             comboBox_DynamicWordName = new ComboBox();
             label40 = new Label();
-            label24 = new Label();
             label32 = new Label();
             numericUpDown_FetchRecently = new NumericUpDown();
             label16 = new Label();
@@ -146,6 +147,7 @@
             ((System.ComponentModel.ISupportInitialize)numericUpDown_p4psearchRate).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Rfq1688Rate).BeginInit();
             groupBox1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown_MinFrequency).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchRecently).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).BeginInit();
@@ -839,25 +841,44 @@
             // 
             // groupBox1
             // 
+            groupBox1.Controls.Add(label13);
+            groupBox1.Controls.Add(numericUpDown_MinFrequency);
             groupBox1.Controls.Add(label41);
             groupBox1.Controls.Add(textBox_ExcludeWords);
             groupBox1.Controls.Add(button4);
             groupBox1.Controls.Add(checkBox_DistinctByHour);
             groupBox1.Controls.Add(comboBox_DynamicWordName);
             groupBox1.Controls.Add(label40);
-            groupBox1.Controls.Add(label24);
             groupBox1.Controls.Add(label32);
             groupBox1.Controls.Add(numericUpDown_FetchRecently);
             groupBox1.Controls.Add(label16);
             groupBox1.Controls.Add(comboBox_WordType);
-            groupBox1.Location = new Point(774, 303);
+            groupBox1.Location = new Point(741, 303);
             groupBox1.Margin = new Padding(5);
             groupBox1.Name = "groupBox1";
             groupBox1.Padding = new Padding(5);
-            groupBox1.Size = new Size(294, 222);
+            groupBox1.Size = new Size(327, 222);
             groupBox1.TabIndex = 163;
             groupBox1.TabStop = false;
             groupBox1.Text = "动态词库";
+            // 
+            // label13
+            // 
+            label13.AutoSize = true;
+            label13.Location = new Point(156, 92);
+            label13.Margin = new Padding(5, 0, 5, 0);
+            label13.Name = "label13";
+            label13.Size = new Size(62, 20);
+            label13.TabIndex = 170;
+            label13.Text = "天,频率:";
+            // 
+            // numericUpDown_MinFrequency
+            // 
+            numericUpDown_MinFrequency.Location = new Point(222, 88);
+            numericUpDown_MinFrequency.Margin = new Padding(5, 4, 5, 4);
+            numericUpDown_MinFrequency.Name = "numericUpDown_MinFrequency";
+            numericUpDown_MinFrequency.Size = new Size(55, 27);
+            numericUpDown_MinFrequency.TabIndex = 171;
             // 
             // label41
             // 
@@ -915,16 +936,6 @@
             label40.TabIndex = 164;
             label40.Text = "词库名称:";
             // 
-            // label24
-            // 
-            label24.AutoSize = true;
-            label24.Location = new Point(202, 91);
-            label24.Margin = new Padding(5, 0, 5, 0);
-            label24.Name = "label24";
-            label24.Size = new Size(24, 20);
-            label24.TabIndex = 157;
-            label24.Text = "天";
-            // 
             // label32
             // 
             label32.AutoSize = true;
@@ -940,7 +951,7 @@
             numericUpDown_FetchRecently.Location = new Point(91, 88);
             numericUpDown_FetchRecently.Margin = new Padding(5, 4, 5, 4);
             numericUpDown_FetchRecently.Name = "numericUpDown_FetchRecently";
-            numericUpDown_FetchRecently.Size = new Size(108, 27);
+            numericUpDown_FetchRecently.Size = new Size(61, 27);
             numericUpDown_FetchRecently.TabIndex = 156;
             // 
             // label16
@@ -1103,7 +1114,7 @@
             // 
             numericUpDown_IpTtl.Location = new Point(429, 265);
             numericUpDown_IpTtl.Margin = new Padding(5, 4, 5, 4);
-            numericUpDown_IpTtl.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
+            numericUpDown_IpTtl.Maximum = new decimal(new int[] { 1800, 0, 0, 0 });
             numericUpDown_IpTtl.Name = "numericUpDown_IpTtl";
             numericUpDown_IpTtl.Size = new Size(87, 27);
             numericUpDown_IpTtl.TabIndex = 140;
@@ -1340,6 +1351,7 @@
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Rfq1688Rate).EndInit();
             groupBox1.ResumeLayout(false);
             groupBox1.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown_MinFrequency).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchRecently).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).EndInit();
@@ -1390,7 +1402,6 @@
         private ToolStripStatusLabel toolStripStatusLabel6;
         private Label label16;
         private NumericUpDown numericUpDown_PageLoadingTimeout;
-        private Label label24;
         private ComboBox comboBox_QTPName;
         private Label label25;
         private TabControl tabControl1;
@@ -1458,6 +1469,8 @@
         private Button button2;
         private Button button3;
         private CheckBox checkBox_AutoUpdate;
+        private Label label13;
+        private NumericUpDown numericUpDown_MinFrequency;
     }
 }
 

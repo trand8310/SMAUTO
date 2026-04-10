@@ -79,7 +79,9 @@ namespace QTP
                 var client = _httpClientFactory.CreateClient();
                 client.DefaultRequestHeaders.Clear();
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
-                var url = $"{devApiUrl}?type={(os == OSType.IOS ? "ios" : "android")}&count={count}&t={System.DateTime.Now.Ticks}";
+                var type = os == OSType.IOS ? "ios" : os == OSType.PC ? "win" : "android";
+
+                var url = $"{devApiUrl}?type={type}&count={count}&t={System.DateTime.Now.Ticks}";
                 HttpResponseMessage response = await client.GetAsync(url);
                 response.EnsureSuccessStatusCode();
                 if (response.IsSuccessStatusCode)
@@ -520,11 +522,15 @@ namespace QTP
                     var bidRequest = new JObject();
                     bidRequest["category"] = _appSettings.WordType;
                     bidRequest["count"] = count;
+                    bidRequest["minFrequency"] = _appSettings.MinFrequency;
+                    
                     bidRequest["exclude"] = JArray.FromObject(_appSettings.ExcludeWords.Split(System.Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
                     if (!string.IsNullOrWhiteSpace(_appSettings.DynamicWordName) && !_appSettings.DynamicWordName.Equals("不使用采集库"))
                     {
                         builder.Append($"/api{_apiVersion}/get_spider_word.php?t={System.DateTime.Now.Ticks}");
                         bidRequest["name"] = _appSettings.DynamicWordName;
+                        bidRequest["distinct"] = _appSettings.DistinctByHour ? 1 : 0;
+                        bidRequest["recently"] = _appSettings.FetchRecently;
                     }
                     else
                     {

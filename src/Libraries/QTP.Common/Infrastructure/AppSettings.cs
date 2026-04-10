@@ -108,6 +108,10 @@
         /// 动态态库,取词周期
         /// </summary>
         public int FetchRecently { get; set; }
+        /// <summary>
+        /// 取词频率
+        /// </summary>
+        public int MinFrequency { get; set; }
 
 
         /// <summary>
