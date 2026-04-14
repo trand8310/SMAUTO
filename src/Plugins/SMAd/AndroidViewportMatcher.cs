@@ -3,6 +3,7 @@
 namespace SMAd
 {
     using System;
+    using System.Diagnostics;
     using System.Linq;
 
     public sealed class DeviceProfileResult
@@ -110,6 +111,10 @@ namespace SMAd
             {
                 // 兜底：按最常见 360 宽去算
                 float dpr = (float)physicalWidth / 360f;
+                if (dpr > 5.0f)
+                {
+                    Debug.WriteLine("50.");
+                }
                 int cssHeight = (int)Math.Round(physicalHeight / dpr);
 
                 return new DeviceProfileResult

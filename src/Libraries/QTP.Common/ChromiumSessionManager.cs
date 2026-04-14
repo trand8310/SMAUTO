@@ -133,11 +133,13 @@ namespace QTP.Common
                 }
                 catch (Win32Exception ex) when (ex.NativeErrorCode == 1455)
                 {
-                    if (ShouldRestartFor1455())
-                    {
-                        SafeRestartHelper.RequestSystemRestart("连续 1455，系统资源不足");
-                    }
-                    throw new InvalidOperationException($"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}",ex);
+                    SafeRestartHelper.RequestSystemRestart("连续 1455，系统资源不足");
+
+                    //if (ShouldRestartFor1455())
+                    //{
+                    //    SafeRestartHelper.RequestSystemRestart("连续 1455，系统资源不足");
+                    //}
+                    //throw new InvalidOperationException($"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}",ex);
 
                     //throw new InvalidOperationException($"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}", ex);
                 }

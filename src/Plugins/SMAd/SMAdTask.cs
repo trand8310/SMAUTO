@@ -1583,7 +1583,7 @@ namespace QTP.Plugins
 
                 if (ctx.Config.IsTest)
                 {
-                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=%E6%BF%80%E7%B4%A0%E4%BE%9D%E8%B5%96%E6%80%A7%E7%9A%AE%E7%82%8E";
+                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=lv";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/KtpmHjYN5sC8vyEfvBSesVjwn9Z/index.html?babelChannel=ttt12";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/27cGVLCp2Rk5UAemjMvigeJXok9/index.html?babelChannel=ttt1&hy_entry=UC_SearchSkin";
                     //entry.FirstPageUrl = "https://m.1688.com/zw/hamlet.html?scene=8&q=%E7%AF%AE%E7%90%83%E8%B6%B3%E7%90%83&imgurl=img/ibank/O1CN014k1XW01LMa13eBYoI_!!2207873421285-0-cib.jpg&cosite=smjj&keywordid=74320369958&trackid={}&format=shandian&bd_vid=11084568593119754510&outerId=618324461983&creative=50000002313693958&trackid=88585857717827007619670&clickid=11084568593119754510&uctrackid=czoxMTY5NjMwNTUyNjMzNDM1MDE2MTtjOjUwMDAwMDAyMzEzNjkzOTU4O2Q6ZG1wXy01NjI5MzQyMTI1NDM3MjIyOTQ4O3A6d2w=&flowfrom=shenma";
@@ -1607,7 +1607,6 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
 
                 }
-
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
                     LogWriteLine($"{this.Title}:RunMainFlow: FirstPageUrl为空");
@@ -2800,12 +2799,13 @@ namespace QTP.Plugins
                 }
 
                 int score = 0;
-                if (dataUrl.Contains("1688.com")) score = 100;
-                else if (dataUrl.Contains("taobao.com")) score = 90;
-                else if (dataUrl.Contains("jd.com")) score = 80;
-                else if (dataUrl.Contains("baidu.com")) score = 70;
+                if (dataUrl.Contains("1688.com")) score = 50;
+                else if (dataUrl.Contains("jd.com")) score = 60;
+                else if (dataUrl.Contains("qq.com")) score = 70;
+                else if (dataUrl.Contains("baidu.com")) score = 80;
+                else if (dataUrl.Contains("taobao.com")) score = 100;
                 else if (dataUrl.Contains("pinduoduo.com")) score = 800;
-                else if (dataUrl.Contains("qq.com")) score = 900;
+
 
                 scored.Add((score * 1000 + i, sponsored));
             }
@@ -3224,7 +3224,7 @@ namespace QTP.Plugins
                     }
                     else
                     {
-                        await _owner.TryRandomLinkClickAsync(ctx, "a:visible", token);
+                        //await _owner.TryRandomLinkClickAsync(ctx, "a:visible", token);
                     }
                 }
 
@@ -4717,16 +4717,16 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+            await DecideJumpClickAsync(ctx, token);
+            // var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
 
-            var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
-          
 
 
 
             // var handleFlow = await HandleLandingPageAsync(ctx, token);
             //ctx.JumpClick = true;
             //ctx.PageTriggerClick = true;
-            var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
+            // var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
 
             //await Task.Delay(CommonHelper.RandomRange(5000, 8000));
             //this.QTPExecuteSuccess(ctx.Config.TaskId);
@@ -4734,7 +4734,7 @@ namespace QTP.Plugins
             //await Task.Delay(ctx.Config.SleepMs, token);
 
 
-            await Task.Delay(TimeSpan.FromSeconds(150));
+            await Task.Delay(TimeSpan.FromSeconds(150), token);
             //var anchorCenten = ctx.Page!.Locator(".anchor-centen").Filter(new()
             //{
             //    Has = ctx.Page!.Locator("span").Filter(new()

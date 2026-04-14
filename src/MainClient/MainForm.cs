@@ -1670,7 +1670,7 @@ namespace MainClient
             {
                 token.ThrowIfCancellationRequested();
 
-                var dev = await _adeHelper.GetDeviceAsync(os, 100);
+                var dev = await _adeHelper.GetDeviceAsync(os, 1);
                 if (dev != null)
                     return dev;
             }

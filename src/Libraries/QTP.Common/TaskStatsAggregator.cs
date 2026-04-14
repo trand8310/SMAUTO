@@ -271,9 +271,19 @@ namespace QTP
 
         private readonly TaskStats _totalStats = new();
 
-        private readonly ConcurrentDictionary<int, TaskStats> _taskGlobalBaseline = new();
-        private readonly ConcurrentDictionary<int, double> _taskClickRates = new();
-        private readonly ConcurrentDictionary<int, SemaphoreSlim> _baselineInitLocks = new();
+        public readonly record struct TaskHourKey(int TaskId, string HourKey);
+        private static TaskHourKey GetClickHourKey(int taskId)
+        {
+            return new TaskHourKey(taskId, GetHourKey());
+        }
+
+        //private readonly ConcurrentDictionary<int, TaskStats> _taskGlobalBaseline = new();
+        //private readonly ConcurrentDictionary<int, double> _taskClickRates = new();
+        //private readonly ConcurrentDictionary<int, SemaphoreSlim> _baselineInitLocks = new();
+
+        private readonly ConcurrentDictionary<TaskHourKey, TaskStats> _taskGlobalBaseline = new();
+        private readonly ConcurrentDictionary<TaskHourKey, double> _taskClickRates = new();
+        private readonly ConcurrentDictionary<TaskHourKey, SemaphoreSlim> _baselineInitLocks = new();
 
         private readonly AdeHelper _adeHelper;
         private readonly AppSettings _appSettings;
@@ -513,11 +523,13 @@ namespace QTP
             return stats.HomepageTriggerRatio < _appSettings.HompageTrigger;
         }
 
+
         public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)
         {
             await EnsureTaskBaselineAsync(taskId, taskCtr).ConfigureAwait(false);
 
-            var baseline = _taskGlobalBaseline[taskId];
+            var key = GetClickHourKey(taskId);
+            var baseline = _taskGlobalBaseline[key];
             var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
 
             long totalDsp = baseline.DSP + stats.DSP;
@@ -528,13 +540,15 @@ namespace QTP
             return totalClick / (double)totalDsp;
         }
 
+
         public async Task<bool> CanClickthroughAsync(int taskId, double taskCtr = 100)
         {
             await EnsureTaskBaselineAsync(taskId, taskCtr).ConfigureAwait(false);
 
-            var baseline = _taskGlobalBaseline[taskId];
+            var key = GetClickHourKey(taskId);
+            var baseline = _taskGlobalBaseline[key];
             var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
-            var rate = _taskClickRates.TryGetValue(taskId, out var r) ? r : taskCtr;
+            var rate = _taskClickRates.TryGetValue(key, out var r) ? r : taskCtr;
 
             if (rate <= 0)
                 return false;
@@ -548,6 +562,7 @@ namespace QTP
 
             return totalClick < targetClick;
         }
+
 
         #endregion
 
@@ -1009,20 +1024,22 @@ namespace QTP
 
         private async Task EnsureTaskBaselineAsync(int taskId, double taskCtr)
         {
-            if (_taskGlobalBaseline.ContainsKey(taskId))
+            var key = GetClickHourKey(taskId);
+
+            if (_taskGlobalBaseline.ContainsKey(key))
             {
-                _taskClickRates.TryAdd(taskId, taskCtr);
+                _taskClickRates[key] = taskCtr;
                 return;
             }
 
-            var gate = _baselineInitLocks.GetOrAdd(taskId, _ => new SemaphoreSlim(1, 1));
+            var gate = _baselineInitLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
             await gate.WaitAsync().ConfigureAwait(false);
 
             try
             {
-                if (_taskGlobalBaseline.ContainsKey(taskId))
+                if (_taskGlobalBaseline.ContainsKey(key))
                 {
-                    _taskClickRates.TryAdd(taskId, taskCtr);
+                    _taskClickRates[key] = taskCtr;
                     return;
                 }
 
@@ -1036,15 +1053,14 @@ namespace QTP
                     globalStats.Clickthrough = resp.SelectToken("data.click")?.Value<long>() ?? 0;
                 }
 
-                _taskGlobalBaseline[taskId] = globalStats;
-                _taskClickRates.TryAdd(taskId, taskCtr);
+                _taskGlobalBaseline[key] = globalStats;
+                _taskClickRates[key] = taskCtr;
             }
             finally
             {
                 gate.Release();
             }
         }
-
         #endregion
 
         #region 时间缓存（UTC + 北京时间）
