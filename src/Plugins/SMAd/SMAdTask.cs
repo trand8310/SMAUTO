@@ -1531,6 +1531,15 @@ namespace QTP.Plugins
                 {
                     try
                     {
+                        if (ctx.CdpManager != null)
+                            await ctx.CdpManager.DisposeAsync();
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
                         if (ctx.Browser != null && ctx.Browser.IsConnected)
                             await ctx.Browser.CloseAsync();
                     }
