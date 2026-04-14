@@ -2409,6 +2409,7 @@ namespace QTP.Plugins
             result.QueryWord = retry.Value;
             result.FirstPageUrl = result.FirstPageUrl.Replace("[QUERY]", retry.Value);
             LogWriteLine($"{this.Title}:搜索词条{retry.Value}");
+            _aggregator.EnqueueAdWordExtracted(retry.Value);
 
             return result;
         }
@@ -2555,6 +2556,8 @@ namespace QTP.Plugins
 
                 if (string.IsNullOrWhiteSpace(q))
                     return true;
+
+                _aggregator.EnqueueAdWordHit(q);
 
                 int ad1688 = 0;
                 int adOther = 0;
