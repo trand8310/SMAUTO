@@ -16,7 +16,7 @@ namespace QTP.Plugins
         {
             public required Lazy<Task<ICDPSession>> LazySession { get; init; }
             public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
-            public EventHandler? CloseHandler;
+            public EventHandler<IPage>? CloseHandler;
         }
 
         private readonly IBrowserContext _context;
@@ -128,7 +128,7 @@ namespace QTP.Plugins
             if (entry.CloseHandler != null)
                 return;
 
-            EventHandler closeHandler = (_, _) => RemoveSession(page);
+            EventHandler<IPage> closeHandler = (_, _) => RemoveSession(page);
             if (Interlocked.CompareExchange(ref entry.CloseHandler, closeHandler, null) == null)
             {
                 page.Close += closeHandler;
