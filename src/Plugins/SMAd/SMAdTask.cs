@@ -1651,6 +1651,7 @@ namespace QTP.Plugins
 
                 if (!gotoOk)
                     continue;
+ 
 
                 if (ctx.Config.IsTest)
                 {
