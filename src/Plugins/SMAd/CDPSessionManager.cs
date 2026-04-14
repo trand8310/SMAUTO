@@ -16,7 +16,7 @@ namespace QTP.Plugins
         {
             public required Lazy<Task<ICDPSession>> LazySession { get; init; }
             public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
-            public EventHandler? CloseHandler { get; set; }
+            public EventHandler? CloseHandler;
         }
 
         private readonly IBrowserContext _context;
