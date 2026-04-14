@@ -2258,21 +2258,21 @@ namespace MainClient
             SystemCleaner.RestartComputer();
         }
 
-        //protected override async void OnFormClosing(FormClosingEventArgs e)
-        //{
-        //    if (_wsClient != null)
-        //    {
-        //        try
-        //        {
-        //            await _wsClient.StopAsync();
-        //            await _wsClient.DisposeAsync();
-        //        }
-        //        catch
-        //        {
-        //        }
-        //    }
+        protected override async void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (_wsClient != null)
+            {
+                try
+                {
+                    await _wsClient.StopAsync();
+                    await _wsClient.DisposeAsync();
+                }
+                catch
+                {
+                }
+            }
 
-        //    base.OnFormClosing(e);
-        //}
+            base.OnFormClosing(e);
+        }
     }
 }
