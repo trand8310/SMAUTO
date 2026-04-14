@@ -882,6 +882,49 @@ namespace QTP
 
         }
 
+        /// <summary>
+        /// 广告词提取/命中统计
+        /// </summary>
+        public async Task UpdateAdWordStatsAsync(List<AdWordUsageStat> items, CancellationToken token = default)
+        {
+            if (items == null || items.Count == 0)
+                return;
+
+            try
+            {
+                var host = await CommonHelper.GetHostAsync();
+                string baseUrl = new Uri(_appSettings.TaskApiUrl).GetLeftPart(UriPartial.Authority);
+                var client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
+
+                var bidRequest = new JObject
+                {
+                    ["items"] = JArray.FromObject(items),
+                    ["host"] = host,
+                    ["wordname"] = _appSettings.WordName
+                };
+
+                StringBuilder builder = new StringBuilder(baseUrl);
+                builder.Append($"/api{_apiVersion}/cloud_word.php?action=update_adword_stats&t={System.DateTime.Now.Ticks}");
+
+                var postData = JsonConvert.SerializeObject(bidRequest);
+                using HttpContent content = new StringContent(postData);
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+                var response = await client.PostAsync(builder.ToString(), content, token);
+                response.EnsureSuccessStatusCode();
+            }
+            catch (OperationCanceledException)
+            {
+                // 请求被取消，安全退出
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"UpdateAdWordStatsAsync error: {ex.Message}");
+            }
+        }
+
 
         /// <summary>
         /// 上传每个词的域名信息
