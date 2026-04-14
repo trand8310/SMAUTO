@@ -36,6 +36,7 @@ public sealed class WsClientService : IAsyncDisposable
     private int _reconnectAttempt;
     private bool _manualStop;
     private IntPtr _mainWindowHandle = IntPtr.Zero;
+    private long _lastAckSeq;
 
     public WsConnectionState State => _state;
 
@@ -237,7 +238,8 @@ public sealed class WsClientService : IAsyncDisposable
                     machineName = _machineName,
                     version = _version,
                     group = _group,
-                    localIp = _localIp
+                    localIp = _localIp,
+                    lastAckSeq = Interlocked.Read(ref _lastAckSeq)
                 }, token);
 
                 var receiveTask = ReceiveLoopAsync(token);
@@ -408,6 +410,12 @@ public sealed class WsClientService : IAsyncDisposable
             case "register_ack":
                 {
                     var success = root.TryGetProperty("success", out var s) && s.GetBoolean();
+                    if (root.TryGetProperty("ackSeq", out var ackSeqProp) &&
+                        ackSeqProp.ValueKind is JsonValueKind.Number &&
+                        ackSeqProp.TryGetInt64(out var ackSeq))
+                    {
+                        MaxExchange(ref _lastAckSeq, ackSeq);
+                    }
                     Log(success ? $"注册成功，clientId={_clientId}" : "注册失败");
                     return;
                 }
@@ -453,6 +461,21 @@ public sealed class WsClientService : IAsyncDisposable
             ? payloadProp
             : default;
 
+        var seq = 0L;
+        if (root.TryGetProperty("seq", out var seqProp) &&
+            seqProp.ValueKind is JsonValueKind.Number)
+        {
+            seqProp.TryGetInt64(out seq);
+        }
+
+        var currentAck = Interlocked.Read(ref _lastAckSeq);
+        if (seq > 0 && seq <= currentAck)
+        {
+            await SendAckAsync(seq, token);
+            Log($"忽略重复请求: requestId={requestId}, seq={seq}, ackSeq={currentAck}");
+            return;
+        }
+
         bool success = true;
         string? error = null;
         object resultData;
@@ -482,6 +505,37 @@ public sealed class WsClientService : IAsyncDisposable
             error,
             data = resultData
         }, token);
+
+        if (seq > 0)
+        {
+            await SendAckAsync(seq, token);
+        }
+    }
+
+    private async Task SendAckAsync(long seq, CancellationToken token)
+    {
+        await SendJsonAsync(new
+        {
+            type = "ack",
+            clientId = _clientId,
+            seq
+        }, token);
+
+        MaxExchange(ref _lastAckSeq, seq);
+    }
+
+    private static void MaxExchange(ref long target, long candidate)
+    {
+        while (true)
+        {
+            var current = Interlocked.Read(ref target);
+            if (candidate <= current)
+                return;
+
+            var original = Interlocked.CompareExchange(ref target, candidate, current);
+            if (original == current)
+                return;
+        }
     }
 
     public async Task SendJsonAsync(object obj, CancellationToken token = default)
