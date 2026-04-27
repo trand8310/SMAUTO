@@ -22,6 +22,7 @@ using System.IO.Compression;
 using System.Management;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
@@ -949,13 +950,32 @@ namespace MainClient
         }
 
         #region 应用设置
+
+        private void ApplyOneTimeLocalPatch()
+        {
+
+            string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
+            if (!Directory.Exists(patchDir))
+                Directory.CreateDirectory(patchDir);
+            string patchFile = Path.Combine(patchDir, "patch_page_loading_202604252047.done");
+            if (File.Exists(patchFile))
+                return;
+
+            _appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
+            UserConfigService.Save("AppSettings", _appSettings);
+            // 创建标记文件
+            File.WriteAllText(
+                patchFile,
+                $"done at {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+                Encoding.UTF8
+            );
+        }
         private void LoadAppSetting()
         {
-            //  if (_appSettings.Rfq1688Rate > 1)
-            //      _appSettings.Rfq1688Rate = 1;
+
+            ApplyOneTimeLocalPatch();
             if (_appSettings.MinFrequency == 0)
                 _appSettings.MinFrequency = 1;
-
             comboBox_QTPName.Text = _appSettings.QTPName;
             textBox_ProxyIpUrl.Text = _appSettings.ProxyIpUrl;
             textBox_TaskApiUrl.Text = _appSettings.TaskApiUrl;

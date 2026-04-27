@@ -890,6 +890,19 @@ namespace QTP
             if (items == null || items.Count == 0)
                 return;
 
+            string wordName = "default";
+            if (!string.IsNullOrWhiteSpace(_appSettings.DynamicWordName) && !_appSettings.DynamicWordName.Equals("不使用采集库"))
+            {
+                wordName = _appSettings.DynamicWordName;
+            }
+            else
+            {
+                if (_appSettings.UseLocalWord)
+                    wordName = _appSettings.WordName;
+                else
+                    wordName = $"default_{_appSettings.WordType}_{_appSettings.FetchRecently}天{(_appSettings.DistinctByHour ? "去重" : "")}";
+            }
+
             try
             {
                 var host = await CommonHelper.GetHostAsync();
@@ -902,7 +915,7 @@ namespace QTP
                 {
                     ["items"] = JArray.FromObject(items),
                     ["host"] = host,
-                    ["wordname"] = _appSettings.WordName
+                    ["wordname"] = wordName,
                 };
 
                 StringBuilder builder = new StringBuilder(baseUrl);

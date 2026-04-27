@@ -12,6 +12,7 @@
 	<OutputPath>..\Build\publish</OutputPath>
 	<PlatformTarget>x64</PlatformTarget>
 	<AppendTargetFrameworkToOutputPath>output</AppendTargetFrameworkToOutputPath>
+	<ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(PlatformTarget)' == 'x86'">

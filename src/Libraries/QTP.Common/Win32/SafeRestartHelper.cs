@@ -30,5 +30,52 @@ namespace QTP.Common.Win32
             }
         }
 
+        public static bool ForceRestart(int delaySeconds = 0)
+        {
+            try
+            {
+                if (delaySeconds < 0)
+                    delaySeconds = 0;
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "shutdown.exe",
+                    Arguments = $"/r /f /t {delaySeconds}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                Process.Start(psi);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("重启失败：" + ex.Message);
+                return false;
+            }
+        }
+
+        public static bool CancelRestart()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "shutdown.exe",
+                    Arguments = "/a",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                Process.Start(psi);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("取消重启失败：" + ex.Message);
+                return false;
+            }
+        }
+
     }
 }

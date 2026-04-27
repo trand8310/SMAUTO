@@ -11,6 +11,7 @@
 		<OutputPath>..\Build</OutputPath>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<AssemblyName>smaide</AssemblyName>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(PlatformTarget)' == 'x86'">

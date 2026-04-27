@@ -2,6 +2,7 @@
 {
     public class AppSettings
     {
+
         public string QTPName { get; set; }
         public string ProxyIpUrl { get; set; }
         public string TaskApiUrl { get; set; }
