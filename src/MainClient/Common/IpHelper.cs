@@ -150,6 +150,19 @@ namespace MainClient.Common
                                     ipQueues.Enqueue(new IpEntity() { format = iPFormat, json = data });
                                 }
                             }
+                            else if (url.Contains("api.xingyuip.com"))
+                            {
+                                foreach (var data in json.SelectToken("list").Children())
+                                {
+                                    var item = (JObject)data.DeepClone();
+                                    item["rip"] = data["exit_ip"]?.Value<string>();
+                                    item.Remove("exit_ip");
+
+
+
+                                    ipQueues.Enqueue(new IpEntity() { format = iPFormat, json = (JToken)item });
+                                }
+                            }
                             else
                             {
                                 foreach (var data in json.SelectToken("data").Children())
@@ -297,81 +310,7 @@ namespace MainClient.Common
                     }
                     #endregion
                 }
-                else if (url.Contains("51daili.com"))
-                {
-                    #region 51daili.com
-                    //http://bapi.51daili.com/traffic/getip?linePoolIndex=1&packid=12&time=2&qty=12&port=1&format=txt&usertype=17&uid=39905
-
-
-                    if (count > 1)
-                    {
-                        if (Regex.IsMatch(url, @"qty=[\d]*"))
-                            url = Regex.Replace(url, @"qty=[\d]*", $"qty={count}");
-                        else
-                            url = url += $"&qty={count}";
-                    }
-
-
-                    if (task["address"] != null && !string.IsNullOrEmpty(task["address"].ToString()) && !task["address"].ToString().Equals("全部"))
-                    {
-                        var address_list = task["address"].ToString().Split(new string[] { "," }, StringSplitOptions.RemoveEmptyEntries);
-                        var address = address_list[Math.Abs(Guid.NewGuid().GetHashCode()) % address_list.Length].Split(':');
-                        if (address.Length > 1)
-                        {
-                            var m1 = Regex.Match(address[0], @"\w+");
-                            if (m1.Success)
-                            {
-                                var area_prov = region_51dail.Where(w => w["provinceName"].ToString().Contains(m1.Value)).OrderByDescending(o => Convert.ToInt64(o["provinceCode"].ToString())).FirstOrDefault();
-                                if (area_prov != null)
-                                {
-                                    var m2 = Regex.Match(address[1], @"\w+");
-                                    if (m2.Success)
-                                    {
-                                        var area_city = area_prov["mallCityList"].FirstOrDefault(w => w["cityName"].ToString().Contains(m2.Value));
-                                        if (area_city != null)
-                                        {
-                                            if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
-                                                url = Regex.Replace(url, @"regionCode=[\w]*[^&]?", $"regionCode={area_city["cityCode"]}");
-                                            else
-                                                url = url += $"&regionCode={area_city["cityCode"]}";
-                                        }
-                                        else
-                                        {
-                                            if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
-                                                url = Regex.Replace(url, @"area=[\w]*[^&]?", $"regionCode={area_prov["provinceCode"]}");
-                                            else
-                                                url = url += $"&regionCode={area_prov["provinceCode"]}";
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
-                                            url = Regex.Replace(url, @"area=[\w]*[^&]?", $"regionCode={area_prov["provinceCode"]}");
-                                        else
-                                            url = url += $"&regionCode={area_prov["provinceCode"]}";
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            var m1 = Regex.Match(address[0], @"\w+");
-                            if (m1.Success)
-                            {
-                                var area_prov = region_51dail.Where(w => w["provinceName"].ToString().Contains(m1.Value)).OrderByDescending(o => Convert.ToInt64(o["provinceCode"].ToString())).FirstOrDefault();
-                                if (area_prov != null)
-                                {
-                                    if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
-                                        url = Regex.Replace(url, @"regionCode=[\w]*[^&]?", $"regionCode={area_prov["provinceCode"]}");
-                                    else
-                                        url = url += $"&regionCode={area_prov["provinceCode"]}";
-                                }
-                            }
-                        }
-                    }
-                    #endregion
-
-                }
+    
                 else if (url.Contains("service.ipzan.com"))
                 {
                     #region service.ipzan.com
@@ -455,7 +394,112 @@ namespace MainClient.Common
                     #endregion
 
                 }
+                else if(url.Contains("api.xingyuip.com"))
+                {
+                    #region service.ipzan.com
+                    //http://api.xingyuip.com:13000/extract?channel_id=228&auth_mode=whitelist&channel_secret=w044cm&quantity=1&data_type=2&line_separator=0&dedup_mode=1
 
+                    if (_appSettings.IsRealIp)
+                    {
+                        format = IPFormat.JSON;
+                        //realIp=1
+                        if (Regex.IsMatch(url, @"data_type=\d+"))
+                            url = Regex.Replace(url, @"data_type=\d+", $"data_type=2");
+                        else
+                            url = url += $"&data_type=2";
+ 
+                    }
+                    else
+                    {
+                        if (Regex.IsMatch(url, @"data_type=\d+"))
+                            url = Regex.Replace(url, @"data_type=\d+", $"data_type=1");
+                    }
+
+
+                    if (count > 1)
+                    {
+                        if (Regex.IsMatch(url, @"quantity=[\d]*"))
+                            url = Regex.Replace(url, @"quantity=[\d]*", $"quantity={count}");
+                        else
+                            url = url += $"&quantity={count}";
+                    }
+                    #endregion
+                }
+                else if (url.Contains("51daili.com"))
+                {
+                    #region 51daili.com
+                    //http://bapi.51daili.com/traffic/getip?linePoolIndex=1&packid=12&time=2&qty=12&port=1&format=txt&usertype=17&uid=39905
+
+
+                    if (count > 1)
+                    {
+                        if (Regex.IsMatch(url, @"qty=[\d]*"))
+                            url = Regex.Replace(url, @"qty=[\d]*", $"qty={count}");
+                        else
+                            url = url += $"&qty={count}";
+                    }
+
+
+                    if (task["address"] != null && !string.IsNullOrEmpty(task["address"].ToString()) && !task["address"].ToString().Equals("全部"))
+                    {
+                        var address_list = task["address"].ToString().Split(new string[] { "," }, StringSplitOptions.RemoveEmptyEntries);
+                        var address = address_list[Math.Abs(Guid.NewGuid().GetHashCode()) % address_list.Length].Split(':');
+                        if (address.Length > 1)
+                        {
+                            var m1 = Regex.Match(address[0], @"\w+");
+                            if (m1.Success)
+                            {
+                                var area_prov = region_51dail.Where(w => w["provinceName"].ToString().Contains(m1.Value)).OrderByDescending(o => Convert.ToInt64(o["provinceCode"].ToString())).FirstOrDefault();
+                                if (area_prov != null)
+                                {
+                                    var m2 = Regex.Match(address[1], @"\w+");
+                                    if (m2.Success)
+                                    {
+                                        var area_city = area_prov["mallCityList"].FirstOrDefault(w => w["cityName"].ToString().Contains(m2.Value));
+                                        if (area_city != null)
+                                        {
+                                            if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
+                                                url = Regex.Replace(url, @"regionCode=[\w]*[^&]?", $"regionCode={area_city["cityCode"]}");
+                                            else
+                                                url = url += $"&regionCode={area_city["cityCode"]}";
+                                        }
+                                        else
+                                        {
+                                            if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
+                                                url = Regex.Replace(url, @"area=[\w]*[^&]?", $"regionCode={area_prov["provinceCode"]}");
+                                            else
+                                                url = url += $"&regionCode={area_prov["provinceCode"]}";
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
+                                            url = Regex.Replace(url, @"area=[\w]*[^&]?", $"regionCode={area_prov["provinceCode"]}");
+                                        else
+                                            url = url += $"&regionCode={area_prov["provinceCode"]}";
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var m1 = Regex.Match(address[0], @"\w+");
+                            if (m1.Success)
+                            {
+                                var area_prov = region_51dail.Where(w => w["provinceName"].ToString().Contains(m1.Value)).OrderByDescending(o => Convert.ToInt64(o["provinceCode"].ToString())).FirstOrDefault();
+                                if (area_prov != null)
+                                {
+                                    if (Regex.IsMatch(url, @"regionCode=[\w]*[^&]?"))
+                                        url = Regex.Replace(url, @"regionCode=[\w]*[^&]?", $"regionCode={area_prov["provinceCode"]}");
+                                    else
+                                        url = url += $"&regionCode={area_prov["provinceCode"]}";
+                                }
+                            }
+                        }
+                    }
+                    #endregion
+
+                }
 
                 else if (url.Contains("api.test.myipproxy.com") || url.Contains("api.hailiangip.com") || url.Contains("111.73.45.100") || url.Contains("47.97.20.179"))
                 {

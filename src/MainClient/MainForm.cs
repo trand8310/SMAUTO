@@ -1278,6 +1278,8 @@ namespace MainClient
 
                 await PrepareProxyContextAsync(ctx, task, token);
 
+
+
                 var ipTtlSeconds = _appSettings.IpTtl;
                 if (ipTtlSeconds <= 0)
                 {
@@ -1604,9 +1606,9 @@ namespace MainClient
                 if (_appSettings.IsRealIp)
                 {
                     ctx.RealIp =
-                        ipEntity.json["rip"]?.Value<string>() ??
-                        ipEntity.json["real_ip"]?.Value<string>() ??
-                        ipEntity.json["realIp"]?.Value<string>() ??
+                        ipEntity.json["rip"]?.ToString()??
+                        ipEntity.json["real_ip"]?.ToString() ??
+                        ipEntity.json["realIp"]?.ToString() ??
                         string.Empty;
                 }
             }

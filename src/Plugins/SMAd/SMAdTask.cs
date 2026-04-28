@@ -1736,7 +1736,7 @@ namespace QTP.Plugins
 
 
                 //await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-
+                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
                 if (!adsOk)
                     continue;
@@ -1758,6 +1758,7 @@ namespace QTP.Plugins
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
+                   
 
                     await HumanScrollHelper.TouchPageLongScrollAsync(
                      ctx.Page,
