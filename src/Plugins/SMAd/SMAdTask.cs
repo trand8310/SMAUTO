@@ -2001,29 +2001,46 @@ namespace QTP.Plugins
         private async Task<IBrowser?> StartAndConnectBrowserAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var args = BuildChromiumArgs(ctx.Config, out var proxyServer);
+            var args = BuildChromiumArgs(ctx.Config, out _);
             var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", ctx.Config.KernelVersion, "chrome.exe");
-            var session = await _processManager.StartChromium(
-            ctx.Config.UniqueId,
-            chromePath,
-            ctx.Config.UserDataDir,
-            TimeSpan.FromSeconds(_appSettings.IpTtl),
-            $"about:blank {string.Join(" ", args)}",
-            proxyServer,
-            readyTimeout: TimeSpan.FromSeconds(15),
-            token: token);
-            ctx.DebugPort = session.DebugPort;
-            var endpoint = $"http://localhost:{session.DebugPort}";
-            token.ThrowIfCancellationRequested();
+            ctx.DebugPort = 0;
 
-            return await ConnectOverCDPWithRetryAsync(
-                   ctx.Playwright!,
-                   endpoint,
-                   BuildTraceTag(ctx),
-                   token,
-                   maxAttempts: 3,
-                   delayMs: 200,
-                   requireUsableContext: true);
+            var launchResult = await RetryHelper.ExecuteAsync(
+                async ct =>
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var browser = await ctx.Playwright!.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                    {
+                        ExecutablePath = chromePath,
+                        Args = args,
+                        Timeout = 15_000
+                    });
+
+                    return browser;
+                },
+                maxAttempts: 3,
+                successPredicate: browser => browser != null && browser.IsConnected,
+                shouldRetryOnException: ex => ex is not OperationCanceledException,
+                delayMsFactory: _ => 200,
+                onRetry: (attempt, ex) =>
+                {
+                    if (ex != null)
+                    {
+                        LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync尝试 {attempt}/3 失败: {ex.Message}");
+                    }
+                    else
+                    {
+                        LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync准备重试: {attempt}/3");
+                    }
+                },
+                token: token);
+
+            if (launchResult.Success)
+            {
+                LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync启动成功(管道模式).");
+            }
+
+            return launchResult.Value;
         }
 
         private List<string> BuildChromiumArgs(TaskConfig config, out string proxyServer)
