@@ -2004,43 +2004,68 @@ namespace QTP.Plugins
             var args = BuildChromiumArgs(ctx.Config, out _);
             var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", ctx.Config.KernelVersion, "chrome.exe");
             ctx.DebugPort = 0;
+            Exception? lastException = null;
+            const int maxAttempts = 3;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                token.ThrowIfCancellationRequested();
+                IBrowser? browser = null;
 
-            var launchResult = await RetryHelper.ExecuteAsync(
-                async ct =>
+                try
                 {
-                    ct.ThrowIfCancellationRequested();
-                    var browser = await ctx.Playwright!.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                    LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync尝试 {attempt}/{maxAttempts} (管道模式).");
+
+                    browser = await ctx.Playwright!.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
                     {
                         ExecutablePath = chromePath,
                         Args = args,
                         Timeout = 15_000
                     });
 
-                    return browser;
-                },
-                maxAttempts: 3,
-                successPredicate: browser => browser != null && browser.IsConnected,
-                shouldRetryOnException: ex => ex is not OperationCanceledException,
-                delayMsFactory: _ => 200,
-                onRetry: (attempt, ex) =>
-                {
-                    if (ex != null)
-                    {
-                        LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync尝试 {attempt}/3 失败: {ex.Message}");
-                    }
-                    else
-                    {
-                        LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync准备重试: {attempt}/3");
-                    }
-                },
-                token: token);
+                    if (browser == null)
+                        throw new InvalidOperationException("LaunchAsync returned null browser.");
+                    if (!browser.IsConnected)
+                        throw new InvalidOperationException("Browser is not connected after LaunchAsync.");
 
-            if (launchResult.Success)
-            {
-                LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync启动成功(管道模式).");
+                    // LaunchAsync 不会自动创建 BrowserContext，这里主动创建一个，保持后续流程不变。
+                    var context = await browser.NewContextAsync();
+                    if (context == null)
+                        throw new InvalidOperationException("NewContextAsync returned null context.");
+
+                    LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync启动成功(管道模式).");
+                    return browser;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync尝试 {attempt}/{maxAttempts} 失败: {ex.Message}");
+                    if (browser != null)
+                    {
+                        try
+                        {
+                            await browser.CloseAsync();
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(200, token);
+                    }
+                }
             }
 
-            return launchResult.Value;
+            if (lastException != null)
+            {
+                LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync最终失败: {lastException.Message}");
+            }
+            return null;
         }
 
         private List<string> BuildChromiumArgs(TaskConfig config, out string proxyServer)
