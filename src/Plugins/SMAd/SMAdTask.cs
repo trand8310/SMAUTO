@@ -1315,7 +1315,8 @@ namespace QTP.Plugins
             if (lastException != null)
             {
                 LogWriteLine($"{traceTag} CDP连接最终失败: {lastException}");
-                if (lastException.Message.Contains("no such file or directory") || lastException.Message.Contains("Process exited"))
+                //|| lastException.Message.Contains("Process exited")
+                if (lastException.Message.Contains("no such file or directory") )
                 {
                     SafeRestartHelper.ForceRestart(1);
                 }
@@ -1736,7 +1737,7 @@ namespace QTP.Plugins
 
 
                 //await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
                 if (!adsOk)
                     continue;
@@ -3484,6 +3485,7 @@ namespace QTP.Plugins
                         if (!string.IsNullOrWhiteSpace(info_text))
                         {
                             await input_area.PressSequentiallyAsync(info_text);
+                            await Task.Delay(CommonHelper.RandomRange(3000, 5000));
                         }
                         else
                         {
