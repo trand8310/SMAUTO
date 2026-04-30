@@ -1544,43 +1544,54 @@ namespace QTP.Plugins
 
                 if (ctx != null)
                 {
-                    try
-                    {
-                        if (ctx.CdpManager != null)
-                            await ctx.CdpManager.DisposeAsync();
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        if (ctx.Context != null)
-                            await ctx.Context.CloseAsync();
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        if (ctx.Browser != null && ctx.Browser.IsConnected)
-                            await ctx.Browser.CloseAsync();
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        await CloseBrowserProcess(uniqueId);
-                    }
-                    catch
-                    {
-                    }
+                    await ForceCleanupSessionAsync(ctx, uniqueId);
                 }
             }
         }
+
+        private async Task ForceCleanupSessionAsync(WorkerRunContext ctx, string uniqueId)
+        {
+            try
+            {
+                if (ctx.CdpManager != null)
+                    await ctx.CdpManager.DisposeAsync();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (ctx.Context != null)
+                    await ctx.Context.CloseAsync();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (ctx.Browser != null && ctx.Browser.IsConnected)
+                    await ctx.Browser.CloseAsync();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                await CloseBrowserProcess(uniqueId);
+            }
+            catch
+            {
+            }
+
+            ctx.CdpManager = null;
+            ctx.Context = null;
+            ctx.Browser = null;
+            ctx.Page = null;
+        }
+
         #endregion
 
         #region Main Flow
