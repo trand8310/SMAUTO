@@ -2001,29 +2001,71 @@ namespace QTP.Plugins
         private async Task<IBrowser?> StartAndConnectBrowserAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var args = BuildChromiumArgs(ctx.Config, out var proxyServer);
+            var args = BuildChromiumArgs(ctx.Config, out _);
             var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", ctx.Config.KernelVersion, "chrome.exe");
-            var session = await _processManager.StartChromium(
-            ctx.Config.UniqueId,
-            chromePath,
-            ctx.Config.UserDataDir,
-            TimeSpan.FromSeconds(_appSettings.IpTtl),
-            $"about:blank {string.Join(" ", args)}",
-            proxyServer,
-            readyTimeout: TimeSpan.FromSeconds(15),
-            token: token);
-            ctx.DebugPort = session.DebugPort;
-            var endpoint = $"http://localhost:{session.DebugPort}";
-            token.ThrowIfCancellationRequested();
+            ctx.DebugPort = 0;
+            Exception? lastException = null;
+            const int maxAttempts = 3;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                token.ThrowIfCancellationRequested();
+                IBrowser? browser = null;
 
-            return await ConnectOverCDPWithRetryAsync(
-                   ctx.Playwright!,
-                   endpoint,
-                   BuildTraceTag(ctx),
-                   token,
-                   maxAttempts: 3,
-                   delayMs: 200,
-                   requireUsableContext: true);
+                try
+                {
+                    LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync尝试 {attempt}/{maxAttempts} (管道模式).");
+
+                    browser = await ctx.Playwright!.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                    {
+                        ExecutablePath = chromePath,
+                        Args = args,
+                        Timeout = 15_000
+                    });
+
+                    if (browser == null)
+                        throw new InvalidOperationException("LaunchAsync returned null browser.");
+                    if (!browser.IsConnected)
+                        throw new InvalidOperationException("Browser is not connected after LaunchAsync.");
+
+                    // LaunchAsync 不会自动创建 BrowserContext，这里主动创建一个，保持后续流程不变。
+                    var context = await browser.NewContextAsync();
+                    if (context == null)
+                        throw new InvalidOperationException("NewContextAsync returned null context.");
+
+                    LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync启动成功(管道模式).");
+                    return browser;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync尝试 {attempt}/{maxAttempts} 失败: {ex.Message}");
+                    if (browser != null)
+                    {
+                        try
+                        {
+                            await browser.CloseAsync();
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    if (attempt < maxAttempts)
+                    {
+                        await Task.Delay(200, token);
+                    }
+                }
+            }
+
+            if (lastException != null)
+            {
+                LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync最终失败: {lastException.Message}");
+            }
+            return null;
         }
 
         private List<string> BuildChromiumArgs(TaskConfig config, out string proxyServer)
