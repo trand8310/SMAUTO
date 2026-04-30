@@ -954,6 +954,12 @@ namespace QTP.Plugins
 
             var ram = taskArgs.SelectToken("dev.ram").Value<string>().Split(',', StringSplitOptions.RemoveEmptyEntries);
             int deviceMemory = Convert.ToInt32(ram[CommonHelper.RandomRange(0, ram.Length)].Trim());
+
+            if (deviceMemory < 4)
+                deviceMemory = 4;
+            else if (deviceMemory > 8)
+                deviceMemory = 8;
+
             result.Add($"--device-memory={(deviceMemory > 8 ? 8 : deviceMemory)}");
 
             var js_memory_info = new string[] { "10000000|10000000|1136000000", "29400000|31200000|1130000000", "10000000|10000000|1136000000", "29400000|31200000|1130000000", "29400000|31200000|1130000000" };
@@ -1141,7 +1147,7 @@ namespace QTP.Plugins
                     cdpSession,
                     scrollCount: 1,
                     direction: PageScrollDirection.Up,
-                    timeDelay:CommonHelper.RandomRange(123,456),
+                    timeDelay: CommonHelper.RandomRange(123, 456),
                     cancellationToken: cancellationToken);
 
                 var scrollStateAfter = await GetPageScrollStateAsync(page);
@@ -1316,7 +1322,7 @@ namespace QTP.Plugins
             {
                 LogWriteLine($"{traceTag} CDP连接最终失败: {lastException}");
                 //|| lastException.Message.Contains("Process exited")
-                if (lastException.Message.Contains("no such file or directory") )
+                if (lastException.Message.Contains("no such file or directory"))
                 {
                     SafeRestartHelper.ForceRestart(1);
                 }
@@ -1632,6 +1638,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.jqlive16.cc";
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
+                    entry.FirstPageUrl = "https://www.browserscan.net/zh";
 
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1768,7 +1775,7 @@ namespace QTP.Plugins
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
-                   
+
 
                     await HumanScrollHelper.TouchPageLongScrollAsync(
                      ctx.Page,
@@ -2010,26 +2017,48 @@ namespace QTP.Plugins
         private async Task<IBrowser?> StartAndConnectBrowserAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var args = BuildChromiumArgs(ctx.Config, out _);
+            var args = BuildChromiumArgs(ctx.Config);
             var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", ctx.Config.KernelVersion, "chrome.exe");
             ctx.DebugPort = 0;
             Exception? lastException = null;
             const int maxAttempts = 3;
+
+            var proxyServer = string.Empty;
+            var headless = ctx.Config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false;
+            var isProxyMode = ctx.Config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() ?? false;
+            if (isProxyMode)
+            {
+                proxyServer = ctx.Config.TaskArgs.SelectToken("proxy_server")!.Value<string>();
+            }
+            var useragent = ctx.Config.TaskArgs.SelectToken("dev.ua")?.Value<string>();
+
+
+
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 token.ThrowIfCancellationRequested();
                 IBrowser? browser = null;
-
                 try
                 {
                     LogWriteLine($"{BuildTraceTag(ctx)} LaunchAsync尝试 {attempt}/{maxAttempts} (管道模式).");
-
-                    browser = await ctx.Playwright!.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                    var launchOptions = new BrowserTypeLaunchOptions
                     {
+                        Headless = headless,
+                        Channel = "chrome",
+                        ChromiumSandbox = false,
+                        IgnoreDefaultArgs = new List<string>()
+                        {
+                            "--enable-automation",
+                        },
                         ExecutablePath = chromePath,
                         Args = args,
-                        Timeout = 15_000
-                    });
+                    };
+                    if (isProxyMode)
+                    {
+                        launchOptions.Proxy = new Proxy { Server = proxyServer! };
+                    }
+
+                    browser = await ctx.Playwright!.Chromium.LaunchAsync(launchOptions);
 
                     if (browser == null)
                         throw new InvalidOperationException("LaunchAsync returned null browser.");
@@ -2037,7 +2066,23 @@ namespace QTP.Plugins
                         throw new InvalidOperationException("Browser is not connected after LaunchAsync.");
 
                     // LaunchAsync 不会自动创建 BrowserContext，这里主动创建一个，保持后续流程不变。
-                    var context = await browser.NewContextAsync();
+
+
+
+                    BrowserNewContextOptions contextOptions = new()
+                    {
+                        UserAgent = useragent,
+                        ViewportSize = new ViewportSize() { Width = ctx.Config.Sw, Height = ctx.Config.Sh },
+                        DeviceScaleFactor = ctx.Config.DeviceScale,
+                        HasTouch = true,
+                        IsMobile = true,
+                        //Locale = envLocale,
+ 
+                        //TimezoneId = taskArgs.SelectToken("ipInfo.timezone")?.Value<string>() ?? envTimezoneId,
+                        IgnoreHTTPSErrors = true,
+                    };
+
+                    var context = await browser.NewContextAsync(contextOptions);
                     if (context == null)
                         throw new InvalidOperationException("NewContextAsync returned null context.");
 
@@ -2077,7 +2122,7 @@ namespace QTP.Plugins
             return null;
         }
 
-        private List<string> BuildChromiumArgs(TaskConfig config, out string proxyServer)
+        private List<string> BuildChromiumArgs(TaskConfig config)
         {
             var args = new List<string>
             {
@@ -2107,8 +2152,8 @@ namespace QTP.Plugins
                 $"--user-agent=\"{config.UserAgent}\"",
                 $"--window-size=\"{config.Sw + 16},{config.Sh + 96}\"",
                 "--window-position=0,0",
-                $"--device-pixel-ratio={config.DeviceScale}",
-                $"--screen-size=\"{config.Sw},{config.Sh}\"",
+                //$"--device-pixel-ratio={config.DeviceScale}",
+                //$"--screen-size=\"{config.Sw},{config.Sh}\"",
                // $"--screen-avail-size=\"{config.Sw},{config.Sh}\"",
             };
 
@@ -2117,16 +2162,16 @@ namespace QTP.Plugins
 
             }
 
-            proxyServer = string.Empty;
-            var isProxyMode = config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() ?? false;
-            if (isProxyMode)
-            {
-                proxyServer = config.TaskArgs.SelectToken("proxy_server")!.Value<string>();
-                args.Add($"--proxy-server=\"{proxyServer}\"");
-            }
+            //proxyServer = string.Empty;
+            //var isProxyMode = config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() ?? false;
+            //if (isProxyMode)
+            //{
+            //    proxyServer = config.TaskArgs.SelectToken("proxy_server")!.Value<string>();
+            //    args.Add($"--proxy-server=\"{proxyServer}\"");
+            //}
 
-            if (config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false)
-                args.Add("--headless");
+            ////if (config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false)
+            ////    args.Add("--headless");
 
             if (config.TaskArgs.SelectToken("incognito")?.Value<bool>() ?? false)
             {
@@ -4975,10 +5020,10 @@ namespace QTP.Plugins
 
 
 
-            var handleFlow = await HandleLandingPageAsync(ctx, token);
-            ctx.JumpClick = true;
-            ctx.PageTriggerClick = true;
-            var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
+            //var handleFlow = await HandleLandingPageAsync(ctx, token);
+            //ctx.JumpClick = true;
+            //ctx.PageTriggerClick = true;
+            //var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
 
             //await Task.Delay(CommonHelper.RandomRange(5000, 8000));
             //this.QTPExecuteSuccess(ctx.Config.TaskId);
