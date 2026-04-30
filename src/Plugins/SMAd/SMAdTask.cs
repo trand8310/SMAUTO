@@ -1549,6 +1549,15 @@ namespace QTP.Plugins
 
                     try
                     {
+                        if (ctx.Context != null)
+                            await ctx.Context.CloseAsync();
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
                         if (ctx.Browser != null && ctx.Browser.IsConnected)
                             await ctx.Browser.CloseAsync();
                     }
@@ -2150,7 +2159,18 @@ namespace QTP.Plugins
                 });
             }
 
-            ctx.Page = ctx.Context.Pages[0];
+            if (ctx.Context.Pages == null || ctx.Context.Pages.Count == 0)
+            {
+                ctx.Page = await ctx.Context.NewPageAsync();
+            }
+            else
+            {
+                ctx.Page = ctx.Context.Pages[0];
+            }
+
+            if (ctx.Page == null)
+                throw new InvalidOperationException("Failed to initialize page for context.");
+
             await InitPageAsync(ctx, ctx.Page, token);
         }
 
