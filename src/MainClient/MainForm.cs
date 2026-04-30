@@ -1885,14 +1885,7 @@ namespace MainClient
                 if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
                 if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
 
-                try
-                {
-                    await _processManager.CloseAsync(uniqueId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Close process failed. uniqueId={UniqueId}", uniqueId);
-                }
+                await TryCloseSessionAsync(uniqueId);
 
                 if (pluginService is IAsyncDisposable asyncDisposable)
                 {
@@ -1919,6 +1912,27 @@ namespace MainClient
             }
         }
 
+
+        private async Task TryCloseSessionAsync(string uniqueId)
+        {
+            try
+            {
+                var closeTask = _processManager.CloseAsync(uniqueId);
+                var completed = await Task.WhenAny(closeTask, Task.Delay(TimeSpan.FromSeconds(20))).ConfigureAwait(false);
+
+                if (!ReferenceEquals(completed, closeTask))
+                {
+                    _logger.LogWarning("Close process timeout. uniqueId={UniqueId}", uniqueId);
+                    return;
+                }
+
+                await closeTask.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Close process failed. uniqueId={UniqueId}", uniqueId);
+            }
+        }
 
 
 
