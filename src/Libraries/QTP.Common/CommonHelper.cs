@@ -159,6 +159,12 @@ namespace QTP.Common
         {
             return min + Random.Shared.NextDouble() * (max - min);
         }
+        public static bool Chance(double probability)
+        {
+            if (probability <= 0) return false;
+            if (probability >= 1) return true;
+            return Random.Shared.NextDouble() < probability;
+        }
 
         public static Int16 Get16BitHash(string s)
         {

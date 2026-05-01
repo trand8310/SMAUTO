@@ -2,36 +2,64 @@
 
 namespace SMAd.Swiper
 {
+    /// <summary>
+    /// 如果你项目里已经有 ScrollOptions，就不要重复定义这个类。
+    /// 如果没有，可以直接保留。
+    /// </summary>
     public sealed class ScrollOptions
     {
-        /// <summary>滚动模式，默认自动</summary>
         public HumanScrollMode Mode { get; set; } = HumanScrollMode.Auto;
 
-        /// <summary>滑动距离占屏高比例（优先级低于 DistancePx）</summary>
-        public double? HeightRatio { get; set; }
-
-        /// <summary>直接指定像素距离（最高优先级）</summary>
+        /// <summary>
+        /// 固定滑动距离，优先级高于 HeightRatio。
+        /// </summary>
         public int? DistancePx { get; set; }
 
-        /// <summary>轨迹点数量范围</summary>
-        public (int Min, int Max)? PointCountRange { get; set; }
+        /// <summary>
+        /// 按视口高度比例滑动，例如 0.5 表示半屏。
+        /// </summary>
+        public double? HeightRatio { get; set; }
 
-        /// <summary>每步延迟范围</summary>
-        public (int Min, int Max)? DelayRangeMs { get; set; }
-
-        /// <summary>抖动范围</summary>
-        public (double Min, double Max)? JitterRange { get; set; }
-
-        /// <summary>每次滚动后的停顿范围</summary>
-        public (int Min, int Max)? PauseRangeMs { get; set; }
-
-        /// <summary>是否允许自动混入偶发探测滑/微调滑</summary>
+        /// <summary>
+        /// 是否自动混合长滑、短滑、探测滑、微调滑。
+        /// </summary>
         public bool EnableAutoMix { get; set; } = true;
 
-        /// <summary>是否在向下滑时做顶部保护</summary>
+        /// <summary>
+        /// 是否开启顶部保护。
+        /// 手指下滑时，如果页面已经接近顶部，则不再继续滑，避免下拉刷新。
+        /// </summary>
         public bool EnableTopProtection { get; set; } = true;
 
-        /// <summary>接近顶部阈值</summary>
         public int NearTopThresholdPx { get; set; } = 10;
+
+        /// <summary>
+        /// 是否由 Helper 指定点数。
+        /// false 时交给 SwipeEmulator 自动计算，通常更自然。
+        /// </summary>
+        public bool EnableCustomPointCount { get; set; } = false;
+
+        public IntRange? PointCountRange { get; set; }
+
+        /// <summary>
+        /// 保留字段。
+        /// 当前新版底层由 SwipeEmulator 控制 move delay。
+        /// </summary>
+        public IntRange? DelayRangeMs { get; set; }
+
+        /// <summary>
+        /// 保留字段。
+        /// 当前新版底层由 SwipeEmulator 控制轨迹抖动。
+        /// </summary>
+        public FloatRange? JitterRange { get; set; }
+
+        public IntRange? PauseRangeMs { get; set; }
+
+        /// <summary>
+        /// SwipeEmulator 内部已经会验证内部滚动容器是否真正滚动。
+        /// </summary>
+        public bool VerifyScrollChanged { get; set; } = true;
+
+        public int MaxConsecutiveNoMove { get; set; } = 3;
     }
 }

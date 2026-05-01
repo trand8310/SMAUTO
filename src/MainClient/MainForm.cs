@@ -957,10 +957,12 @@ namespace MainClient
             string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
             if (!Directory.Exists(patchDir))
                 Directory.CreateDirectory(patchDir);
-            string patchFile = Path.Combine(patchDir, "patch_page_loading_202604252047.done");
+            string patchFile = Path.Combine(patchDir, "patch_page_loading202605012103.done");
             if (File.Exists(patchFile))
                 return;
 
+            _appSettings.p4psearch = false;
+            _appSettings.p4psearchRate = 0;
             _appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
             UserConfigService.Save("AppSettings", _appSettings);
             // 创建标记文件

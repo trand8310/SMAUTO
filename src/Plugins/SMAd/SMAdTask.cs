@@ -163,289 +163,6 @@ namespace QTP.Plugins
 
 
 
-        /// <summary>
-        /// 触摸滑动
-        /// </summary>
-        /// <param name="page"></param>
-        /// <param name="client"></param>
-        /// <param name="scrollCount"></param>
-        /// <param name="direction">1:向上滑动,2:向下滑动</param>
-        /// <param name="predexp"></param>
-        /// <returns></returns>
-        private async Task TouchPageScroll(IPage page, ICDPSession client, int scrollCount, int direction, Func<IPage, Task<bool>>? predexp = null, int time_delay = 0)
-        {
-            try
-            {
-                if (direction == -1)
-                {
-                    LogWriteLine($"TouchScrollDown:{scrollCount}次");
-                }
-                else
-                {
-                    LogWriteLine($"TouchScrollUp:{scrollCount}次");
-                }
-
-                for (int i = 0; i < scrollCount; i++)
-                {
-                    if (direction == -1)
-                    {
-                        await SMAd.Swiperv3.SwipeEmulator.SwipeMultipleHumanAsync(
-                                    page, client,
-                                    times: 1,
-                                    direction: SMAd.Swiperv3.ScrollDirection.Down);
-                        if (time_delay == 0)
-                            time_delay = CommonHelper.RandomRange(500, 2000);
-                        await Task.Delay(time_delay);
-                        if (predexp != null && await predexp(page))
-                        {
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        await SMAd.Swiperv3.SwipeEmulator.SwipeMultipleHumanAsync(
-                        page, client,
-                        times: 1,
-                        direction: SMAd.Swiperv3.ScrollDirection.Up);
-                        if (time_delay == 0)
-                            time_delay = CommonHelper.RandomRange(500, 2000);
-                        await Task.Delay(time_delay);
-
-                        if (predexp != null && await predexp(page))
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-            catch (Exception)
-            {
-
-
-            }
-
-
-        }
-
-        private async Task TouchPageScrollUp(IPage page, ICDPSession client)
-        {
-            await SMAd.Swiperv3.SwipeEmulator.SwipeMultipleHumanAsync(
-            page, client,
-            times: 1,
-            direction: SMAd.Swiperv3.ScrollDirection.Up);
-        }
-        private async Task TouchPageScrollDown(IPage page, ICDPSession client)
-        {
-            await SMAd.Swiperv3.SwipeEmulator.SwipeMultipleHumanAsync(
-            page, client,
-            times: 1,
-            direction: SMAd.Swiperv3.ScrollDirection.Down);
-        }
-
-        private async Task TouchPageScrollMicro(IPage page, ICDPSession client)
-        {
-            await SMAd.Swiperv3.SwipeEmulator.SwipeMultipleMicroHumanAsync(
-            page,
-            client,
-            times: 2,
-            direction: SMAd.Swiperv3.ScrollDirection.Up);
-        }
-
-
-        /// <summary>
-        /// 触摸滑动
-        /// </summary>
-        /// <param name="page"></param>
-        /// <param name="client"></param>
-        /// <param name="scrollCount"></param>
-        /// <param name="direction"></param>
-        /// <param name="predexp"></param>
-        /// <param name="timeDelay"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        private async Task TouchPageScrollAsync(
-            IPage page,
-            ICDPSession client,
-            int scrollCount,
-            PageScrollDirection direction,
-            Func<IPage, Task<bool>>? predexp = null,
-            int timeDelay = 0,
-            CancellationToken cancellationToken = default)
-        {
-            if (page == null || page.IsClosed || client == null || scrollCount <= 0)
-                return;
-
-            try
-            {
-                for (int i = 0; i < scrollCount; i++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    if (page.IsClosed)
-                        break;
-
-                    if (predexp != null)
-                    {
-                        try
-                        {
-                            if (await predexp(page))
-                                break;
-                        }
-                        catch
-                        {
-                        }
-                    }
-
-                    // 向下滑前，先判断是否已接近顶部
-                    if (direction == PageScrollDirection.Down)
-                    {
-                        bool nearTop = await IsNearTopAsync(page, 10);
-                        if (nearTop)
-                            break;
-                    }
-
-                    int distancePx = direction == PageScrollDirection.Up
-                        ? RandomUtil.NextInt(180, 260)
-                        : RandomUtil.NextInt(55, 82);
-
-                    int pointCount = distancePx <= 70 ? 7
-                        : distancePx <= 95 ? 8
-                        : 9;
-
-                    int delayMs = RandomUtil.NextInt(11, 15);
-                    float jitter = (float)RandomUtil.NextDouble(0.28, 0.42);
-
-                    await SwipeEmulator.SwipeMultipleAsync(
-                        page: page,
-                        client: client,
-                        times: 1,
-                        distancePx: distancePx,
-                        pointCount: pointCount,
-                        delayMs: delayMs,
-                        jitter: jitter,
-                        direction: direction,
-                        cancellationToken: cancellationToken);
-
-                    int pause = timeDelay > 0
-                        ? timeDelay
-                        : RandomUtil.NextInt(450, 850);
-
-                    await Task.Delay(pause, cancellationToken);
-
-                    if (predexp != null)
-                    {
-                        try
-                        {
-                            if (await predexp(page))
-                                break;
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch
-            {
-            }
-        }
-
-
-        /// <summary>
-        /// 页面向上滑动一点
-        /// </summary>
-        /// <param name="page"></param>
-        /// <param name="client"></param>
-        /// <param name="distancePx"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-
-        private async Task TouchPageScrollUpAsync(
-           IPage page,
-           ICDPSession client,
-           int distancePx = 80,
-           CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                await SwipeEmulator.SwipeMultipleMicroAsync(
-                    page: page,
-                    client: client,
-                    times: 1,
-                    distancePx: distancePx,
-                    pointCount: distancePx <= 80 ? 5 : 6,
-                    delayMs: 6,
-                    jitter: 0.2f,
-                    direction: PageScrollDirection.Up,
-                    cancellationToken: cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch
-            {
-            }
-        }
-
-        /// <summary>
-        /// 页面向下滑动一点
-        /// </summary>
-        /// <param name="page"></param>
-        /// <param name="client"></param>
-        /// <param name="distancePx"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-
-        private async Task TouchPageScrollDownAsync(
-           IPage page,
-           ICDPSession client,
-           int distancePx = 90,
-           CancellationToken cancellationToken = default)
-        {
-            if (page == null || page.IsClosed || client == null)
-                return;
-
-            try
-            {
-                distancePx = Math.Clamp(distancePx, 60, 180);
-
-                int finalDistance = Math.Clamp(
-                    distancePx + RandomUtil.NextInt(-8, 9),
-                    60,
-                    180);
-
-                int pointCount;
-                if (finalDistance <= 70)
-                    pointCount = 7;
-                else if (finalDistance <= 100)
-                    pointCount = 8;
-                else if (finalDistance <= 140)
-                    pointCount = 9;
-                else
-                    pointCount = 10;
-
-                await SwipeEmulator.SwipeMultipleMicroAsync(
-                    page: page,
-                    client: client,
-                    times: 1,
-                    distancePx: finalDistance,
-                    pointCount: pointCount,
-                    delayMs: RandomUtil.NextInt(11, 15),
-                    jitter: (float)RandomUtil.NextDouble(0.28, 0.42),
-                    direction: PageScrollDirection.Down,
-                    cancellationToken: cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch
-            {
-            }
-        }
-
 
 
         private async Task SynthesizeScrollGestureAsync(
@@ -480,11 +197,11 @@ namespace QTP.Plugins
                     if (page.IsClosed)
                         break;
 
-                    int x = RandomUtil.NextInt((int)(vw * 0.35), (int)(vw * 0.65));
-                    int y = RandomUtil.NextInt((int)(vh * 0.42), (int)(vh * 0.58));
+                    int x = CommonHelper.NextInt((int)(vw * 0.35), (int)(vw * 0.65));
+                    int y = CommonHelper.NextInt((int)(vh * 0.42), (int)(vh * 0.58));
 
                     int distancePx = Math.Clamp(
-                        (int)(vh * RandomUtil.NextDouble(0.18, 0.32)),
+                        (int)(vh * CommonHelper.NextDouble(0.18, 0.32)),
                         100,
                         260);
 
@@ -497,7 +214,7 @@ namespace QTP.Plugins
                         ["y"] = y,
                         ["xDistance"] = 0,
                         ["yDistance"] = yDistance,
-                        ["speed"] = RandomUtil.NextInt(650, 1050),
+                        ["speed"] = CommonHelper.NextInt(650, 1050),
                         ["gestureSourceType"] = "touch",
                         ["repeatCount"] = 0,
                         ["repeatDelayMs"] = 0
@@ -527,13 +244,13 @@ namespace QTP.Plugins
             {
                 int vw = page.ViewportSize?.Width ?? 360;
                 int vh = page.ViewportSize?.Height ?? 740;
-                int startX = RandomUtil.NextInt((int)(vw * 0.35), (int)(vw * 0.65));
-                int startY = RandomUtil.NextInt((int)(vh * 0.42), (int)(vh * 0.58));
+                int startX = CommonHelper.NextInt((int)(vw * 0.35), (int)(vw * 0.65));
+                int startY = CommonHelper.NextInt((int)(vh * 0.42), (int)(vh * 0.58));
 
 
                 int xDistance = (int)(vw * (CommonHelper.RandomRange(55, 75) * 0.01));
                 int yDistance = Math.Clamp(
-                    (int)(vh * RandomUtil.NextDouble(0.18, 0.32)),
+                    (int)(vh * CommonHelper.NextDouble(0.18, 0.32)),
                     100,
                     260);
 
@@ -544,7 +261,7 @@ namespace QTP.Plugins
                          { "y",startY},
                          { "xDistance",xDistance},
                          { "yDistance",-yDistance},
-                         { "speed",RandomUtil.NextInt(650, 1050)},
+                         { "speed",CommonHelper.NextInt(650, 1050)},
                          { "repeatCount",0},
                          { "repeatDelayMs",0},
                          { "yOverscroll",CommonHelper.RandomRange(50,150)},
@@ -560,13 +277,13 @@ namespace QTP.Plugins
             {
                 int vw = page.ViewportSize?.Width ?? 360;
                 int vh = page.ViewportSize?.Height ?? 740;
-                int startX = RandomUtil.NextInt((int)(vw * 0.45), (int)(vw * 0.50));
-                int startY = RandomUtil.NextInt((int)(vh * 0.15), (int)(vh * 0.35));
+                int startX = CommonHelper.NextInt((int)(vw * 0.45), (int)(vw * 0.50));
+                int startY = CommonHelper.NextInt((int)(vh * 0.15), (int)(vh * 0.35));
 
 
                 int xDistance = (int)(vw * (CommonHelper.RandomRange(50, 60) * 0.01));
                 int yDistance = startY + Math.Clamp(
-                    (int)(vh * RandomUtil.NextDouble(0.18, 0.32)),
+                    (int)(vh * CommonHelper.NextDouble(0.18, 0.32)),
                     100,
                     260);
 
@@ -577,7 +294,7 @@ namespace QTP.Plugins
                          { "y",startY},
                          { "xDistance",xDistance},
                          { "yDistance",yDistance},
-                         { "speed",RandomUtil.NextInt(650, 1050)},
+                         { "speed",CommonHelper.NextInt(650, 1050)},
                          { "repeatCount",0},
                          { "repeatDelayMs",0},
                          { "yOverscroll",-CommonHelper.RandomRange(50,150)},
@@ -800,15 +517,15 @@ namespace QTP.Plugins
                 if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand_version")?.Value<string>()))
                     result.Add($"--brand-version=\"{taskArgs.SelectToken("dev.brand_version")?.Value<string>()}\"");
 
-                if (new bool[] { false, false, true, false, false, true, false, false, true, false }[CommonHelper.RandomRange(0, 10)])
+                if (fingerprint % 2 == 0)
                 {
                     result.Add($"--disable-full-version-list");
-                    if (new bool[] { false, false, true, false, false, true, false, false, true, false }[CommonHelper.RandomRange(0, 10)])
+                   
+                    if (fingerprint % 5 == 0)
                     {
                         result.Add($"--disable-brand-version-list");
                     }
                 }
-
 
                 if (os == 1 || os == 2)
                 {
@@ -885,6 +602,7 @@ namespace QTP.Plugins
             }
 
             var dev_hash = Math.Abs(taskArgs.SelectToken("dev").ToString().GetHashCode());
+
             #region webgl
             result.Add($"--webgl-vendor=\"{vendor}\"");
             result.Add($"--webgl-renderer=\"{gpu}\"");
@@ -954,6 +672,8 @@ namespace QTP.Plugins
 
             var ram = taskArgs.SelectToken("dev.ram").Value<string>().Split(',', StringSplitOptions.RemoveEmptyEntries);
             int deviceMemory = Convert.ToInt32(ram[CommonHelper.RandomRange(0, ram.Length)].Trim());
+            if (deviceMemory < 4) deviceMemory = 4;
+
             result.Add($"--device-memory={(deviceMemory > 8 ? 8 : deviceMemory)}");
 
             var js_memory_info = new string[] { "10000000|10000000|1136000000", "29400000|31200000|1130000000", "10000000|10000000|1136000000", "29400000|31200000|1130000000", "29400000|31200000|1130000000" };
@@ -980,7 +700,7 @@ namespace QTP.Plugins
             result.Add("--enable-font-noise");
             result.Add("--enable-audio-noise");
 
-            if (new bool[] { false, false, true, false, false, true, false, false, true, false }[CommonHelper.RandomRange(0, 10)])
+            if (dev_hash % 2 == 0)
             {
                 result.Add("--disable-pdf-viewer");
             }
@@ -995,8 +715,8 @@ namespace QTP.Plugins
             {
 
                 {
-                    var touch_ix = RandomUtil.NextInt(0, 2);
-                    var touch_iy = RandomUtil.NextInt(80, 100);
+                    var touch_ix = CommonHelper.NextInt(0, 2);
+                    var touch_iy = CommonHelper.NextInt(80, 100);
                     if (new bool[] { true, true, false, true, true, false, true, true, false, true }[CommonHelper.RandomRange(0, 10)])
                     {
                         string combined_x = $"{fingerprint}_touch_offset_x";
@@ -1136,12 +856,10 @@ namespace QTP.Plugins
 
                 var beforeY = scrollStateBefore.ScrollY;
 
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanScrollHelper.TouchPageScrollOnceAsync(
                     page,
                     cdpSession,
-                    scrollCount: 1,
                     direction: PageScrollDirection.Up,
-                    timeDelay:CommonHelper.RandomRange(123,456),
                     cancellationToken: cancellationToken);
 
                 var scrollStateAfter = await GetPageScrollStateAsync(page);
@@ -1316,7 +1034,7 @@ namespace QTP.Plugins
             {
                 LogWriteLine($"{traceTag} CDP连接最终失败: {lastException}");
                 //|| lastException.Message.Contains("Process exited")
-                if (lastException.Message.Contains("no such file or directory") )
+                if (lastException.Message.Contains("no such file or directory"))
                 {
                     SafeRestartHelper.ForceRestart(1);
                 }
@@ -1601,7 +1319,7 @@ namespace QTP.Plugins
 
                 if (ctx.Config.IsTest)
                 {
-                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=lv";
+                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=塑料";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/KtpmHjYN5sC8vyEfvBSesVjwn9Z/index.html?babelChannel=ttt12";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/27cGVLCp2Rk5UAemjMvigeJXok9/index.html?babelChannel=ttt1&hy_entry=UC_SearchSkin";
                     //entry.FirstPageUrl = "https://m.1688.com/zw/hamlet.html?scene=8&q=%E7%AF%AE%E7%90%83%E8%B6%B3%E7%90%83&imgurl=img/ibank/O1CN014k1XW01LMa13eBYoI_!!2207873421285-0-cib.jpg&cosite=smjj&keywordid=74320369958&trackid={}&format=shandian&bd_vid=11084568593119754510&outerId=618324461983&creative=50000002313693958&trackid=88585857717827007619670&clickid=11084568593119754510&uctrackid=czoxMTY5NjMwNTUyNjMzNDM1MDE2MTtjOjUwMDAwMDAyMzEzNjkzOTU4O2Q6ZG1wXy01NjI5MzQyMTI1NDM3MjIyOTQ4O3A6d2w=&flowfrom=shenma";
@@ -1623,7 +1341,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.jqlive16.cc";
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
-
+                    //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
+                    //entry.FirstPageUrl = "https://www.browserscan.net/zh";
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
@@ -1733,17 +1452,10 @@ namespace QTP.Plugins
                     continue;
                 }
 
-
-
-
-                //await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
                 await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
                 if (!adsOk)
                     continue;
-
-
-
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
@@ -1759,14 +1471,12 @@ namespace QTP.Plugins
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
-                   
 
                     await HumanScrollHelper.TouchPageLongScrollAsync(
                      ctx.Page,
                      ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(2, 4),
+                     scrollCount: CommonHelper.RandomRange(1, 4),
                      direction: PageScrollDirection.Up,
-                     timeDelay: CommonHelper.RandomRange(123, 345),
                      cancellationToken: token);
 
                     await Task.Delay(CommonHelper.RandomRange(3120, 5678), token);
@@ -1774,9 +1484,8 @@ namespace QTP.Plugins
                     await HumanScrollHelper.TouchPageLongScrollAsync(
                       ctx.Page,
                       ctx.CdpSession!,
-                      scrollCount: CommonHelper.RandomRange(1, 3),
+                      scrollCount: CommonHelper.RandomRange(1, 2),
                       direction: PageScrollDirection.Down,
-                      timeDelay: CommonHelper.RandomRange(123, 345),
                       cancellationToken: token);
 
 
@@ -2749,17 +2458,13 @@ namespace QTP.Plugins
             {
                 token.ThrowIfCancellationRequested();
 
-                await SMAd.Swiperv3.SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, sponsored);
+                await SwipeEmulator.SwipeToElementAsync(
+                    ctx.Page,
+                    ctx.CdpSession!,
+                    sponsored,
+                    maxSwipes: 10,
+                    cancellationToken: token);
 
-                //await HumanScrollHelper.TouchPageLongScrollAsync(
-                //                         ctx.Page!,
-                //                         ctx.CdpSession!,
-                //                         scrollCount: CommonHelper.RandomRange(0, 2),
-                //                         direction: PageScrollDirection.Up,
-                //                         cancellationToken: token);
-
-
-                //await sponsored.ScrollIntoViewIfNeededAsync();
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 var target = await PickSponsoredTargetAsync(sponsored, token);
                 if (target == null)
@@ -2974,7 +2679,13 @@ namespace QTP.Plugins
             {
                 token.ThrowIfCancellationRequested();
 
-                await _owner.TouchPageScrollAsync(ctx.Page!, ctx.CdpSession!, CommonHelper.RandomRange(0, 3), PageScrollDirection.Up);
+                await HumanScrollHelper.TouchPageLongScrollAsync(
+                    page: ctx.Page!,
+                    client: ctx.CdpSession!,
+                    scrollCount: CommonHelper.RandomRange(0, 5),
+                    direction: PageScrollDirection.Up,
+                    cancellationToken: token);
+
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
                 var tagItems = ctx.Page!.Locator(".tag-panel .tag-item");
@@ -3085,7 +2796,15 @@ namespace QTP.Plugins
                 {
                     int count = await offerItems.CountAsync();
                     var offer = offerItems.Nth(CommonHelper.RandomRange(0, count));
-                    await SMAd.Swiperv3.SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, offer);
+
+                    await SwipeEmulator.SwipeToElementAsync(
+                        ctx.Page,
+                        ctx.CdpSession!,
+                        offer,
+                        maxSwipes: 10,
+                        cancellationToken: token);
+
+
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                     var click = await _owner.ClickAndDetectNavigationAsync(ctx, offer, token);
                     if (click.Navigated)
@@ -3159,7 +2878,13 @@ namespace QTP.Plugins
                 if (count > 0)
                 {
                     var item = recommend.Nth(CommonHelper.RandomRange(0, count));
-                    await SMAd.Swiperv3.SwipeEmulator.SwipeToElementAsync(ctx.Page, ctx.CdpSession!, item);
+                    await SwipeEmulator.SwipeToElementAsync(
+                    ctx.Page,
+                    ctx.CdpSession!,
+                    item,
+                    maxSwipes: 10,
+                    cancellationToken: token);
+
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                     await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
                 }
@@ -3201,7 +2926,13 @@ namespace QTP.Plugins
                         int count = await offerItems.CountAsync();
                         var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                        await SMAd.Swiperv3.SwipeEmulator.SwipeToElementAsync(ctx.Page!, ctx.CdpSession!, item, maxSwipes: CommonHelper.RandomRange(0, 5));//maxSwipes: CommonHelper.RandomRange(1, 3)
+                        await SwipeEmulator.SwipeToElementAsync(
+                        ctx.Page,
+                        ctx.CdpSession!,
+                        item,
+                        maxSwipes: CommonHelper.RandomRange(1, 5),
+                        cancellationToken: token);
+
                         await item.ScrollIntoViewIfNeededAsync();
                         await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                         var click = await _owner.ClickElementAndDetectNavigationAsync(ctx, item, token);
@@ -3331,7 +3062,7 @@ namespace QTP.Plugins
 
                 token.ThrowIfCancellationRequested();
 
-                await TouchPageScrollUpAsync(ctx.Page!, ctx.CdpSession!, 100, token);
+                await SwipeEmulator.SwipeOnceHumanAsync(ctx.Page!, ctx.CdpSession!, direction: ScrollDirection.Up, microSwipe: true, cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(100, 200), token);
 
@@ -3424,7 +3155,6 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
-                    timeDelay: CommonHelper.RandomRange(123, 345),
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 offerItems = ctx.Page.Locator("//div[starts-with(@class,'offer-item')]");
@@ -3436,7 +3166,6 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
-                    timeDelay: CommonHelper.RandomRange(123, 345),
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -3450,7 +3179,6 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
-                    timeDelay: CommonHelper.RandomRange(123, 345),
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -3507,7 +3235,6 @@ namespace QTP.Plugins
                         ctx.CdpSession!,
                         scrollCount: CommonHelper.RandomRange(1, 4),
                         direction: PageScrollDirection.Up,
-                        timeDelay: CommonHelper.RandomRange(123, 345),
                         cancellationToken: token);
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                     offerItems = ctx.Page.Locator("//div[contains(@class,'ec_content')]");
@@ -3539,7 +3266,6 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
-                    timeDelay: CommonHelper.RandomRange(123, 345),
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 offerItems = ctx.Page.Locator("//a[starts-with(@class,'link')]");
@@ -3568,7 +3294,6 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
-                    timeDelay: CommonHelper.RandomRange(123, 345),
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -3964,7 +3689,6 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: 1,
                     direction: direction,
-                    timeDelay: CommonHelper.RandomRange(123, 345),
                     cancellationToken: token);
 
                     token.ThrowIfCancellationRequested();
@@ -4907,21 +4631,85 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+
+            await Task.Delay(CommonHelper.RandomRange(5000, 8000));
+
+            //var trace = await SwipeEmulator.SwipeOnceHumanAsync(
+            //page: ctx.Page!,
+            //client: ctx.CdpSession!,
+            //direction: ScrollDirection.Up,
+            //area: SwipeArea.Wide,
+            //microSwipe: false,
+            //totalDistancePx: (int)(ctx.Page!.ViewportSize!.Height * 0.55),
+            //verifyScrollChanged: false,
+            //cancellationToken: token);
+
+
+
+            // await SMAdHelper.TestFingerSwipeUpAsync(ctx.Page!, ctx.CdpSession!, token);
+
+            //await HumanScrollHelper.TouchPageLongScrollAsync(
+            //     page: ctx.Page!,
+            //     client: ctx.CdpSession!,
+            //     scrollCount: 10,
+            //     direction: PageScrollDirection.Up,
+            //     cancellationToken: token);
+
+            //await Task.Delay(CommonHelper.RandomRange(2000, 3000));
+
+            //// 连续滑动几次，拿到轨迹
+            //List<SwipeTrace> traces = await SwipeEmulator.SwipeMultipleHumanAsync(
+            //    page: ctx.Page!,
+            //    client: ctx.CdpSession!,
+            //    times: 10,
+            //    direction: ScrollDirection.Up,
+            //    area: SwipeArea.Normal,
+            //    microSwipe: false,
+            //    maxConsecutiveNoMove: 2,
+            //    cancellationToken: token);
+
+            //if (traces == null || traces.Count == 0)
+            //{
+            //    Console.WriteLine("没有生成到任何滑动轨迹。");
+            //    return;
+            //}
+
+            //int width = ctx.Page.ViewportSize.Width;
+            //int height = ctx.Page.ViewportSize.Height;
+            //string outputDir = Path.Combine(AppContext.BaseDirectory, "swipe_output");
+            //string pngPath = Path.Combine(outputDir, "swipe_demo.png");
+            //string gifPath = Path.Combine(outputDir, "swipe_demo.gif");
+
+            //SwipeTraceRenderer.DrawPngAndGif(
+            //    traces: traces,
+            //    pngPath: pngPath,
+            //    gifPath: gifPath,
+            //    width: width,
+            //    height: height,
+            //    frameDelayMs: 40 // 每帧 40ms，越小越快
+            //);
+
+            //Console.WriteLine($"轨迹 PNG: {pngPath}");
+            //Console.WriteLine($"轨迹 GIF: {gifPath}");
+
+
             //await DecideJumpClickAsync(ctx, token);
             // var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
 
 
 
 
-            var handleFlow = await HandleLandingPageAsync(ctx, token);
-            ctx.JumpClick = true;
-            ctx.PageTriggerClick = true;
-            var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
+            //var handleFlow = await HandleLandingPageAsync(ctx, token);
+            //ctx.JumpClick = true;
+            //ctx.PageTriggerClick = true;
+            //var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
 
             //await Task.Delay(CommonHelper.RandomRange(5000, 8000));
             //this.QTPExecuteSuccess(ctx.Config.TaskId);
             //LogWriteLine($"{this.Title}:ExecuteWorker:Success");
             //await Task.Delay(ctx.Config.SleepMs, token);
+
+
 
 
             await Task.Delay(TimeSpan.FromSeconds(150), token);
