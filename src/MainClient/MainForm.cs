@@ -957,16 +957,36 @@ namespace MainClient
             string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
             if (!Directory.Exists(patchDir))
                 Directory.CreateDirectory(patchDir);
-            string patchFile = Path.Combine(patchDir, "patch_page_loading202605061944.done");
+            string patchFile = Path.Combine(patchDir, "patch_page_loading202605062117.done");
             if (File.Exists(patchFile))
                 return;
 
 
+            _appSettings.Rfq1688 = false;
+            _appSettings.Rfq1688Rate = 0;
+
             _appSettings.p4psearch = false;
             _appSettings.p4psearchRate = 0;
+
             _appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
             _appSettings.NoTrigger1688Shop = true;
             _appSettings.Protocol = "http";
+
+            var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", "130.0.6723.139");
+            if(Directory.Exists(chromePath))
+            {
+                try
+                {
+                    System.IO.Directory.Delete(chromePath, true);
+                }
+                catch (Exception)
+                {
+
+                }
+
+            }
+
+
 
             UserConfigService.Save("AppSettings", _appSettings);
             // 创建标记文件
@@ -982,6 +1002,10 @@ namespace MainClient
             ApplyOneTimeLocalPatch();
             if (_appSettings.MinFrequency == 0)
                 _appSettings.MinFrequency = 1;
+            if (string.IsNullOrWhiteSpace(_appSettings.Protocol))
+                _appSettings.Protocol = "http";
+
+
             comboBox_QTPName.Text = _appSettings.QTPName;
             textBox_ProxyIpUrl.Text = _appSettings.ProxyIpUrl;
             textBox_TaskApiUrl.Text = _appSettings.TaskApiUrl;
