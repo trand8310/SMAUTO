@@ -301,6 +301,7 @@ namespace QTP
                     host = host,
                     task = _appSettings.TaskName,
                     version = _options.AppVersion,
+                    browser = _appSettings.KernelVersion,
                     proxy = GetProxyHostSafely(_appSettings.ProxyIpUrl),
                     fullproxy = _appSettings.ProxyIpUrl,
                     wordname = wordName,
