@@ -134,8 +134,11 @@ namespace SMAd.Swiper
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
             ScrollOptions? options = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
+            options = ApplyStyleOption(options, style);
+
             return TouchPageScrollAsync(
                 page: page,
                 client: client,
@@ -157,7 +160,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -168,7 +172,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.Long
+                    Mode = HumanScrollMode.Long,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -183,7 +188,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -194,7 +200,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.Short
+                    Mode = HumanScrollMode.Short,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -209,7 +216,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -220,7 +228,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.FineTune
+                    Mode = HumanScrollMode.FineTune,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -235,7 +244,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -246,7 +256,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.Probe
+                    Mode = HumanScrollMode.Probe,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -262,7 +273,8 @@ namespace SMAd.Swiper
             double heightRatio,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -273,7 +285,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    HeightRatio = heightRatio
+                    HeightRatio = heightRatio,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -289,7 +302,8 @@ namespace SMAd.Swiper
             int distancePx,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -300,7 +314,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    DistancePx = distancePx
+                    DistancePx = distancePx,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -364,6 +379,19 @@ namespace SMAd.Swiper
                 styleVariationNumber: styleVariationNumber,
                 styleVariationStrength: styleVariationStrength,
                 cancellationToken: cancellationToken);
+        }
+
+        private static ScrollOptions? ApplyStyleOption(ScrollOptions? options, SwipeStyleOptions? style)
+        {
+            if (style == null)
+                return options;
+
+            options ??= new ScrollOptions();
+
+            if (options.Style == null && !options.StyleActionNumber.HasValue && !options.StyleNumber.HasValue)
+                options.Style = style;
+
+            return options;
         }
 
         private static HumanScrollProfile ResolveHumanScrollProfile(
