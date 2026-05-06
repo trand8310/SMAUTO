@@ -24,10 +24,8 @@ namespace QTP.Plugins
     public sealed class SMAdTask : QTPServiceBase
     {
         private static readonly object CdpFinalFailureLock = new();
-        private static DateTime? CdpFinalFailureFirstUtc;
         private static int CdpFinalFailureCount;
         private static bool CdpFinalFailureRestartRequested;
-        private static readonly TimeSpan CdpFinalFailureRestartWindow = TimeSpan.FromSeconds(10);
         private const int CdpFinalFailureRestartThreshold = 10;
 
         private static bool IsClosedPlaywrightException(PlaywrightException ex)
@@ -966,7 +964,6 @@ namespace QTP.Plugins
                 if (CdpFinalFailureCount > 0)
                     LogWriteLine($"{traceTag} CDP最终失败统计已清零: count={CdpFinalFailureCount}");
 
-                CdpFinalFailureFirstUtc = null;
                 CdpFinalFailureCount = 0;
 
             }
@@ -974,38 +971,34 @@ namespace QTP.Plugins
 
         private void HandleCdpFinalFailureForRestart(string traceTag, Exception lastException)
         {
+            if (lastException.Message.Contains("no such file or directory", StringComparison.OrdinalIgnoreCase))
+            {
+                LogWriteLine($"{traceTag} CDP最终失败命中 no such file or directory，立即重启计算机。LastError={lastException}");
+                SafeRestartHelper.ForceRestart(1);
+                return;
+            }
+
             bool shouldRestart = false;
             int failureCount;
-            double durationSeconds;
 
             lock (CdpFinalFailureLock)
             {
-                DateTime now = DateTime.UtcNow;
-
-                if (CdpFinalFailureFirstUtc == null)
-                {
-                    CdpFinalFailureFirstUtc = now;
-                    CdpFinalFailureCount = 0;
-                }
-
                 CdpFinalFailureCount++;
                 failureCount = CdpFinalFailureCount;
-                durationSeconds = (now - CdpFinalFailureFirstUtc.Value).TotalSeconds;
 
                 shouldRestart = !CdpFinalFailureRestartRequested
-                    && durationSeconds >= CdpFinalFailureRestartWindow.TotalSeconds
                     && failureCount > CdpFinalFailureRestartThreshold;
 
                 if (shouldRestart)
                     CdpFinalFailureRestartRequested = true;
             }
 
-            LogWriteLine($"{traceTag} CDP最终失败统计: count={failureCount}, duration={durationSeconds:F1}s, threshold>{CdpFinalFailureRestartThreshold}/{CdpFinalFailureRestartWindow.TotalSeconds:F0}s, error={lastException.Message}");
+            LogWriteLine($"{traceTag} CDP最终失败统计: count={failureCount}, threshold>{CdpFinalFailureRestartThreshold}, error={lastException.Message}");
 
             if (!shouldRestart)
                 return;
 
-            LogWriteLine($"{traceTag} CDP连接最终失败持续超过{CdpFinalFailureRestartWindow.TotalSeconds:F0}秒且全局次数超过{CdpFinalFailureRestartThreshold}次，准备重启计算机。LastError={lastException}");
+            LogWriteLine($"{traceTag} CDP连接最终失败全局次数超过{CdpFinalFailureRestartThreshold}次，准备重启计算机。LastError={lastException}");
             SafeRestartHelper.ForceRestart(1);
         }
 
