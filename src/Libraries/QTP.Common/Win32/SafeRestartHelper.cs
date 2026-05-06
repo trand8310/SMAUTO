@@ -10,6 +10,9 @@ namespace QTP.Common.Win32
 {
     public static class SafeRestartHelper
     {
+        private static readonly object RestartLock = new();
+        private static bool RestartRequested;
+
         public static void RequestSystemRestart(string reason)
         {
             try
@@ -37,6 +40,14 @@ namespace QTP.Common.Win32
                 if (delaySeconds < 0)
                     delaySeconds = 0;
 
+                lock (RestartLock)
+                {
+                    if (RestartRequested)
+                        return true;
+
+                    RestartRequested = true;
+                }
+
                 var psi = new ProcessStartInfo
                 {
                     FileName = "shutdown.exe",
@@ -46,10 +57,16 @@ namespace QTP.Common.Win32
                 };
 
                 Process.Start(psi);
+
                 return true;
             }
             catch (Exception ex)
             {
+                lock (RestartLock)
+                {
+                    RestartRequested = false;
+                }
+
                 Console.WriteLine("重启失败：" + ex.Message);
                 return false;
             }
@@ -68,6 +85,12 @@ namespace QTP.Common.Win32
                 };
 
                 Process.Start(psi);
+
+                lock (RestartLock)
+                {
+                    RestartRequested = false;
+                }
+
                 return true;
             }
             catch (Exception ex)
