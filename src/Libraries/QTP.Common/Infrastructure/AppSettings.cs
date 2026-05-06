@@ -145,6 +145,17 @@
         public bool AutoUpdate { get; set; }
 
 
+        /// <summary>
+        /// 不触发1688店铺首页
+        /// </summary>
+        public bool NoTrigger1688Shop { get; set; }
+
+        /// <summary>
+        /// 代理协议:http/socks5
+        /// </summary>
+        public string Protocol { get; set; }
+
+
 
 
 

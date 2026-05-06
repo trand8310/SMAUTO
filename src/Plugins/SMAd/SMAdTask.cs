@@ -520,7 +520,7 @@ namespace QTP.Plugins
                 if (fingerprint % 2 == 0)
                 {
                     result.Add($"--disable-full-version-list");
-                   
+
                     if (fingerprint % 5 == 0)
                     {
                         result.Add($"--disable-brand-version-list");
@@ -1780,7 +1780,19 @@ namespace QTP.Plugins
             if (isProxyMode)
             {
                 proxyServer = config.TaskArgs.SelectToken("proxy_server")!.Value<string>();
-                args.Add($"--proxy-server=\"{proxyServer}\"");
+                var protocol = config.TaskArgs.SelectToken("protocol")?.Value<string>();
+                if (!string.IsNullOrWhiteSpace(protocol) && protocol.Equals("socks5"))
+                {
+                    args.Add($"--proxy-server=\"socks5://{proxyServer}\"");
+                    //--proxy-server="socks5://127.0.0.1:1080" ^
+                    //--disable-features=DnsOverHttps ^
+                    //--host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"
+                }
+                else
+                {
+                    args.Add($"--proxy-server=\"{proxyServer}\"");
+                }
+
             }
 
             if (config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false)
@@ -3735,43 +3747,77 @@ namespace QTP.Plugins
                 direction: PageScrollDirection.Up,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                var locator_detail = ctx.Page!.Locator("*:text-is('全部商品')");
-                var locator_detail_count = await locator_detail.CountAsync();
-                if (locator_detail_count == 0)
+                if (!_appSettings.NoTrigger1688Shop)
                 {
-                    locator_detail = ctx.Page.Locator("*:text-is('进店看看')");
-                    locator_detail_count = await locator_detail.CountAsync();
-                }
-                if (locator_detail_count == 0)
-                {
-                    locator_detail = ctx.Page.Locator("*:text-is('进店看厂')");
-                    locator_detail_count = await locator_detail.CountAsync();
-                }
-                if (locator_detail_count == 0)
-                {
-                    locator_detail = ctx.Page.Locator(".recommend-container");
-                    locator_detail_count = await locator_detail.CountAsync();
-                }
-
-                if (locator_detail_count > 0)
-                {
-                    await locator_detail.ScrollIntoViewIfNeededAsync();
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                    var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
-                    if (clickRes2.Navigated)
+                    var locator_detail = ctx.Page!.Locator("*:text-is('全部商品')");
+                    var locator_detail_count = await locator_detail.CountAsync();
+                    if (locator_detail_count == 0)
                     {
-                        await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
-                        await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-                        await Task.Delay(CommonHelper.RandomRange(200, 300), token);
-                        await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                        await HumanScrollHelper.TouchPageLongScrollAsync(
-                        ctx.Page!,
-                        ctx.CdpSession!,
-                        scrollCount: CommonHelper.RandomRange(0, 3),
-                        direction: PageScrollDirection.Up,
-                        cancellationToken: token);
+                        locator_detail = ctx.Page.Locator("*:text-is('进店看看')");
+                        locator_detail_count = await locator_detail.CountAsync();
+                    }
+                    if (locator_detail_count == 0)
+                    {
+                        locator_detail = ctx.Page.Locator("*:text-is('进店看厂')");
+                        locator_detail_count = await locator_detail.CountAsync();
+                    }
+                    if (locator_detail_count == 0)
+                    {
+                        locator_detail = ctx.Page.Locator(".recommend-container");
+                        locator_detail_count = await locator_detail.CountAsync();
+                    }
+
+                    if (locator_detail_count > 0)
+                    {
+                        await locator_detail.ScrollIntoViewIfNeededAsync();
                         await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                        var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
+                        if (clickRes2.Navigated)
+                        {
+                            await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
+                            await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
+                            await Task.Delay(CommonHelper.RandomRange(200, 300), token);
+                            await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
+                            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                            await HumanScrollHelper.TouchPageLongScrollAsync(
+                            ctx.Page!,
+                            ctx.CdpSession!,
+                            scrollCount: CommonHelper.RandomRange(0, 3),
+                            direction: PageScrollDirection.Up,
+                            cancellationToken: token);
+                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                            locator_detail = ctx.Page
+                                .Locator("body,iframe")
+                                .Filter(new() { Visible = true })
+                                .First;
+
+                            if (await locator_detail.CountAsync() > 0)
+                            {
+                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                await locator_detail.First.ScrollIntoViewIfNeededAsync();
+                                var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
+                                if (clickRes3.Navigated)
+                                {
+                                    await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
+                                    await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
+                                    await Task.Delay(CommonHelper.RandomRange(200, 300), token);
+                                    await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
+                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                    await HumanScrollHelper.TouchPageLongScrollAsync(
+                                    ctx.Page!,
+                                    ctx.CdpSession!,
+                                    scrollCount: CommonHelper.RandomRange(0, 3),
+                                    direction: PageScrollDirection.Up,
+                                    cancellationToken: token);
+                                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                }
+
+                            }
+                        }
+
+                    }
+                    else
+                    {
                         locator_detail = ctx.Page
                             .Locator("body,iframe")
                             .Filter(new() { Visible = true })
@@ -3779,8 +3825,6 @@ namespace QTP.Plugins
 
                         if (await locator_detail.CountAsync() > 0)
                         {
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                            await locator_detail.First.ScrollIntoViewIfNeededAsync();
                             var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
                             if (clickRes3.Navigated)
                             {
@@ -3800,36 +3844,8 @@ namespace QTP.Plugins
 
                         }
                     }
-
                 }
-                else
-                {
-                    locator_detail = ctx.Page
-                        .Locator("body,iframe")
-                        .Filter(new() { Visible = true })
-                        .First;
 
-                    if (await locator_detail.CountAsync() > 0)
-                    {
-                        var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
-                        if (clickRes3.Navigated)
-                        {
-                            await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
-                            await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-                            await Task.Delay(CommonHelper.RandomRange(200, 300), token);
-                            await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-                            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                            await HumanScrollHelper.TouchPageLongScrollAsync(
-                            ctx.Page!,
-                            ctx.CdpSession!,
-                            scrollCount: CommonHelper.RandomRange(0, 3),
-                            direction: PageScrollDirection.Up,
-                            cancellationToken: token);
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        }
-
-                    }
-                }
             }
             catch (OperationCanceledException)
             {
@@ -4173,43 +4189,71 @@ namespace QTP.Plugins
                 direction: PageScrollDirection.Up,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-
-
-                var locator = ctx.Page.Locator("*:text-is('进店看看')");
-                var locator_count = await locator.CountAsync();
-                if (locator_count == 0)
+                if (!_appSettings.NoTrigger1688Shop)
                 {
-                    locator = ctx.Page.Locator("*:text-is('进店看厂')");
-                    locator_count = await locator.CountAsync();
-                }
-                if (locator_count == 0)
-                {
-                    locator = ctx.Page.Locator("*:text-is('全部商品')");
-                    locator_count = await locator.CountAsync();
-                }
-                if (locator_count == 0)
-                {
-                    locator = ctx.Page.Locator(".recommend-container");
-                    locator_count = await locator.CountAsync();
-                }
-
-                if (locator_count > 0)
-                {
-                    await locator.ScrollIntoViewIfNeededAsync();
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                    var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-                    if (clickRes2.Navigated)
+                    var locator = ctx.Page.Locator("*:text-is('进店看看')");
+                    var locator_count = await locator.CountAsync();
+                    if (locator_count == 0)
                     {
-                        await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-                        await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                        await HumanScrollHelper.TouchPageLongScrollAsync(
-                        ctx.Page!,
-                        ctx.CdpSession!,
-                        scrollCount: CommonHelper.RandomRange(0, 3),
-                        direction: PageScrollDirection.Up,
-                        cancellationToken: token);
+                        locator = ctx.Page.Locator("*:text-is('进店看厂')");
+                        locator_count = await locator.CountAsync();
+                    }
+                    if (locator_count == 0)
+                    {
+                        locator = ctx.Page.Locator("*:text-is('全部商品')");
+                        locator_count = await locator.CountAsync();
+                    }
+                    if (locator_count == 0)
+                    {
+                        locator = ctx.Page.Locator(".recommend-container");
+                        locator_count = await locator.CountAsync();
+                    }
+
+                    if (locator_count > 0)
+                    {
+                        await locator.ScrollIntoViewIfNeededAsync();
                         await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                        var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
+                        if (clickRes2.Navigated)
+                        {
+                            await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
+                            await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
+                            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                            await HumanScrollHelper.TouchPageLongScrollAsync(
+                            ctx.Page!,
+                            ctx.CdpSession!,
+                            scrollCount: CommonHelper.RandomRange(0, 3),
+                            direction: PageScrollDirection.Up,
+                            cancellationToken: token);
+                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                            locator = ctx.Page
+                                .Locator("body,iframe")
+                                .Filter(new() { Visible = true })
+                                .First;
+
+                            if (await locator.CountAsync() > 0)
+                            {
+                                var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
+                                if (clickRes3.Navigated)
+                                {
+                                    await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
+                                    await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
+                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                    await HumanScrollHelper.TouchPageLongScrollAsync(
+                                    ctx.Page!,
+                                    ctx.CdpSession!,
+                                    scrollCount: CommonHelper.RandomRange(0, 3),
+                                    direction: PageScrollDirection.Up,
+                                    cancellationToken: token);
+                                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                                }
+
+                            }
+                        }
+
+                    }
+                    else
+                    {
                         locator = ctx.Page
                             .Locator("body,iframe")
                             .Filter(new() { Visible = true })
@@ -4234,47 +4278,7 @@ namespace QTP.Plugins
 
                         }
                     }
-
                 }
-                else
-                {
-                    locator = ctx.Page
-                        .Locator("body,iframe")
-                        .Filter(new() { Visible = true })
-                        .First;
-
-                    if (await locator.CountAsync() > 0)
-                    {
-                        var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-                        if (clickRes3.Navigated)
-                        {
-                            await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-                            await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-                            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                            await HumanScrollHelper.TouchPageLongScrollAsync(
-                            ctx.Page!,
-                            ctx.CdpSession!,
-                            scrollCount: CommonHelper.RandomRange(0, 3),
-                            direction: PageScrollDirection.Up,
-                            cancellationToken: token);
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        }
-
-                    }
-                }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
             }
             catch (OperationCanceledException)

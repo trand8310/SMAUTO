@@ -957,13 +957,17 @@ namespace MainClient
             string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
             if (!Directory.Exists(patchDir))
                 Directory.CreateDirectory(patchDir);
-            string patchFile = Path.Combine(patchDir, "patch_page_loading202605012103.done");
+            string patchFile = Path.Combine(patchDir, "patch_page_loading202605061944.done");
             if (File.Exists(patchFile))
                 return;
+
 
             _appSettings.p4psearch = false;
             _appSettings.p4psearchRate = 0;
             _appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
+            _appSettings.NoTrigger1688Shop = true;
+            _appSettings.Protocol = "http";
+
             UserConfigService.Save("AppSettings", _appSettings);
             // 创建标记文件
             File.WriteAllText(
@@ -1026,7 +1030,8 @@ namespace MainClient
             numericUpDown_p4psearchRate.Value = _appSettings.p4psearchRate;
             checkBox_AutoUpdate.Checked = _appSettings.AutoUpdate;
             numericUpDown_MinFrequency.Value = _appSettings.MinFrequency;
-
+            comboBox_Protocol.Text = _appSettings.Protocol ?? "http";
+            checkBox_NoTrigger1688Shop.Checked = _appSettings.NoTrigger1688Shop;
 
         }
         private static object lock_config = new object();
@@ -1083,6 +1088,10 @@ namespace MainClient
 
                 _appSettings.AutoUpdate = checkBox_AutoUpdate.Checked;
                 _appSettings.MinFrequency = (int)numericUpDown_MinFrequency.Value;
+
+                _appSettings.Protocol = comboBox_Protocol.Text;
+                _appSettings.NoTrigger1688Shop = checkBox_NoTrigger1688Shop.Checked;
+
                 UserConfigService.Save("AppSettings", _appSettings);
             }
 
@@ -1302,7 +1311,7 @@ namespace MainClient
                     {
                         _aggregator.Enqueue(new TaskEvent(ctx.TaskId, StateType.Request, 1));
 
-                        var dev = await GetDeviceForTaskAsync(ctx.OS, ctx.TaskId, uvIndex, consumerToken);
+                        var dev = uvIndex == 0 ? check_dev : await GetDeviceForTaskAsync(ctx.OS, ctx.TaskId, uvIndex, consumerToken);
                         if (dev == null)
                             continue;
 
@@ -1796,7 +1805,8 @@ namespace MainClient
                 ["wordname"] = _appSettings.WordName,
                 ["noTrigger1688"] = _appSettings.NoTrigger1688,
                 ["cleaningWords"] = _appSettings.CleaningWords,
-                ["notTriggerDownload"] = _appSettings.NotTriggerDownload
+                ["notTriggerDownload"] = _appSettings.NotTriggerDownload,
+                ["protocol"] = _appSettings.ProxyIpUrl.Contains("api.xingyuip.com") ? _appSettings.Protocol : "http",  // "socks5",//"http"
             };
 
             return args;
