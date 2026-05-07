@@ -64,6 +64,14 @@ namespace MainClient.LogViewer
 
         private int MaxScrollValue => Math.Max(0, TotalScrollablePixels - ViewportHeight);
 
+        private int ViewportHeight => Math.Max(1, ClientSize.Height);
+
+        private int ViewportWidth => Math.Max(1, ClientSize.Width - (_scrollBar.Visible ? _scrollBar.Width : 0));
+
+        private int TotalScrollablePixels => Math.Max(0, _totalLines * _lineHeight);
+
+        private int MaxScrollValue => Math.Max(0, TotalScrollablePixels - ViewportHeight);
+
         private sealed class LogLineIndex
         {
             public required LogItem Log { get; init; }
