@@ -52,6 +52,17 @@ namespace MainClient.LogViewer
         private bool _selecting;
 
         private bool _pendingInvalidate;
+        private bool _hasScrollableOverflow;
+        private bool _isMouseInside;
+        private bool _autoHideScrollBar = true;
+
+        private int ViewportHeight => Math.Max(1, ClientSize.Height);
+
+        private int ViewportWidth => Math.Max(1, ClientSize.Width - (_scrollBar.Visible ? _scrollBar.Width : 0));
+
+        private int TotalScrollablePixels => Math.Max(0, _totalLines * _lineHeight);
+
+        private int MaxScrollValue => Math.Max(0, TotalScrollablePixels - ViewportHeight);
 
         private int ViewportHeight => Math.Max(1, ClientSize.Height);
 
@@ -98,6 +109,24 @@ namespace MainClient.LogViewer
         /// </summary>
         public bool DropLowLevelLogsWhenQueueBusy { get; set; } = true;
 
+        /// <summary>
+        /// 内容可滚动时，仅在鼠标进入控件、控件获得焦点或正在选择文本时显示滚动条。
+        /// 隐藏滚动条时正文区域使用完整宽度，避免右侧长期留白。
+        /// </summary>
+        public bool AutoHideScrollBar
+        {
+            get => _autoHideScrollBar;
+            set
+            {
+                if (_autoHideScrollBar == value)
+                    return;
+
+                _autoHideScrollBar = value;
+                UpdateScrollBarVisibility();
+                SafeInvalidate();
+            }
+        }
+
         public LogViewerUltra()
         {
             DoubleBuffered = true;
@@ -115,11 +144,18 @@ namespace MainClient.LogViewer
 
             _scrollBar.Dock = DockStyle.Right;
             _scrollBar.Width = 16;
+            _scrollBar.Visible = false;
             _scrollBar.Scroll += (_, __) =>
             {
                 _autoScroll = IsNearBottom();
                 SafeInvalidate();
             };
+            _scrollBar.MouseEnter += (_, __) =>
+            {
+                _isMouseInside = true;
+                UpdateScrollBarVisibility();
+            };
+            _scrollBar.MouseLeave += (_, __) => UpdateMouseInsideFromCursor();
             Controls.Add(_scrollBar);
 
             _timer.Interval = 120;
@@ -128,6 +164,14 @@ namespace MainClient.LogViewer
 
             MouseWheel += LogViewer_MouseWheel;
             MouseDown += LogViewer_MouseDown;
+            MouseEnter += (_, __) =>
+            {
+                _isMouseInside = true;
+                UpdateScrollBarVisibility();
+            };
+            MouseLeave += (_, __) => UpdateMouseInsideFromCursor();
+            GotFocus += (_, __) => UpdateScrollBarVisibility();
+            LostFocus += (_, __) => UpdateScrollBarVisibility();
             MouseMove += LogViewer_MouseMove;
             MouseUp += LogViewer_MouseUp;
             KeyDown += LogViewer_KeyDown;
@@ -395,6 +439,12 @@ namespace MainClient.LogViewer
 
         private void LogViewer_MouseMove(object? sender, MouseEventArgs e)
         {
+            if (!_isMouseInside)
+            {
+                _isMouseInside = true;
+                UpdateScrollBarVisibility();
+            }
+
             if (!_selecting)
                 return;
 
@@ -405,6 +455,7 @@ namespace MainClient.LogViewer
         private void LogViewer_MouseUp(object? sender, MouseEventArgs e)
         {
             _selecting = false;
+            UpdateScrollBarVisibility();
         }
 
         private void LogViewer_KeyDown(object? sender, KeyEventArgs e)
@@ -460,11 +511,36 @@ namespace MainClient.LogViewer
             _scrollBar.Maximum = hasOverflow
                 ? Math.Max(0, totalPixels - 1)
                 : 0;
+            _hasScrollableOverflow = hasOverflow;
             _scrollBar.Enabled = hasOverflow;
-            _scrollBar.Visible = hasOverflow;
+            UpdateScrollBarVisibility();
 
             if (_scrollBar.Value > maxScrollValue)
                 _scrollBar.Value = maxScrollValue;
+        }
+
+        private void UpdateMouseInsideFromCursor()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            _isMouseInside = ClientRectangle.Contains(PointToClient(Cursor.Position));
+            UpdateScrollBarVisibility();
+        }
+
+        private void UpdateScrollBarVisibility()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            bool shouldShow = _hasScrollableOverflow &&
+                              (!AutoHideScrollBar || _isMouseInside || Focused || _scrollBar.Focused || _selecting);
+
+            if (_scrollBar.Visible == shouldShow)
+                return;
+
+            _scrollBar.Visible = shouldShow;
+            SafeInvalidate();
         }
 
         private void ScrollToBottomSafe()
