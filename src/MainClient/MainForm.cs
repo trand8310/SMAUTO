@@ -697,6 +697,85 @@ namespace MainClient
         #endregion
 
 
+        private SplitContainer? _mainLayout;
+        private const int MinimumConfigPanelHeight = 360;
+        private const int PreferredConfigPanelHeight = 574;
+        private const int MinimumLogPanelHeight = 120;
+
+        /// <summary>
+        /// 使用 SplitContainer + 可滚动配置页替代固定高度的顶部区域，
+        /// 避免在小屏、高 DPI 或窗口缩放时控件被挤压、遮挡。
+        /// </summary>
+        private void ConfigureResponsiveLayout()
+        {
+            SuspendLayout();
+
+            MinimumSize = new Size(760, 520);
+            statusStrip1.Dock = DockStyle.Bottom;
+
+            tabPage1.AutoScroll = true;
+            tabPage1.AutoScrollMinSize = new Size(1080, 540);
+            tabControl1.Dock = DockStyle.Fill;
+            groupBox33.Dock = DockStyle.Fill;
+
+            _mainLayout = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Horizontal,
+                FixedPanel = FixedPanel.None,
+                IsSplitterFixed = false,
+                Panel1MinSize = MinimumConfigPanelHeight,
+                Panel2MinSize = MinimumLogPanelHeight,
+                SplitterWidth = 6
+            };
+
+            Controls.Remove(tabControl1);
+            Controls.Remove(groupBox33);
+
+            _mainLayout.Panel1.Controls.Add(tabControl1);
+            _mainLayout.Panel2.Controls.Add(groupBox33);
+            Controls.Add(_mainLayout);
+            Controls.SetChildIndex(statusStrip1, 0);
+            Controls.SetChildIndex(_mainLayout, 1);
+
+            Shown += (_, _) => FitWindowToCurrentScreen();
+            Resize += (_, _) => UpdateResponsiveSplitterDistance();
+
+            ResumeLayout(true);
+        }
+
+        private void FitWindowToCurrentScreen()
+        {
+            var workingArea = Screen.FromControl(this).WorkingArea;
+            var maxSize = new Size(
+                Math.Max(MinimumSize.Width, workingArea.Width - 40),
+                Math.Max(MinimumSize.Height, workingArea.Height - 40));
+
+            if (Width > maxSize.Width || Height > maxSize.Height)
+            {
+                Size = new Size(Math.Min(Width, maxSize.Width), Math.Min(Height, maxSize.Height));
+                Location = new Point(
+                    workingArea.Left + Math.Max(0, (workingArea.Width - Width) / 2),
+                    workingArea.Top + Math.Max(0, (workingArea.Height - Height) / 2));
+            }
+
+            UpdateResponsiveSplitterDistance();
+        }
+
+        private void UpdateResponsiveSplitterDistance()
+        {
+            if (_mainLayout == null || _mainLayout.IsDisposed || _mainLayout.Height <= 0)
+                return;
+
+            var maxConfigHeight = _mainLayout.Height - _mainLayout.SplitterWidth - MinimumLogPanelHeight;
+            if (maxConfigHeight < MinimumConfigPanelHeight)
+                return;
+
+            var distance = Math.Min(PreferredConfigPanelHeight, maxConfigHeight);
+            if (_mainLayout.SplitterDistance != distance)
+                _mainLayout.SplitterDistance = distance;
+        }
+
         public MainForm(
             IRootDomainService domainService,
             IPlaywrightProvider playwrightProvider,
@@ -712,6 +791,7 @@ namespace MainClient
             ILogger<MainForm> logger)
         {
             InitializeComponent();
+            ConfigureResponsiveLayout();
             this._domainService = domainService;
             this._playwrightProvider = playwrightProvider;
             this._aggregator = aggregator;
