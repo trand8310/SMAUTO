@@ -70,6 +70,7 @@ namespace QTP.Plugins
         private ChineseNameGenerator _nameGenerator;
         private readonly IRootDomainService _domainService;
         private readonly IPlaywrightProvider _playwrightProvider;
+        private SwipeStyleOptions _style = SwipeStyleOptions.Default;
         public SMAdTask(
             IRootDomainService domainService,
             IPlaywrightProvider playwrightProvider,
@@ -434,7 +435,7 @@ namespace QTP.Plugins
 
 
 
-        private static List<string> InitFPArgs(JToken taskArgs, int maxTouchPoints)
+        private List<string> InitFPArgs(JToken taskArgs, int maxTouchPoints, out long swipeStyleNumber)
         {
             var result = new List<string>();
             uint fingerprint = 0;
@@ -865,6 +866,7 @@ namespace QTP.Plugins
                     page,
                     cdpSession,
                     direction: PageScrollDirection.Up,
+                    style: _style,
                     cancellationToken: cancellationToken);
 
                 var scrollStateAfter = await GetPageScrollStateAsync(page);
@@ -1523,6 +1525,7 @@ namespace QTP.Plugins
                      ctx.CdpSession!,
                      scrollCount: CommonHelper.RandomRange(1, 4),
                      direction: PageScrollDirection.Up,
+                     style: ctx.Config.SwipeStyle,
                      cancellationToken: token);
 
                     await Task.Delay(CommonHelper.RandomRange(3120, 5678), token);
@@ -1532,6 +1535,7 @@ namespace QTP.Plugins
                       ctx.CdpSession!,
                       scrollCount: CommonHelper.RandomRange(1, 2),
                       direction: PageScrollDirection.Down,
+                      style: ctx.Config.SwipeStyle,
                       cancellationToken: token);
 
 
@@ -1854,7 +1858,9 @@ namespace QTP.Plugins
                 args.Add($"--disk-cache-dir=\"{config.CacheDir}\"");
             }
 
-            args.AddRange(InitFPArgs(config.TaskArgs, config.MaxTouchPoints));
+            args.AddRange(InitFPArgs(config.TaskArgs, config.MaxTouchPoints, out long swipeStyleNumber));
+            config.SwipeStyleNumber = swipeStyleNumber;
+            config.SwipeStyle = _style;
             return args;
         }
 
@@ -2521,6 +2527,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     sponsored,
                     maxSwipes: 10,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
@@ -2742,6 +2749,7 @@ namespace QTP.Plugins
                     client: ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(0, 5),
                     direction: PageScrollDirection.Up,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
@@ -2847,6 +2855,7 @@ namespace QTP.Plugins
                 ctx.CdpSession!,
                 scrollCount: CommonHelper.RandomRange(0, 3),
                 direction: PageScrollDirection.Up,
+                style: ctx.Config.SwipeStyle,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                 var offerItems = ctx.Page.Locator(".ad-card-title,.ad-card-image,.ad-card-conv-btn");
@@ -2860,6 +2869,7 @@ namespace QTP.Plugins
                         ctx.CdpSession!,
                         offer,
                         maxSwipes: 10,
+                        style: ctx.Config.SwipeStyle,
                         cancellationToken: token);
 
 
@@ -2941,6 +2951,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     item,
                     maxSwipes: 10,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
 
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
@@ -2989,6 +3000,7 @@ namespace QTP.Plugins
                         ctx.CdpSession!,
                         item,
                         maxSwipes: CommonHelper.RandomRange(1, 5),
+                        style: ctx.Config.SwipeStyle,
                         cancellationToken: token);
 
                         await item.ScrollIntoViewIfNeededAsync();
@@ -3022,6 +3034,7 @@ namespace QTP.Plugins
                                 ctx.CdpSession!,
                                 scrollCount: CommonHelper.RandomRange(1, 4),
                                 direction: PageScrollDirection.Up,
+                                style: ctx.Config.SwipeStyle,
                                 cancellationToken: token);
                                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                                 count = await CenterClickableFinder.MarkCandidatesAsync(ctx.Page);
@@ -3113,6 +3126,7 @@ namespace QTP.Plugins
                       }
                       return false;
                   },
+                  style: ctx.Config.SwipeStyle,
                   cancellationToken: token);
 
 
@@ -3120,7 +3134,7 @@ namespace QTP.Plugins
 
                 token.ThrowIfCancellationRequested();
 
-                await SwipeEmulator.SwipeOnceHumanAsync(ctx.Page!, ctx.CdpSession!, direction: ScrollDirection.Up, microSwipe: true, cancellationToken: token);
+                await SwipeEmulator.SwipeOnceHumanAsync(ctx.Page!, ctx.CdpSession!, direction: ScrollDirection.Up, microSwipe: true, style: ctx.Config.SwipeStyle, cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(100, 200), token);
 
@@ -3213,6 +3227,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 offerItems = ctx.Page.Locator("//div[starts-with(@class,'offer-item')]");
@@ -3224,6 +3239,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -3237,6 +3253,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -3293,6 +3310,7 @@ namespace QTP.Plugins
                         ctx.CdpSession!,
                         scrollCount: CommonHelper.RandomRange(1, 4),
                         direction: PageScrollDirection.Up,
+                        style: ctx.Config.SwipeStyle,
                         cancellationToken: token);
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                     offerItems = ctx.Page.Locator("//div[contains(@class,'ec_content')]");
@@ -3324,6 +3342,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 offerItems = ctx.Page.Locator("//a[starts-with(@class,'link')]");
@@ -3352,6 +3371,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: CommonHelper.RandomRange(1, 4),
                     direction: PageScrollDirection.Up,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -3571,6 +3591,7 @@ namespace QTP.Plugins
                 ctx.CdpSession!,
                 scrollCount: CommonHelper.RandomRange(1, 4),
                 direction: PageScrollDirection.Up,
+                style: ctx.Config.SwipeStyle,
                 cancellationToken: token);
             await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
             if (medical)
@@ -3747,6 +3768,7 @@ namespace QTP.Plugins
                     ctx.CdpSession!,
                     scrollCount: 1,
                     direction: direction,
+                    style: ctx.Config.SwipeStyle,
                     cancellationToken: token);
 
                     token.ThrowIfCancellationRequested();
@@ -3791,6 +3813,7 @@ namespace QTP.Plugins
                 ctx.CdpSession!,
                 scrollCount: CommonHelper.RandomRange(0, 3),
                 direction: PageScrollDirection.Up,
+                style: ctx.Config.SwipeStyle,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 if (!_appSettings.NoTrigger1688Shop)
@@ -3830,6 +3853,7 @@ namespace QTP.Plugins
                             ctx.CdpSession!,
                             scrollCount: CommonHelper.RandomRange(0, 3),
                             direction: PageScrollDirection.Up,
+                            style: ctx.Config.SwipeStyle,
                             cancellationToken: token);
                             await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                             locator_detail = ctx.Page
@@ -3854,6 +3878,7 @@ namespace QTP.Plugins
                                     ctx.CdpSession!,
                                     scrollCount: CommonHelper.RandomRange(0, 3),
                                     direction: PageScrollDirection.Up,
+                                    style: ctx.Config.SwipeStyle,
                                     cancellationToken: token);
                                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                                 }
@@ -3884,6 +3909,7 @@ namespace QTP.Plugins
                                 ctx.CdpSession!,
                                 scrollCount: CommonHelper.RandomRange(0, 3),
                                 direction: PageScrollDirection.Up,
+                                style: ctx.Config.SwipeStyle,
                                 cancellationToken: token);
                                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                             }
@@ -4233,6 +4259,7 @@ namespace QTP.Plugins
                 ctx.CdpSession!,
                 scrollCount: CommonHelper.RandomRange(0, 3),
                 direction: PageScrollDirection.Up,
+                style: ctx.Config.SwipeStyle,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 if (!_appSettings.NoTrigger1688Shop)
@@ -4270,6 +4297,7 @@ namespace QTP.Plugins
                             ctx.CdpSession!,
                             scrollCount: CommonHelper.RandomRange(0, 3),
                             direction: PageScrollDirection.Up,
+                            style: ctx.Config.SwipeStyle,
                             cancellationToken: token);
                             await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                             locator = ctx.Page
@@ -4290,6 +4318,7 @@ namespace QTP.Plugins
                                     ctx.CdpSession!,
                                     scrollCount: CommonHelper.RandomRange(0, 3),
                                     direction: PageScrollDirection.Up,
+                                    style: ctx.Config.SwipeStyle,
                                     cancellationToken: token);
                                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                                 }
@@ -4318,6 +4347,7 @@ namespace QTP.Plugins
                                 ctx.CdpSession!,
                                 scrollCount: CommonHelper.RandomRange(0, 3),
                                 direction: PageScrollDirection.Up,
+                                style: ctx.Config.SwipeStyle,
                                 cancellationToken: token);
                                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                             }
@@ -4416,6 +4446,7 @@ namespace QTP.Plugins
                 ctx.CdpSession!,
                 scrollCount: CommonHelper.RandomRange(2, 4),
                 direction: PageScrollDirection.Up,
+                style: ctx.Config.SwipeStyle,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -4462,6 +4493,7 @@ namespace QTP.Plugins
                       ctx.CdpSession!,
                       scrollCount: CommonHelper.RandomRange(2, 4),
                       direction: PageScrollDirection.Up,
+                      style: ctx.Config.SwipeStyle,
                       cancellationToken: token);
 
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
@@ -4530,6 +4562,7 @@ namespace QTP.Plugins
                 ctx.CdpSession!,
                 scrollCount: CommonHelper.RandomRange(2, 4),
                 direction: PageScrollDirection.Up,
+                style: ctx.Config.SwipeStyle,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 ClickResult? clickResult = null;
@@ -4620,6 +4653,7 @@ namespace QTP.Plugins
                       ctx.CdpSession!,
                       scrollCount: CommonHelper.RandomRange(0, 3),
                       direction: PageScrollDirection.Up,
+                      style: ctx.Config.SwipeStyle,
                       cancellationToken: token);
 
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
@@ -5153,6 +5187,8 @@ namespace QTP.Plugins
             public string KernelVersion { get; set; } = "132";
             public int MaxTouchPoints { get; set; }
             public int ProcessIndex { get; set; }
+            public long SwipeStyleNumber { get; set; }
+            public SwipeStyleOptions SwipeStyle { get; set; } = SwipeStyleOptions.Default;
 
             public bool IsTest { get; set; }
             public int TotalPV { get; set; }

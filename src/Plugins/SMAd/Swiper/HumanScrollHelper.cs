@@ -22,6 +22,7 @@ namespace SMAd.Swiper
             public int PauseMs { get; set; }
             public bool MicroSwipe { get; set; }
             public SwipeArea Area { get; set; } = SwipeArea.Normal;
+            public SwipeStyleOptions? Style { get; set; }
         }
 
         /// <summary>
@@ -90,6 +91,7 @@ namespace SMAd.Swiper
                         steps: profile.PointCount,
                         totalDistancePx: profile.DistancePx,
                         verifyScrollChanged: options.VerifyScrollChanged,
+                        style: profile.Style,
                         cancellationToken: cancellationToken);
 
                     int pause = timeDelay > 0 ? timeDelay : profile.PauseMs;
@@ -132,8 +134,11 @@ namespace SMAd.Swiper
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
             ScrollOptions? options = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
+            options = ApplyStyleOption(options, style);
+
             return TouchPageScrollAsync(
                 page: page,
                 client: client,
@@ -155,7 +160,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -166,7 +172,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.Long
+                    Mode = HumanScrollMode.Long,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -181,7 +188,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -192,7 +200,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.Short
+                    Mode = HumanScrollMode.Short,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -207,7 +216,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -218,7 +228,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.FineTune
+                    Mode = HumanScrollMode.FineTune,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -233,7 +244,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -244,7 +256,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    Mode = HumanScrollMode.Probe
+                    Mode = HumanScrollMode.Probe,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -260,7 +273,8 @@ namespace SMAd.Swiper
             double heightRatio,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -271,7 +285,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    HeightRatio = heightRatio
+                    HeightRatio = heightRatio,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -287,7 +302,8 @@ namespace SMAd.Swiper
             int distancePx,
             Func<IPage, Task<bool>>? predexp = null,
             int timeDelay = 0,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null)
         {
             return TouchPageScrollAsync(
                 page: page,
@@ -298,7 +314,8 @@ namespace SMAd.Swiper
                 timeDelay: timeDelay,
                 options: new ScrollOptions
                 {
-                    DistancePx = distancePx
+                    DistancePx = distancePx,
+                    Style = style
                 },
                 cancellationToken: cancellationToken);
         }
@@ -312,13 +329,23 @@ namespace SMAd.Swiper
             ICDPSession client,
             ILocator element,
             int maxSwipes = 10,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null,
+            long? styleActionNumber = null,
+            long? styleNumber = null,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
         {
             return SwipeEmulator.SwipeToElementAsync(
                 page: page,
                 client: client,
                 element: element,
                 maxSwipes: maxSwipes,
+                style: style,
+                styleActionNumber: styleActionNumber,
+                styleNumber: styleNumber,
+                styleVariationNumber: styleVariationNumber,
+                styleVariationStrength: styleVariationStrength,
                 cancellationToken: cancellationToken);
         }
 
@@ -332,7 +359,12 @@ namespace SMAd.Swiper
             int maxSwipes = 8,
             float comfortTopRatio = 0.22f,
             float comfortBottomRatio = 0.72f,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null,
+            long? styleActionNumber = null,
+            long? styleNumber = null,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
         {
             return SwipeEmulator.SwipeElementIntoComfortZoneAsync(
                 page: page,
@@ -341,7 +373,25 @@ namespace SMAd.Swiper
                 maxSwipes: maxSwipes,
                 comfortTopRatio: comfortTopRatio,
                 comfortBottomRatio: comfortBottomRatio,
+                style: style,
+                styleActionNumber: styleActionNumber,
+                styleNumber: styleNumber,
+                styleVariationNumber: styleVariationNumber,
+                styleVariationStrength: styleVariationStrength,
                 cancellationToken: cancellationToken);
+        }
+
+        private static ScrollOptions? ApplyStyleOption(ScrollOptions? options, SwipeStyleOptions? style)
+        {
+            if (style == null)
+                return options;
+
+            options ??= new ScrollOptions();
+
+            if (options.Style == null && !options.StyleActionNumber.HasValue && !options.StyleNumber.HasValue)
+                options.Style = style;
+
+            return options;
         }
 
         private static HumanScrollProfile ResolveHumanScrollProfile(
@@ -353,6 +403,7 @@ namespace SMAd.Swiper
             ScrollOptions options)
         {
             int vh = Math.Max(viewportHeight, 320);
+            SwipeStyleOptions? style = ResolveStyleForIndex(options, index);
 
             if (options.DistancePx.HasValue || options.HeightRatio.HasValue)
             {
@@ -374,6 +425,7 @@ namespace SMAd.Swiper
                 int pauseMs = options.PauseRangeMs is { } pr
                     ? NextIntSafe(pr.Min, pr.Max)
                     : GuessPauseMs(direction, distancePx);
+                pauseMs = ApplyPauseStyle(pauseMs, style);
 
                 bool micro = distancePx <= vh * 0.18;
 
@@ -384,7 +436,8 @@ namespace SMAd.Swiper
                     PointCount = pointCount,
                     PauseMs = pauseMs,
                     MicroSwipe = micro,
-                    Area = micro ? SwipeArea.Micro : SwipeArea.Normal
+                    Area = micro ? SwipeArea.Micro : SwipeArea.Normal,
+                    Style = style
                 };
             }
 
@@ -405,7 +458,8 @@ namespace SMAd.Swiper
                 direction: direction,
                 mode: mode,
                 noMoveCount: noMoveCount,
-                options: options);
+                options: options,
+                style: style);
         }
 
         private static HumanScrollMode DecideAutoMode(
@@ -456,7 +510,8 @@ namespace SMAd.Swiper
             PageScrollDirection direction,
             HumanScrollMode mode,
             int noMoveCount,
-            ScrollOptions options)
+            ScrollOptions options,
+            SwipeStyleOptions? style)
         {
             int vh = Math.Max(viewportHeight, 320);
 
@@ -539,6 +594,7 @@ namespace SMAd.Swiper
             {
                 pauseMs = GuessPauseMs(direction, distancePx);
             }
+            pauseMs = ApplyPauseStyle(pauseMs, style);
 
             return new HumanScrollProfile
             {
@@ -547,8 +603,42 @@ namespace SMAd.Swiper
                 PointCount = pointCount,
                 PauseMs = pauseMs,
                 MicroSwipe = micro,
-                Area = area
+                Area = area,
+                Style = style
             };
+        }
+
+        private static SwipeStyleOptions? ResolveStyleForIndex(ScrollOptions options, int index)
+        {
+            if (options.StyleActionNumber.HasValue)
+            {
+                return SwipeStyleOptions.FromActionNumber(
+                    options.StyleActionNumber.Value + index,
+                    options.StyleActionSuiteSize,
+                    options.StyleVariationStrength);
+            }
+
+            if (options.StyleNumber.HasValue)
+            {
+                long variation = options.StyleVariationNumber.HasValue
+                    ? options.StyleVariationNumber.Value + index
+                    : index;
+
+                return SwipeStyleOptions.FromNumber(
+                    options.StyleNumber.Value,
+                    variation,
+                    options.StyleVariationStrength);
+            }
+
+            return options.Style;
+        }
+
+        private static int ApplyPauseStyle(int pauseMs, SwipeStyleOptions? style)
+        {
+            if (style == null)
+                return pauseMs;
+
+            return Math.Max(0, (int)Math.Round(pauseMs * style.Clamp().PauseMultiplier));
         }
 
         private static int GuessPointCount(

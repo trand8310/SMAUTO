@@ -43,6 +43,205 @@ namespace SMAd.Swiper
         };
     }
 
+
+    public enum SwipeMotionCurve
+    {
+        Normal = 0,
+        Snappy = 1,
+        Lazy = 2,
+        Uneven = 3
+    }
+
+    /// <summary>
+    /// 滑动风格参数。用于把百万级滑动任务拆成多套“手感”相近但细节不同的动作族。
+    /// </summary>
+    public sealed class SwipeStyleOptions
+    {
+        public string? StyleKey { get; set; }
+        public long? StyleNumber { get; set; }
+        public long? VariationNumber { get; set; }
+        public double DistanceMultiplier { get; set; } = 1.0;
+        public double TimingMultiplier { get; set; } = 1.0;
+        public double HoldMultiplier { get; set; } = 1.0;
+        public double DriftMultiplier { get; set; } = 1.0;
+        public double JitterMultiplier { get; set; } = 1.0;
+        public double HorizontalEndMultiplier { get; set; } = 1.0;
+        public double ForceMultiplier { get; set; } = 1.0;
+        public double RadiusMultiplier { get; set; } = 1.0;
+        public double TinyBackChanceMultiplier { get; set; } = 1.0;
+        public int StepOffset { get; set; }
+        public double PauseMultiplier { get; set; } = 1.0;
+        public float StartXBiasRatio { get; set; }
+        public float StartYBiasRatio { get; set; }
+        public SwipeMotionCurve Curve { get; set; } = SwipeMotionCurve.Normal;
+
+        public static SwipeStyleOptions Default => new();
+
+        /// <summary>
+        /// 只传一个数字即可生成一套稳定风格。不同数字对应不同“手感”。
+        /// </summary>
+        public static SwipeStyleOptions FromNumber(long styleNumber)
+        {
+            return FromNumber(styleNumber, null);
+        }
+
+        /// <summary>
+        /// 单个动作数字：高位自动作为套号，低位作为同套内微量变化号。默认每 1000000 个数字为一套。
+        /// </summary>
+        public static SwipeStyleOptions FromActionNumber(
+            long actionNumber,
+            long suiteSize = 1_000_000,
+            double microVariationStrength = 1.0)
+        {
+            suiteSize = Math.Max(1, suiteSize);
+            long suiteNumber = Math.DivRem(actionNumber, suiteSize, out long variationNumber);
+
+            if (variationNumber < 0)
+                variationNumber = -variationNumber;
+
+            var style = FromNumber(suiteNumber, variationNumber, microVariationStrength);
+            style.StyleKey = $"action:{actionNumber}";
+            return style;
+        }
+
+        /// <summary>
+        /// styleNumber 控制大风格，variationNumber 控制同一套内的微量变化，适合百万级动作按序号传入。
+        /// </summary>
+        public static SwipeStyleOptions FromNumber(
+            long styleNumber,
+            long? variationNumber,
+            double microVariationStrength = 1.0)
+        {
+            ulong seed = ToSeed(styleNumber);
+
+            double Pick(ulong salt, double min, double max)
+            {
+                double ratio = Unit(Mix(seed + salt));
+                return min + (max - min) * ratio;
+            }
+
+            var style = new SwipeStyleOptions
+            {
+                StyleKey = $"number:{styleNumber}",
+                StyleNumber = styleNumber,
+                VariationNumber = variationNumber,
+                DistanceMultiplier = Pick(0x101, 0.88, 1.14),
+                TimingMultiplier = Pick(0x102, 0.86, 1.18),
+                HoldMultiplier = Pick(0x103, 0.82, 1.22),
+                DriftMultiplier = Pick(0x104, 0.72, 1.38),
+                JitterMultiplier = Pick(0x105, 0.70, 1.32),
+                HorizontalEndMultiplier = Pick(0x106, 0.72, 1.35),
+                ForceMultiplier = Pick(0x107, 0.92, 1.06),
+                RadiusMultiplier = Pick(0x108, 0.86, 1.18),
+                TinyBackChanceMultiplier = Pick(0x109, 0.45, 1.65),
+                StepOffset = (int)Math.Round(Pick(0x10A, -3, 4)),
+                PauseMultiplier = Pick(0x10B, 0.82, 1.25),
+                StartXBiasRatio = (float)Pick(0x10C, -0.12, 0.12),
+                StartYBiasRatio = (float)Pick(0x10D, -0.08, 0.08),
+                Curve = (SwipeMotionCurve)(Mix(seed + 0x10E) % 4)
+            };
+
+            if (variationNumber.HasValue)
+                style.ApplyMicroVariation(variationNumber.Value, microVariationStrength);
+
+            return style.Clamp();
+        }
+
+        public static SwipeStyleOptions FromSuite(string suiteKey)
+        {
+            var style = FromNumber(StableHash64(string.IsNullOrWhiteSpace(suiteKey) ? "default" : suiteKey));
+            style.StyleKey = suiteKey;
+            return style;
+        }
+
+        public SwipeStyleOptions Clamp()
+        {
+            DistanceMultiplier = Math.Clamp(DistanceMultiplier, 0.55, 1.45);
+            TimingMultiplier = Math.Clamp(TimingMultiplier, 0.55, 1.80);
+            HoldMultiplier = Math.Clamp(HoldMultiplier, 0.50, 1.80);
+            DriftMultiplier = Math.Clamp(DriftMultiplier, 0.35, 2.20);
+            JitterMultiplier = Math.Clamp(JitterMultiplier, 0.20, 2.20);
+            HorizontalEndMultiplier = Math.Clamp(HorizontalEndMultiplier, 0.30, 2.10);
+            ForceMultiplier = Math.Clamp(ForceMultiplier, 0.70, 1.20);
+            RadiusMultiplier = Math.Clamp(RadiusMultiplier, 0.60, 1.70);
+            TinyBackChanceMultiplier = Math.Clamp(TinyBackChanceMultiplier, 0.0, 2.50);
+            StepOffset = Math.Clamp(StepOffset, -6, 8);
+            PauseMultiplier = Math.Clamp(PauseMultiplier, 0.50, 2.00);
+            StartXBiasRatio = Math.Clamp(StartXBiasRatio, -0.25f, 0.25f);
+            StartYBiasRatio = Math.Clamp(StartYBiasRatio, -0.20f, 0.20f);
+            return this;
+        }
+
+        private void ApplyMicroVariation(long variationNumber, double strength)
+        {
+            strength = Math.Clamp(strength, 0.0, 2.0);
+            if (strength <= 0)
+                return;
+
+            ulong seed = ToSeed(StyleNumber.GetValueOrDefault()) ^ Mix(ToSeed(variationNumber) + 0x9E3779B97F4A7C15UL);
+
+            double Micro(ulong salt, double width)
+            {
+                return 1.0 + (Unit(Mix(seed + salt)) * 2.0 - 1.0) * width * strength;
+            }
+
+            double Offset(ulong salt, double width)
+            {
+                return (Unit(Mix(seed + salt)) * 2.0 - 1.0) * width * strength;
+            }
+
+            DistanceMultiplier *= Micro(0x201, 0.030);
+            TimingMultiplier *= Micro(0x202, 0.040);
+            HoldMultiplier *= Micro(0x203, 0.045);
+            DriftMultiplier *= Micro(0x204, 0.080);
+            JitterMultiplier *= Micro(0x205, 0.100);
+            HorizontalEndMultiplier *= Micro(0x206, 0.070);
+            ForceMultiplier *= Micro(0x207, 0.020);
+            RadiusMultiplier *= Micro(0x208, 0.025);
+            TinyBackChanceMultiplier *= Micro(0x209, 0.120);
+            PauseMultiplier *= Micro(0x20A, 0.045);
+            StepOffset += (int)Math.Round(Offset(0x20B, 1.2));
+            StartXBiasRatio += (float)Offset(0x20C, 0.020);
+            StartYBiasRatio += (float)Offset(0x20D, 0.016);
+        }
+
+        private static ulong ToSeed(long value)
+        {
+            return unchecked((ulong)value) + 0x9E3779B97F4A7C15UL;
+        }
+
+        private static double Unit(ulong value)
+        {
+            return (value >> 11) * (1.0 / (1UL << 53));
+        }
+
+        private static ulong Mix(ulong value)
+        {
+            value += 0x9E3779B97F4A7C15UL;
+            value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
+            value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
+            return value ^ (value >> 31);
+        }
+
+        private static long StableHash64(string text)
+        {
+            unchecked
+            {
+                const ulong offset = 14695981039346656037UL;
+                const ulong prime = 1099511628211UL;
+                ulong hash = offset;
+
+                foreach (char c in text)
+                {
+                    hash ^= c;
+                    hash *= prime;
+                }
+
+                return (long)(hash & 0x7FFFFFFFFFFFFFFFUL);
+            }
+        }
+    }
+
     public sealed class SwipeTrace
     {
         public Vector2 Start { get; set; }
@@ -152,7 +351,12 @@ namespace SMAd.Swiper
             int? steps = null,
             int? totalDistancePx = null,
             bool verifyScrollChanged = true,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null,
+            long? styleActionNumber = null,
+            long? styleNumber = null,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
         {
             if (page == null || page.IsClosed || client == null || page.ViewportSize == null)
                 return null;
@@ -162,6 +366,7 @@ namespace SMAd.Swiper
                 await EnableTouchInputAsync(page, client);
 
                 area ??= microSwipe ? SwipeArea.Micro : SwipeArea.Normal;
+                style = ResolveSwipeStyle(style, styleActionNumber, styleNumber, styleVariationNumber, styleVariationStrength);
 
                 ScrollDirection actualDirection = PickHumanDirection(direction);
 
@@ -179,6 +384,7 @@ namespace SMAd.Swiper
                     area: area,
                     microSwipe: microSwipe,
                     totalDistancePx: totalDistancePx,
+                    style: style,
                     maxTry: 10);
 
                 if (safePath == null)
@@ -204,6 +410,7 @@ namespace SMAd.Swiper
                     steps: actualSteps,
                     direction: actualDirection,
                     microSwipe: microSwipe,
+                    style: style,
                     cancellationToken: cancellationToken);
 
                 if (verifyScrollChanged && before != null)
@@ -256,7 +463,12 @@ namespace SMAd.Swiper
             SwipeArea? area = null,
             bool microSwipe = false,
             int maxConsecutiveNoMove = 2,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null,
+            long? styleActionNumber = null,
+            long? styleNumber = null,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
         {
             var list = new List<SwipeTrace>();
 
@@ -264,6 +476,9 @@ namespace SMAd.Swiper
                 return list;
 
             area ??= microSwipe ? SwipeArea.Micro : SwipeArea.Normal;
+            style = styleNumber.HasValue || styleActionNumber.HasValue
+                ? null
+                : ResolveSwipeStyle(style, null, null, styleVariationNumber, styleVariationStrength);
 
             int noMoveCount = 0;
 
@@ -278,6 +493,10 @@ namespace SMAd.Swiper
                 {
                     ScrollDirection actualDirection = PickHumanDirection(direction);
 
+                    SwipeStyleOptions currentStyle = styleNumber.HasValue || styleActionNumber.HasValue
+                        ? ResolveSwipeStyle(null, styleActionNumber.HasValue ? styleActionNumber + i : null, styleNumber, (styleVariationNumber ?? 0) + i, styleVariationStrength)
+                        : style!;
+
                     var trace = await SwipeOnceHumanAsync(
                         page: page,
                         client: client,
@@ -285,6 +504,7 @@ namespace SMAd.Swiper
                         area: area,
                         microSwipe: microSwipe,
                         verifyScrollChanged: true,
+                        style: currentStyle,
                         cancellationToken: cancellationToken);
 
                     if (trace == null)
@@ -329,7 +549,12 @@ namespace SMAd.Swiper
             int times,
             ScrollDirection direction = ScrollDirection.Random,
             int maxConsecutiveNoMove = 2,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null,
+            long? styleActionNumber = null,
+            long? styleNumber = null,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
         {
             return SwipeMultipleHumanAsync(
                 page: page,
@@ -339,6 +564,11 @@ namespace SMAd.Swiper
                 area: SwipeArea.Micro,
                 microSwipe: true,
                 maxConsecutiveNoMove: maxConsecutiveNoMove,
+                style: style,
+                styleActionNumber: styleActionNumber,
+                styleNumber: styleNumber,
+                styleVariationNumber: styleVariationNumber,
+                styleVariationStrength: styleVariationStrength,
                 cancellationToken: cancellationToken);
         }
 
@@ -349,12 +579,21 @@ namespace SMAd.Swiper
             int maxSwipes = 8,
             float comfortTopRatio = 0.22f,
             float comfortBottomRatio = 0.72f,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null,
+            long? styleActionNumber = null,
+            long? styleNumber = null,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
         {
             var all = new List<SwipeTrace>();
 
             if (page == null || page.IsClosed || client == null || element == null || page.ViewportSize == null)
                 return all;
+
+            style = styleNumber.HasValue || styleActionNumber.HasValue
+                ? null
+                : ResolveSwipeStyle(style, null, null, styleVariationNumber, styleVariationStrength);
 
             int vh = page.ViewportSize.Height;
             float comfortTop = vh * comfortTopRatio;
@@ -393,6 +632,10 @@ namespace SMAd.Swiper
                         ? (int)Math.Clamp(distanceToComfort * 0.88, vh * 0.08, vh * 0.20)
                         : (int)Math.Clamp(distanceToComfort * 0.92, vh * 0.22, vh * 0.58);
 
+                    SwipeStyleOptions currentStyle = styleNumber.HasValue || styleActionNumber.HasValue
+                        ? ResolveSwipeStyle(null, styleActionNumber.HasValue ? styleActionNumber + i : null, styleNumber, (styleVariationNumber ?? 0) + i, styleVariationStrength)
+                        : style!;
+
                     var trace = await SwipeOnceHumanAsync(
                         page: page,
                         client: client,
@@ -401,6 +644,7 @@ namespace SMAd.Swiper
                         microSwipe: useMicro,
                         totalDistancePx: targetDistance,
                         verifyScrollChanged: true,
+                        style: currentStyle,
                         cancellationToken: cancellationToken);
 
                     if (trace == null)
@@ -428,12 +672,21 @@ namespace SMAd.Swiper
             ICDPSession client,
             ILocator element,
             int maxSwipes = 10,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            SwipeStyleOptions? style = null,
+            long? styleActionNumber = null,
+            long? styleNumber = null,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
         {
             var traces = new List<SwipeTrace>();
 
             if (page == null || page.IsClosed || client == null || element == null || page.ViewportSize == null || maxSwipes <= 0)
                 return traces;
+
+            style = styleNumber.HasValue || styleActionNumber.HasValue
+                ? null
+                : ResolveSwipeStyle(style, null, null, styleVariationNumber, styleVariationStrength);
 
             int vh = page.ViewportSize.Height;
 
@@ -459,6 +712,10 @@ namespace SMAd.Swiper
 
                 try
                 {
+                    SwipeStyleOptions currentStyle = styleNumber.HasValue || styleActionNumber.HasValue
+                        ? ResolveSwipeStyle(null, styleActionNumber.HasValue ? styleActionNumber + i : null, styleNumber, (styleVariationNumber ?? 0) + i, styleVariationStrength)
+                        : style!;
+
                     var box = await element.BoundingBoxAsync();
 
                     if (box == null)
@@ -482,6 +739,7 @@ namespace SMAd.Swiper
                             microSwipe: false,
                             totalDistancePx: distance,
                             verifyScrollChanged: true,
+                            style: currentStyle,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
@@ -524,6 +782,7 @@ namespace SMAd.Swiper
                             microSwipe: useMicro,
                             totalDistancePx: targetDistance,
                             verifyScrollChanged: true,
+                            style: currentStyle,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
@@ -548,6 +807,7 @@ namespace SMAd.Swiper
                             microSwipe: false,
                             totalDistancePx: targetDistance,
                             verifyScrollChanged: true,
+                            style: currentStyle,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
@@ -572,6 +832,7 @@ namespace SMAd.Swiper
                             microSwipe: false,
                             totalDistancePx: targetDistance,
                             verifyScrollChanged: true,
+                            style: currentStyle,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
@@ -938,6 +1199,7 @@ namespace SMAd.Swiper
             SwipeArea area,
             bool microSwipe,
             int? totalDistancePx,
+            SwipeStyleOptions style,
             int maxTry = 10)
         {
             for (int i = 0; i < maxTry; i++)
@@ -951,7 +1213,8 @@ namespace SMAd.Swiper
                     direction: direction,
                     area: area,
                     microSwipe: microSwipe,
-                    totalDistancePx: totalDistancePx);
+                    totalDistancePx: totalDistancePx,
+                    style: style);
 
                 if (path.start == path.end)
                     continue;
@@ -1105,7 +1368,8 @@ namespace SMAd.Swiper
             ScrollDirection direction,
             SwipeArea area,
             bool microSwipe,
-            int? totalDistancePx)
+            int? totalDistancePx,
+            SwipeStyleOptions style)
         {
             float minX = vw * area.MinXRatio;
             float maxX = vw * area.MaxXRatio;
@@ -1120,11 +1384,15 @@ namespace SMAd.Swiper
             if (safeRight <= safeLeft || safeBottom <= safeTop)
                 return (Vector2.Zero, Vector2.Zero);
 
-            float startX = (float)CommonHelper.NextDouble(safeLeft, safeRight);
+            float xSpan = safeRight - safeLeft;
+            float xBias = xSpan * style.StartXBiasRatio;
+            float startX = (float)CommonHelper.NextDouble(safeLeft, safeRight) + xBias;
+            startX = Math.Clamp(startX, safeLeft, safeRight);
 
-            float endX = microSwipe
-                ? startX + (float)CommonHelper.NextDouble(-10, 10)
-                : startX + (float)CommonHelper.NextDouble(-22, 22);
+            double endDrift = (microSwipe
+                ? CommonHelper.NextDouble(-10, 10)
+                : CommonHelper.NextDouble(-22, 22)) * style.HorizontalEndMultiplier;
+            float endX = startX + (float)endDrift;
 
             endX = Math.Clamp(endX, safeLeft, safeRight);
 
@@ -1132,7 +1400,7 @@ namespace SMAd.Swiper
 
             if (totalDistancePx.HasValue && totalDistancePx.Value > 0)
             {
-                distance = totalDistancePx.Value;
+                distance = (float)(totalDistancePx.Value * style.DistanceMultiplier);
             }
             else
             {
@@ -1143,6 +1411,7 @@ namespace SMAd.Swiper
                     distance = r < 0.70
                         ? (float)CommonHelper.NextDouble(vh * 0.08, vh * 0.16)
                         : (float)CommonHelper.NextDouble(vh * 0.16, vh * 0.24);
+                    distance *= (float)style.DistanceMultiplier;
                 }
                 else
                 {
@@ -1151,6 +1420,7 @@ namespace SMAd.Swiper
                         : r < 0.76
                             ? (float)CommonHelper.NextDouble(vh * 0.30, vh * 0.48)
                             : (float)CommonHelper.NextDouble(vh * 0.50, vh * 0.66);
+                    distance *= (float)style.DistanceMultiplier;
                 }
             }
 
@@ -1163,7 +1433,7 @@ namespace SMAd.Swiper
             {
                 case ScrollDirection.Down:
                     {
-                        float startY = (float)CommonHelper.NextDouble(vh * 0.30f, vh * 0.46f);
+                        float startY = (float)CommonHelper.NextDouble(vh * 0.30f, vh * 0.46f) + vh * style.StartYBiasRatio;
                         startY = Math.Clamp(startY, safeTop, safeBottom);
 
                         float endY = startY + distance;
@@ -1183,7 +1453,7 @@ namespace SMAd.Swiper
                 case ScrollDirection.Up:
                 default:
                     {
-                        float startY = (float)CommonHelper.NextDouble(vh * 0.58f, safeBottom);
+                        float startY = (float)CommonHelper.NextDouble(vh * 0.58f, safeBottom) + vh * style.StartYBiasRatio;
                         startY = Math.Clamp(startY, safeTop, safeBottom);
 
                         float endY = startY - distance;
@@ -1208,9 +1478,10 @@ namespace SMAd.Swiper
             Vector2 start,
             Vector2 end,
             int steps,
-            bool microSwipe)
+            bool microSwipe,
+            SwipeStyleOptions style)
         {
-            steps = Math.Max(steps, microSwipe ? 8 : 14);
+            steps = Math.Max(steps + style.StepOffset, microSwipe ? 8 : 14);
 
             var points = new List<Vector2>(steps + 1);
 
@@ -1231,6 +1502,7 @@ namespace SMAd.Swiper
             float sideDriftBase = microSwipe
                 ? (float)CommonHelper.NextDouble(1.0, 2.4)
                 : (float)CommonHelper.NextDouble(2.2, 5.2);
+            sideDriftBase *= (float)style.DriftMultiplier;
 
             float phase1 = (float)CommonHelper.NextDouble(0, Math.PI * 2);
             float phase2 = (float)CommonHelper.NextDouble(0, Math.PI * 2);
@@ -1238,12 +1510,12 @@ namespace SMAd.Swiper
             float amp1 = (float)CommonHelper.NextDouble(sideDriftBase * 0.35, sideDriftBase);
             float amp2 = (float)CommonHelper.NextDouble(sideDriftBase * 0.12, sideDriftBase * 0.42);
 
-            bool addTinyBack = !microSwipe && CommonHelper.Chance(0.24);
+            bool addTinyBack = !microSwipe && CommonHelper.Chance(0.24 * style.TinyBackChanceMultiplier);
 
             for (int i = 0; i <= steps; i++)
             {
                 float tRaw = i / (float)steps;
-                float t = EaseInOutCubic(tRaw);
+                float t = ApplyCurve(tRaw, style.Curve);
 
                 float x = start.X + dx * t;
                 float y = start.Y + dy * t;
@@ -1263,6 +1535,7 @@ namespace SMAd.Swiper
                     float tiny = microSwipe
                         ? (float)CommonHelper.NextDouble(0.10, 0.70)
                         : (float)CommonHelper.NextDouble(0.25, 1.20);
+                    tiny *= (float)style.JitterMultiplier;
 
                     x += (float)CommonHelper.NextDouble(-tiny, tiny);
                     y += (float)CommonHelper.NextDouble(-tiny, tiny);
@@ -1292,9 +1565,10 @@ namespace SMAd.Swiper
             int steps,
             ScrollDirection direction,
             bool microSwipe,
+            SwipeStyleOptions style,
             CancellationToken cancellationToken)
         {
-            var points = GetHumanLikeSwipePoints(start, end, steps, microSwipe);
+            var points = GetHumanLikeSwipePoints(start, end, steps, microSwipe, style);
 
             int totalDelay = 0;
             bool touchStarted = false;
@@ -1304,10 +1578,12 @@ namespace SMAd.Swiper
                 double startForce = microSwipe
                     ? CommonHelper.NextDouble(0.72, 0.92)
                     : CommonHelper.NextDouble(0.78, 0.98);
+                startForce = Math.Clamp(startForce * style.ForceMultiplier, 0.45, 1.0);
 
                 int radius = microSwipe
                     ? CommonHelper.NextInt(2, 4)
                     : CommonHelper.NextInt(3, 7);
+                radius = Math.Max(1, (int)Math.Round(radius * style.RadiusMultiplier));
 
                 await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
                 {
@@ -1333,6 +1609,7 @@ namespace SMAd.Swiper
                     ? CommonHelper.NextInt(18, 55)
                     : CommonHelper.NextInt(35, 120);
 
+                holdBeforeMove = ScaleDelay(holdBeforeMove, style.HoldMultiplier);
                 await Task.Delay(holdBeforeMove, cancellationToken);
                 totalDelay += holdBeforeMove;
 
@@ -1342,16 +1619,17 @@ namespace SMAd.Swiper
 
                     float progress = i / (float)(points.Count - 1);
 
-                    int delay = GetHumanMoveDelay(progress, microSwipe);
+                    int delay = ScaleDelay(GetHumanMoveDelay(progress, microSwipe), style.TimingMultiplier);
 
                     if (CommonHelper.Chance(microSwipe ? 0.04 : 0.08))
                         delay += CommonHelper.NextInt(8, 28);
 
-                    double force = GetHumanForce(progress, microSwipe);
+                    double force = GetHumanForce(progress, microSwipe, style);
 
                     int moveRadius = microSwipe
                         ? CommonHelper.NextInt(2, 4)
                         : CommonHelper.NextInt(3, 6);
+                    moveRadius = Math.Max(1, (int)Math.Round(moveRadius * style.RadiusMultiplier));
 
                     await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
                     {
@@ -1379,6 +1657,7 @@ namespace SMAd.Swiper
                     ? CommonHelper.NextInt(8, 35)
                     : CommonHelper.NextInt(18, 70);
 
+                holdAfterMove = ScaleDelay(holdAfterMove, style.HoldMultiplier);
                 await Task.Delay(holdAfterMove, cancellationToken);
                 totalDelay += holdAfterMove;
             }
@@ -1457,7 +1736,7 @@ namespace SMAd.Swiper
             return delay;
         }
 
-        private static double GetHumanForce(float progress, bool microSwipe)
+        private static double GetHumanForce(float progress, bool microSwipe, SwipeStyleOptions style)
         {
             double baseForce;
 
@@ -1480,12 +1759,28 @@ namespace SMAd.Swiper
                     : CommonHelper.NextDouble(0.62, 0.86);
             }
 
-            return Math.Clamp(baseForce, 0.45, 1.0);
+            return Math.Clamp(baseForce * style.ForceMultiplier, 0.45, 1.0);
         }
 
         #endregion
 
         #region 工具方法
+
+        private static SwipeStyleOptions ResolveSwipeStyle(
+            SwipeStyleOptions? style,
+            long? styleActionNumber,
+            long? styleNumber,
+            long? styleVariationNumber = null,
+            double styleVariationStrength = 1.0)
+        {
+            if (styleActionNumber.HasValue)
+                return SwipeStyleOptions.FromActionNumber(styleActionNumber.Value, microVariationStrength: styleVariationStrength);
+
+            if (styleNumber.HasValue)
+                return SwipeStyleOptions.FromNumber(styleNumber.Value, styleVariationNumber, styleVariationStrength);
+
+            return (style ?? SwipeStyleOptions.Default).Clamp();
+        }
 
         private static ScrollDirection PickHumanDirection(ScrollDirection direction)
         {
@@ -1498,6 +1793,11 @@ namespace SMAd.Swiper
                 return ScrollDirection.Up;
 
             return ScrollDirection.Down;
+        }
+
+        private static int ScaleDelay(int value, double multiplier)
+        {
+            return Math.Max(1, (int)Math.Round(value * Math.Clamp(multiplier, 0.50, 2.00)));
         }
 
         private static int CalcSteps(double distance, int viewportHeight, bool microSwipe)
@@ -1517,11 +1817,32 @@ namespace SMAd.Swiper
             return Math.Clamp(steps, minSteps, maxSteps);
         }
 
+        private static float ApplyCurve(float t, SwipeMotionCurve curve)
+        {
+            return curve switch
+            {
+                SwipeMotionCurve.Snappy => EaseOutCubic(t),
+                SwipeMotionCurve.Lazy => EaseInOutSine(t),
+                SwipeMotionCurve.Uneven => Math.Clamp(EaseInOutCubic(t) + MathF.Sin(t * MathF.PI * 3.0f) * 0.018f, 0, 1),
+                _ => EaseInOutCubic(t)
+            };
+        }
+
         private static float EaseInOutCubic(float t)
         {
             return t < 0.5f
                 ? 4 * t * t * t
                 : 1 - MathF.Pow(-2 * t + 2, 3) / 2;
+        }
+
+        private static float EaseOutCubic(float t)
+        {
+            return 1 - MathF.Pow(1 - t, 3);
+        }
+
+        private static float EaseInOutSine(float t)
+        {
+            return -(MathF.Cos(MathF.PI * t) - 1) / 2;
         }
 
         private sealed class ElementViewportPosition

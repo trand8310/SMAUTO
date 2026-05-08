@@ -148,12 +148,12 @@
         /// <summary>
         /// 不触发1688店铺首页
         /// </summary>
-        public bool NoTrigger1688Shop { get; set; }
+        public bool NoTrigger1688Shop { get; set; } = true;
 
         /// <summary>
         /// 代理协议:http/socks5
         /// </summary>
-        public string Protocol { get; set; }
+        public string Protocol { get; set; } = "http";
 
 
 

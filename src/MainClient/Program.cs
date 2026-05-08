@@ -30,6 +30,33 @@ namespace MainClient
         [STAThread]
         static void Main()
         {
+            ApplicationConfiguration.Initialize();
+
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+
+            Application.ThreadException += (sender, e) =>
+            {
+                Log.Error(e.Exception, "Application ThreadException");
+            };
+
+            AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+            {
+                Log.Fatal(e.ExceptionObject as Exception, "UnhandledException");
+                RestartApplication();
+            };
+
+            AppDomain.CurrentDomain.FirstChanceException += (sender, e) =>
+            {
+                //Log.Debug(e.Exception, "FirstChanceException");
+            };
+
+            TaskScheduler.UnobservedTaskException += (sender, e) =>
+            {
+                Log.Error(e.Exception, "TaskScheduler UnobservedTaskException");
+                e.SetObserved();
+            };
+
+
             var appSettings = new AppSettings();
             UserConfigService.Init(appSettings);
             var configuration = new ConfigurationBuilder()
@@ -125,31 +152,8 @@ namespace MainClient
             //启动时初始化一级域规则
             var rootDomainService = host.Services.GetRequiredService<IRootDomainService>();
             rootDomainService.InitializeAsync().GetAwaiter().GetResult();
-            ApplicationConfiguration.Initialize();
 
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
-            Application.ThreadException += (sender, e) =>
-            {
-                Log.Error(e.Exception, "Application ThreadException");
-            };
-
-            AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
-            {
-                Log.Fatal(e.ExceptionObject as Exception, "UnhandledException");
-                RestartApplication();
-            };
-
-            AppDomain.CurrentDomain.FirstChanceException += (sender, e) =>
-            {
-                //Log.Debug(e.Exception, "FirstChanceException");
-            };
-
-            TaskScheduler.UnobservedTaskException += (sender, e) =>
-            {
-                Log.Error(e.Exception, "TaskScheduler UnobservedTaskException");
-                e.SetObserved();
-            };
 
             StartErrorDialogGuard();
 
