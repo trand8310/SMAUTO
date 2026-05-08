@@ -23,6 +23,11 @@ namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
+        private static readonly object CdpFinalFailureLock = new();
+        private static int CdpFinalFailureCount;
+        private static bool CdpFinalFailureRestartRequested;
+        private const int CdpFinalFailureRestartThreshold = 10;
+
         private static bool IsClosedPlaywrightException(PlaywrightException ex)
         {
             if (string.IsNullOrWhiteSpace(ex.Message))
@@ -48,6 +53,7 @@ namespace QTP.Plugins
                 return hash;
             }
         }
+
         public static QTPPlugin GetInfo()
         {
             return new QTPPlugin()
@@ -440,7 +446,6 @@ namespace QTP.Plugins
             {
                 fingerprint = CommonHelper.RandomNumber();
             }
-
 
 
             #region 指纹参数设置
@@ -939,6 +944,51 @@ namespace QTP.Plugins
 
 
 
+        private void ResetCdpFinalFailureTracker(string traceTag)
+        {
+            lock (CdpFinalFailureLock)
+            {
+                if (CdpFinalFailureCount > 0)
+                    LogWriteLine($"{traceTag} CDP最终失败统计已清零: count={CdpFinalFailureCount}");
+
+                CdpFinalFailureCount = 0;
+
+            }
+        }
+
+        private void HandleCdpFinalFailureForRestart(string traceTag, Exception lastException)
+        {
+            if (lastException.Message.Contains("no such file or directory", StringComparison.OrdinalIgnoreCase))
+            {
+                LogWriteLine($"{traceTag} CDP最终失败命中 no such file or directory，立即重启计算机。LastError={lastException}");
+                SafeRestartHelper.ForceRestart(1);
+                return;
+            }
+
+            bool shouldRestart = false;
+            int failureCount;
+
+            lock (CdpFinalFailureLock)
+            {
+                CdpFinalFailureCount++;
+                failureCount = CdpFinalFailureCount;
+
+                shouldRestart = !CdpFinalFailureRestartRequested
+                    && failureCount > CdpFinalFailureRestartThreshold;
+
+                if (shouldRestart)
+                    CdpFinalFailureRestartRequested = true;
+            }
+
+            LogWriteLine($"{traceTag} CDP最终失败统计: count={failureCount}, threshold>{CdpFinalFailureRestartThreshold}, error={lastException.Message}");
+
+            if (!shouldRestart)
+                return;
+
+            LogWriteLine($"{traceTag} CDP连接最终失败全局次数超过{CdpFinalFailureRestartThreshold}次，准备重启计算机。LastError={lastException}");
+            SafeRestartHelper.ForceRestart(1);
+        }
+
         private async Task<IBrowser?> ConnectOverCDPWithRetryAsync(
         IPlaywright playwright,
         string endpoint,
@@ -997,6 +1047,7 @@ namespace QTP.Plugins
                     }
 
                     LogWriteLine($"{traceTag} CDP连接成功: {endpoint}");
+                    ResetCdpFinalFailureTracker(traceTag);
                     return browser;
                 }
                 catch (OperationCanceledException)
@@ -1033,12 +1084,7 @@ namespace QTP.Plugins
             if (lastException != null)
             {
                 LogWriteLine($"{traceTag} CDP连接最终失败: {lastException}");
-                //|| lastException.Message.Contains("Process exited")
-                if (lastException.Message.Contains("no such file or directory"))
-                {
-                    SafeRestartHelper.ForceRestart(1);
-                }
-
+                HandleCdpFinalFailureForRestart(traceTag, lastException);
             }
 
             return null;
