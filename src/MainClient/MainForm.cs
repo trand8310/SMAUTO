@@ -43,7 +43,6 @@ namespace MainClient
         private readonly AdeHelper _adeHelper;
         private readonly FileUpdater _fileUpdater;
         private readonly ProxyTester _ipTester;
-        private readonly IRootDomainService _domainService;
         private readonly IPlaywrightProvider _playwrightProvider;
         private readonly ChromiumSessionManager _processManager;
         private readonly TaskStatsAggregator _aggregator;
@@ -777,7 +776,6 @@ namespace MainClient
         }
 
         public MainForm(
-            IRootDomainService domainService,
             IPlaywrightProvider playwrightProvider,
             TaskStatsAggregator aggregator,
             AdeHelper adeHelper,
@@ -792,7 +790,6 @@ namespace MainClient
         {
             InitializeComponent();
             ConfigureResponsiveLayout();
-            this._domainService = domainService;
             this._playwrightProvider = playwrightProvider;
             this._aggregator = aggregator;
             this._adeHelper = adeHelper;
@@ -1042,29 +1039,29 @@ namespace MainClient
                 return;
 
 
-            _appSettings.Rfq1688 = false;
-            _appSettings.Rfq1688Rate = 0;
+            //_appSettings.Rfq1688 = false;
+            //_appSettings.Rfq1688Rate = 0;
 
-            _appSettings.p4psearch = false;
-            _appSettings.p4psearchRate = 0;
+            //_appSettings.p4psearch = false;
+            //_appSettings.p4psearchRate = 0;
 
-            _appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
-            _appSettings.NoTrigger1688Shop = true;
-            _appSettings.Protocol = "http";
+            //_appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
+            //_appSettings.NoTrigger1688Shop = true;
+            //_appSettings.Protocol = "http";
 
-            var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", "130.0.6723.139");
-            if(Directory.Exists(chromePath))
-            {
-                try
-                {
-                    System.IO.Directory.Delete(chromePath, true);
-                }
-                catch (Exception)
-                {
+            //var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", "130.0.6723.139");
+            //if(Directory.Exists(chromePath))
+            //{
+            //    try
+            //    {
+            //        System.IO.Directory.Delete(chromePath, true);
+            //    }
+            //    catch (Exception)
+            //    {
 
-                }
+            //    }
 
-            }
+            //}
 
 
 
@@ -1940,7 +1937,7 @@ namespace MainClient
 
             var pluginInstance = Activator.CreateInstance(
                 plugin.type,
-                new object[] { _domainService, _playwrightProvider, _aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
+                new object[] { _playwrightProvider, _aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
 
             if (pluginInstance is not IQTPService pluginService)
             {
