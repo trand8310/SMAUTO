@@ -4,7 +4,6 @@ using Newtonsoft.Json.Linq;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Common.Models;
-using QTP.Common.Win32;
 using SMAd;
 using SMAd.SMAd;
 using SMAd.Swiper;
@@ -23,11 +22,6 @@ namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
-        private static readonly object CdpFinalFailureLock = new();
-        private static int CdpFinalFailureCount;
-        private static bool CdpFinalFailureRestartRequested;
-        private const int CdpFinalFailureRestartThreshold = 10;
-
         private static bool IsClosedPlaywrightException(PlaywrightException ex)
         {
             if (string.IsNullOrWhiteSpace(ex.Message))
@@ -940,65 +934,24 @@ namespace QTP.Plugins
 
 
 
-        private void ResetCdpFinalFailureTracker(string traceTag)
-        {
-            lock (CdpFinalFailureLock)
-            {
-                if (CdpFinalFailureCount > 0)
-                    LogWriteLine($"{traceTag} CDP最终失败统计已清零: count={CdpFinalFailureCount}");
-
-                CdpFinalFailureCount = 0;
-
-            }
-        }
-
-        private void HandleCdpFinalFailureForRestart(string traceTag, Exception lastException)
-        {
-            if (lastException.Message.Contains("no such file or directory", StringComparison.OrdinalIgnoreCase))
-            {
-                LogWriteLine($"{traceTag} CDP最终失败命中 no such file or directory，立即重启计算机。LastError={lastException}");
-                SafeRestartHelper.ForceRestart(1);
-                return;
-            }
-
-            bool shouldRestart = false;
-            int failureCount;
-
-            lock (CdpFinalFailureLock)
-            {
-                CdpFinalFailureCount++;
-                failureCount = CdpFinalFailureCount;
-
-                shouldRestart = !CdpFinalFailureRestartRequested
-                    && failureCount > CdpFinalFailureRestartThreshold;
-
-                if (shouldRestart)
-                    CdpFinalFailureRestartRequested = true;
-            }
-
-            LogWriteLine($"{traceTag} CDP最终失败统计: count={failureCount}, threshold>{CdpFinalFailureRestartThreshold}, error={lastException.Message}");
-
-            if (!shouldRestart)
-                return;
-
-            LogWriteLine($"{traceTag} CDP连接最终失败全局次数超过{CdpFinalFailureRestartThreshold}次，准备重启计算机。LastError={lastException}");
-            SafeRestartHelper.ForceRestart(1);
-        }
-
-
-        private async Task<IBrowser?> ConnectOverCDPWithRetryAsync(
-        IPlaywright playwright,
-        string endpoint,
-        string traceTag,
-        CancellationToken token,
-        int maxAttempts = 3,
-        int delayMs = 200,
-        bool requireUsableContext = true)
+        private async Task<IBrowser> LaunchBrowserWithRetryAsync(
+            IPlaywright playwright,
+            string chromePath,
+            IReadOnlyList<string> args,
+            TaskConfig config,
+            string traceTag,
+            CancellationToken token,
+            int maxAttempts = 3,
+            int delayMs = 200)
         {
             if (playwright == null)
                 throw new ArgumentNullException(nameof(playwright));
-            if (string.IsNullOrWhiteSpace(endpoint))
-                throw new ArgumentException("CDP endpoint cannot be null or empty.", nameof(endpoint));
+            if (string.IsNullOrWhiteSpace(chromePath))
+                throw new ArgumentException("Chromium executable path cannot be null or empty.", nameof(chromePath));
+            if (args == null)
+                throw new ArgumentNullException(nameof(args));
+            if (config == null)
+                throw new ArgumentNullException(nameof(config));
             if (maxAttempts <= 0)
                 throw new ArgumentOutOfRangeException(nameof(maxAttempts));
             if (delayMs < 0)
@@ -1014,37 +967,26 @@ namespace QTP.Plugins
 
                 try
                 {
-                    LogWriteLine($"{traceTag} CDP连接尝试 {attempt}/{maxAttempts}: {endpoint}");
+                    LogWriteLine($"{traceTag} LaunchAsync启动尝试 {attempt}/{maxAttempts}: {chromePath}");
 
-                    browser = await playwright.Chromium.ConnectOverCDPAsync(endpoint);
+                    browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                    {
+                        ExecutablePath = chromePath,
+                        Args = args,
+                        Headless = IsHiddenMode(config),
+                        Timeout = 15000
+                    });
 
                     if (browser == null)
-                        throw new InvalidOperationException("ConnectOverCDPAsync returned null browser.");
+                        throw new InvalidOperationException("LaunchAsync returned null browser.");
 
                     if (!browser.IsConnected)
-                        throw new InvalidOperationException("Browser is not connected after ConnectOverCDPAsync.");
+                        throw new InvalidOperationException("Browser is not connected after LaunchAsync.");
 
-                    if (requireUsableContext)
-                    {
-                        // 至少等待到 contexts 可访问
-                        var contexts = browser.Contexts;
-                        if (contexts == null)
-                            throw new InvalidOperationException("Browser contexts is null.");
+                    var context = await browser.NewContextAsync(BuildBrowserContextOptions(config));
+                    await context.NewPageAsync();
 
-                        // 有些场景刚连上时 contexts 为空，但通常很快就会出现默认 context
-                        // 给一个很短的稳定窗口，不再做长重试
-                        if (contexts.Count == 0)
-                        {
-                            await Task.Delay(100, token);
-                            contexts = browser.Contexts;
-                        }
-
-                        if (contexts == null || contexts.Count == 0)
-                            throw new InvalidOperationException("Browser has no available contexts after CDP connect.");
-                    }
-
-                    LogWriteLine($"{traceTag} CDP连接成功: {endpoint}");
-                    ResetCdpFinalFailureTracker(traceTag);
+                    LogWriteLine($"{traceTag} LaunchAsync启动成功: contexts={browser.Contexts.Count}");
                     return browser;
                 }
                 catch (OperationCanceledException)
@@ -1069,7 +1011,7 @@ namespace QTP.Plugins
                     }
                     catch { }
 
-                    LogWriteLine($"{traceTag} CDP连接失败 {attempt}/{maxAttempts}: {ex.Message}");
+                    LogWriteLine($"{traceTag} LaunchAsync启动失败 {attempt}/{maxAttempts}: {ex.Message}");
 
                     if (attempt >= maxAttempts)
                         break;
@@ -1078,15 +1020,77 @@ namespace QTP.Plugins
                 }
             }
 
-            if (lastException != null)
-            {
-                LogWriteLine($"{traceTag} CDP连接最终失败: {lastException}");
-                HandleCdpFinalFailureForRestart(traceTag, lastException);
-            }
-
-            return null;
+            LogWriteLine($"{traceTag} LaunchAsync启动最终失败: {lastException}");
+            throw new InvalidOperationException("Chromium LaunchAsync failed after retries.", lastException);
         }
 
+        private static BrowserNewContextOptions BuildBrowserContextOptions(TaskConfig config)
+        {
+            return new BrowserNewContextOptions
+            {
+                UserAgent = config.UserAgent,
+                ViewportSize = new ViewportSize
+                {
+                    Width = config.Sw,
+                    Height = config.Sh
+                },
+                ScreenSize = new ScreenSize
+                {
+                    Width = config.Sw,
+                    Height = config.Sh
+                },
+                DeviceScaleFactor = config.DeviceScale,
+                IsMobile = config.Os == 1 || config.Os == 2,
+                HasTouch = config.MaxTouchPoints > 0,
+                IgnoreHTTPSErrors = true
+            };
+        }
+
+        private static bool IsHiddenMode(TaskConfig config)
+        {
+            return config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false;
+        }
+
+        private static IReadOnlyList<string> NormalizeChromiumLaunchArgs(IEnumerable<string> args, string userDataDir)
+        {
+            var normalized = new List<string>
+            {
+                $"--user-data-dir={userDataDir}"
+            };
+
+            foreach (var arg in args)
+            {
+                if (string.IsNullOrWhiteSpace(arg))
+                    continue;
+
+                var item = RemoveArgumentValueQuotes(arg.Trim());
+                if (item.Equals("--headless", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (item.StartsWith("--user-data-dir", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (item.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                normalized.Add(item);
+            }
+
+            return normalized;
+        }
+
+        private static string RemoveArgumentValueQuotes(string arg)
+        {
+            var equalsIndex = arg.IndexOf('=');
+            if (equalsIndex < 0 || equalsIndex == arg.Length - 1)
+                return arg;
+
+            var key = arg[..(equalsIndex + 1)];
+            var value = arg[(equalsIndex + 1)..];
+
+            if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+                value = value[1..^1];
+
+            return key + value;
+        }
 
 
 
@@ -1237,16 +1241,16 @@ namespace QTP.Plugins
             ctx.Playwright = await _playwrightProvider.GetAsync();
             token.ThrowIfCancellationRequested();
 
-            var browser = await StartAndConnectBrowserAsync(ctx, token);
+            var browser = await StartAndLaunchBrowserAsync(ctx, token);
             if (browser == null)
             {
                 if (ctx.ProxyFailed)
                 {
-                    LogWriteLine($"{this.Title}:ExecuteWorker:浏览器/CDP建立失败，疑似代理异常: {ctx.ProxyFailedReason}");
+                    LogWriteLine($"{this.Title}:ExecuteWorker:浏览器/Context建立失败，疑似代理异常: {ctx.ProxyFailedReason}");
                     return BuildFailureResult(ctx, WorkerFailureKind.ProxyFailed, ctx.ProxyFailedReason);
                 }
 
-                LogWriteLine($"{this.Title}:ExecuteWorker:浏览器启动或CDP连接失败");
+                LogWriteLine($"{this.Title}:ExecuteWorker:浏览器启动或Context创建失败");
                 return BuildFailureResult(ctx, WorkerFailureKind.BrowserStartFailed, ctx.LastFailureReason);
             }
 
@@ -1389,6 +1393,22 @@ namespace QTP.Plugins
             catch
             {
             }
+
+            try
+            {
+                await CleanupLaunchUserDataDirAsync(ctx.Config.UserDataDir);
+            }
+            catch
+            {
+            }
+        }
+
+        private static Task CleanupLaunchUserDataDirAsync(string userDataDir)
+        {
+            if (string.IsNullOrWhiteSpace(userDataDir))
+                return Task.CompletedTask;
+
+            return Task.Run(() => CommonHelper.DeleteDirectoryWithRetry(userDataDir, 10, 500, ignoreFailure: true));
         }
 
         #endregion
@@ -1814,32 +1834,27 @@ namespace QTP.Plugins
 
         #region Browser Boot / Events
 
-        private async Task<IBrowser?> StartAndConnectBrowserAsync(WorkerRunContext ctx, CancellationToken token)
+        private async Task<IBrowser?> StartAndLaunchBrowserAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var args = BuildChromiumArgs(ctx.Config, out var proxyServer);
+
+            var args = BuildChromiumArgs(ctx.Config, out _);
+            var launchArgs = NormalizeChromiumLaunchArgs(args, ctx.Config.UserDataDir);
             var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", ctx.Config.KernelVersion, "chrome.exe");
-            var session = await _processManager.StartChromium(
-            ctx.Config.UniqueId,
-            chromePath,
-            ctx.Config.UserDataDir,
-            TimeSpan.FromSeconds(_appSettings.IpTtl),
-            $"about:blank {string.Join(" ", args)}",
-            proxyServer,
-            readyTimeout: TimeSpan.FromSeconds(15),
-            token: token);
-            ctx.DebugPort = session.DebugPort;
-            var endpoint = $"http://localhost:{session.DebugPort}";
+            Directory.CreateDirectory(ctx.Config.UserDataDir);
+
+            ctx.DebugPort = 0;
             token.ThrowIfCancellationRequested();
 
-            return await ConnectOverCDPWithRetryAsync(
-                   ctx.Playwright!,
-                   endpoint,
-                   BuildTraceTag(ctx),
-                   token,
-                   maxAttempts: 3,
-                   delayMs: 200,
-                   requireUsableContext: true);
+            return await LaunchBrowserWithRetryAsync(
+                ctx.Playwright!,
+                chromePath,
+                launchArgs,
+                ctx.Config,
+                BuildTraceTag(ctx),
+                token,
+                maxAttempts: 3,
+                delayMs: 200);
         }
 
         private List<string> BuildChromiumArgs(TaskConfig config, out string proxyServer)
@@ -1902,9 +1917,6 @@ namespace QTP.Plugins
                 }
 
             }
-
-            if (config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false)
-                args.Add("--headless");
 
             if (config.TaskArgs.SelectToken("incognito")?.Value<bool>() ?? false)
             {
