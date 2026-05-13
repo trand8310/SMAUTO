@@ -132,7 +132,6 @@ namespace MainClient
                     });
 
                     services.AddSingleton<ChineseNameGenerator>();
-                    services.AddSingleton<ChromiumSessionManager>();
                     services.AddSingleton<TaskStatsAggregator>();
                     services.AddSingleton<AdeHelper>();
                     services.AddSingleton<IpHelper>();

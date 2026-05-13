@@ -7,11 +7,13 @@ using System.Threading.Channels;
 
 namespace QTP.Common
 {
-    public abstract class QTPServiceBase : IQTPService
+    public abstract class QTPServiceBase : IQTPService, IAsyncDisposable
     {
         public abstract string Title { get; }
         public abstract Task<WorkerExecutionResult> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
-        protected readonly AppSettings _appSettings;
+        public virtual Task ForceStopWorkerAsync(string uniqueId, string reason, CancellationToken token = default) => Task.CompletedTask;
+
+        public readonly AppSettings _appSettings;
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
         public event EventHandler<TaskAdWordEventArgs>? OnTaskAdWordEventHandler;
@@ -90,6 +92,14 @@ namespace QTP.Common
         public virtual void QTPUploadAdWord(string type, string word)
         {
             OnTaskAdWordEventHandler?.Invoke(this, new TaskAdWordEventArgs(type, word));
+        }
+
+        public virtual ValueTask DisposeAsync()
+        {
+            OnLogEventHandler = null;
+            OnStateChangedEventHandler = null;
+            OnTaskAdWordEventHandler = null;
+            return ValueTask.CompletedTask;
         }
     }
 }

@@ -44,7 +44,6 @@ namespace MainClient
         private readonly FileUpdater _fileUpdater;
         private readonly ProxyTester _ipTester;
         private readonly IPlaywrightProvider _playwrightProvider;
-        private readonly ChromiumSessionManager _processManager;
         private readonly TaskStatsAggregator _aggregator;
         private readonly ChineseNameGenerator _nameGenerator;
         private readonly FileCleanupQueue _fileCleanupQueue = new();
@@ -783,7 +782,6 @@ namespace MainClient
             FileUpdater fileUpdater,
             IpHelper ipHelper,
             ProxyTester ipTester,
-            ChromiumSessionManager processManager,
             AppSettings appSettings,
             IHttpClientFactory httpClientFactory,
             ILogger<MainForm> logger)
@@ -798,7 +796,6 @@ namespace MainClient
             this._ipHelper = ipHelper;
             this._ipTester = ipTester;
             this._appSettings = appSettings;
-            this._processManager = processManager;
             this._logger = logger;
             this._httpClientFactory = httpClientFactory;
             this.Text += $"{AppConsts.AppVersion}";
@@ -1133,7 +1130,8 @@ namespace MainClient
             numericUpDown_MinFrequency.Value = _appSettings.MinFrequency;
             comboBox_Protocol.Text = _appSettings.Protocol ?? "http";
             checkBox_NoTrigger1688Shop.Checked = _appSettings.NoTrigger1688Shop;
-
+            checkBox_BlockImage.Checked = _appSettings.BlockImage;
+            checkBox_BlockMedia.Checked = _appSettings.BlockMedia;
         }
         private static object lock_config = new object();
         private void UpdateAppSetting()
@@ -1192,6 +1190,9 @@ namespace MainClient
 
                 _appSettings.Protocol = comboBox_Protocol.Text;
                 _appSettings.NoTrigger1688Shop = checkBox_NoTrigger1688Shop.Checked;
+
+                _appSettings.BlockImage = checkBox_BlockImage.Checked;
+                _appSettings.BlockMedia = checkBox_BlockMedia.Checked;
 
                 UserConfigService.Save("AppSettings", _appSettings);
             }
@@ -1937,7 +1938,7 @@ namespace MainClient
 
             var pluginInstance = Activator.CreateInstance(
                 plugin.type,
-                new object[] { _playwrightProvider, _aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
+                new object[] { _playwrightProvider, _aggregator, _adeHelper, _nameGenerator, _appSettings });
 
             if (pluginInstance is not IQTPService pluginService)
             {
@@ -1969,11 +1970,10 @@ namespace MainClient
 
                 LogWriteLine(
                     $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
-   
 
                 try
                 {
-                    var executionResult = await pluginService.ExecuteWorkerAsync(uniqueId, args, token);
+                    var executionResult = await ExecuteWorkerWithForceStopAsync(pluginService, uniqueId, args, token);
 
                     if (ctx.TotalUV > 1 && executionResult.IsPageTriggerClick && _appSettings.UVsTriggerOne)
                         return true;
@@ -1993,44 +1993,90 @@ namespace MainClient
             }
             finally
             {
-                if (logHandler != null) pluginService.OnLogEventHandler -= logHandler;
-                if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
-                if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
-
                 try
                 {
-                    await _processManager.CloseAsync(uniqueId);
+                    if (pluginService is IAsyncDisposable asyncDisposable)
+                    {
+                        try
+                        {
+                            await asyncDisposable.DisposeAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Async dispose plugin failed. uniqueId={UniqueId}", uniqueId);
+                        }
+                    }
+                    else if (pluginService is IDisposable disposable)
+                    {
+                        try
+                        {
+                            disposable.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Dispose plugin failed. uniqueId={UniqueId}", uniqueId);
+                        }
+                    }
                 }
-                catch (Exception ex)
+                finally
                 {
-                    _logger.LogWarning(ex, "Close process failed. uniqueId={UniqueId}", uniqueId);
-                }
-
-                if (pluginService is IAsyncDisposable asyncDisposable)
-                {
-                    try
-                    {
-                        await asyncDisposable.DisposeAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Async dispose plugin failed. uniqueId={UniqueId}", uniqueId);
-                    }
-                }
-                else if (pluginService is IDisposable disposable)
-                {
-                    try
-                    {
-                        disposable.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Dispose plugin failed. uniqueId={UniqueId}", uniqueId);
-                    }
+                    if (logHandler != null) pluginService.OnLogEventHandler -= logHandler;
+                    if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
+                    if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
                 }
             }
         }
 
+
+
+
+        private async Task<WorkerExecutionResult> ExecuteWorkerWithForceStopAsync(
+           IQTPService pluginService,
+           string uniqueId,
+           JObject args,
+           CancellationToken token)
+        {
+            var workerTask = pluginService.ExecuteWorkerAsync(uniqueId, args, token);
+
+            try
+            {
+                return await workerTask.WaitAsync(token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                await TryForceStopWorkerAsync(pluginService, uniqueId, "Cancellation token was signaled.");
+
+                var completedTask = await Task.WhenAny(workerTask, Task.Delay(TimeSpan.FromSeconds(5)));
+                if (completedTask == workerTask)
+                {
+                    try
+                    {
+                        await workerTask;
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Worker did not exit within force-stop grace period. uniqueId={UniqueId}", uniqueId);
+                }
+
+                throw;
+            }
+        }
+
+        private async Task TryForceStopWorkerAsync(IQTPService pluginService, string uniqueId, string reason)
+        {
+            try
+            {
+                await pluginService.ForceStopWorkerAsync(uniqueId, reason);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Force stop worker failed. uniqueId={UniqueId}", uniqueId);
+            }
+        }
 
 
 

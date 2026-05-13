@@ -9,6 +9,8 @@ namespace QTP.Common
     {
         string Title { get; }
         Task<WorkerExecutionResult> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
+        Task ForceStopWorkerAsync(string uniqueId, string reason, CancellationToken token = default);
+
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
         public event EventHandler<TaskAdWordEventArgs>? OnTaskAdWordEventHandler;

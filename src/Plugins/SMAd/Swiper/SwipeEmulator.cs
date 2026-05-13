@@ -53,6 +53,80 @@ namespace SMAd.Swiper
         public bool IsMicroSwipe { get; set; }
     }
 
+    public sealed class SwipeGestureProfile
+    {
+        public float MinSideDriftPx { get; init; }
+        public float MaxSideDriftPx { get; init; }
+        public double SideDriftLowRatio { get; init; } = 0.35;
+        public double SideDriftHighRatio { get; init; } = 0.12;
+        public double SettleJitterMinPx { get; init; }
+        public double SettleJitterMaxPx { get; init; }
+        public int MinSteps { get; init; }
+        public double TinyBackChance { get; init; }
+        public double TinyBackMinRatio { get; init; }
+        public double TinyBackMaxRatio { get; init; }
+        public int TouchRadiusMin { get; init; }
+        public int TouchRadiusMaxExclusive { get; init; }
+        public double StartForceMin { get; init; }
+        public double StartForceMax { get; init; }
+        public int HoldBeforeMoveMinMs { get; init; }
+        public int HoldBeforeMoveMaxMsExclusive { get; init; }
+        public int HoldAfterMoveMinMs { get; init; }
+        public int HoldAfterMoveMaxMsExclusive { get; init; }
+        public double OccasionalPauseChance { get; init; }
+        public int OccasionalPauseMinMs { get; init; } = 6;
+        public int OccasionalPauseMaxMsExclusive { get; init; } = 18;
+
+        public static SwipeGestureProfile For(bool microSwipe)
+        {
+            return microSwipe ? Micro : Normal;
+        }
+
+        public static SwipeGestureProfile Micro { get; } = new()
+        {
+            MinSideDriftPx = 1.0f,
+            MaxSideDriftPx = 2.4f,
+            SettleJitterMinPx = 0.20,
+            SettleJitterMaxPx = 0.55,
+            MinSteps = 8,
+            TinyBackChance = 0,
+            TinyBackMinRatio = 0,
+            TinyBackMaxRatio = 0,
+            TouchRadiusMin = 2,
+            TouchRadiusMaxExclusive = 4,
+            StartForceMin = 0.72,
+            StartForceMax = 0.92,
+            HoldBeforeMoveMinMs = 18,
+            HoldBeforeMoveMaxMsExclusive = 55,
+            HoldAfterMoveMinMs = 8,
+            HoldAfterMoveMaxMsExclusive = 35,
+            OccasionalPauseChance = 0.03
+        };
+
+        public static SwipeGestureProfile Normal { get; } = new()
+        {
+            MinSideDriftPx = 2.2f,
+            MaxSideDriftPx = 5.2f,
+            SettleJitterMinPx = 0.45,
+            SettleJitterMaxPx = 0.95,
+            MinSteps = 14,
+            TinyBackChance = 0.20,
+            TinyBackMinRatio = 0.002,
+            TinyBackMaxRatio = 0.006,
+            TouchRadiusMin = 3,
+            TouchRadiusMaxExclusive = 7,
+            StartForceMin = 0.78,
+            StartForceMax = 0.98,
+            HoldBeforeMoveMinMs = 35,
+            HoldBeforeMoveMaxMsExclusive = 120,
+            HoldAfterMoveMinMs = 18,
+            HoldAfterMoveMaxMsExclusive = 70,
+            OccasionalPauseChance = 0.05
+        };
+    }
+
+    internal readonly record struct TouchSample(Vector2 Point, int DelayMs, int Radius, double Force);
+
     public sealed class PageScrollState
     {
         public double ScrollX { get; set; }
@@ -236,111 +310,6 @@ namespace SMAd.Swiper
             }
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="page">Playwright 当前页面对象</param>
-        /// <param name="client">当前页面的 CDP 会话</param>
-        /// <param name="times">连续滑动次数注意是“最多”，不是一定滑 4 次。如果中间检测到滑不动，或者连续失败次数达到 maxConsecutiveNoMove，会提前结束。</param>
-        /// <param name="direction">滑动方向</param>
-        /// <param name="area">控制滑动起点和终点出现的大致区域:SwipeArea.Normal X: 屏幕 35% ~ 65% Y: 屏幕 18% ~ 82%,SwipeArea.Wide 更宽的区域：X: 屏幕 22% ~ 78% Y: 屏幕 18% ~ 82%,SwipeArea.Micro 微滑区域：X: 屏幕 42% ~ 60%,Y: 屏幕 40% ~ 68%</param>
-        /// <param name="microSwipe">是否使用微滑模式</param>
-        /// <param name="maxConsecutiveNoMove">连续多少次没滑动成功后停止</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns></returns>
-        public static async Task<List<SwipeTrace>> SwipeMultipleHumanAsync(
-            IPage page,
-            ICDPSession client,
-            int times,
-            ScrollDirection direction = ScrollDirection.Random,
-            SwipeArea? area = null,
-            bool microSwipe = false,
-            int maxConsecutiveNoMove = 2,
-            CancellationToken cancellationToken = default)
-        {
-            var list = new List<SwipeTrace>();
-
-            if (page == null || page.IsClosed || client == null || times <= 0)
-                return list;
-
-            area ??= microSwipe ? SwipeArea.Micro : SwipeArea.Normal;
-
-            int noMoveCount = 0;
-
-            for (int i = 0; i < times; i++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (page.IsClosed)
-                    break;
-
-                try
-                {
-                    ScrollDirection actualDirection = PickHumanDirection(direction);
-
-                    var trace = await SwipeOnceHumanAsync(
-                        page: page,
-                        client: client,
-                        direction: actualDirection,
-                        area: area,
-                        microSwipe: microSwipe,
-                        verifyScrollChanged: true,
-                        cancellationToken: cancellationToken);
-
-                    if (trace == null)
-                    {
-                        noMoveCount++;
-
-                        if (noMoveCount >= maxConsecutiveNoMove)
-                            break;
-
-                        await Task.Delay(CommonHelper.NextInt(80, 180), cancellationToken);
-                        continue;
-                    }
-
-                    noMoveCount = 0;
-                    list.Add(trace);
-
-                    await Task.Delay(
-                        microSwipe
-                            ? CommonHelper.NextInt(180, 480)
-                            : CommonHelper.NextInt(320, 980),
-                        cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch
-                {
-                    noMoveCount++;
-
-                    if (noMoveCount >= maxConsecutiveNoMove)
-                        break;
-                }
-            }
-
-            return list;
-        }
-
-        public static Task<List<SwipeTrace>> SwipeMultipleMicroHumanAsync(
-            IPage page,
-            ICDPSession client,
-            int times,
-            ScrollDirection direction = ScrollDirection.Random,
-            int maxConsecutiveNoMove = 2,
-            CancellationToken cancellationToken = default)
-        {
-            return SwipeMultipleHumanAsync(
-                page: page,
-                client: client,
-                times: times,
-                direction: direction,
-                area: SwipeArea.Micro,
-                microSwipe: true,
-                maxConsecutiveNoMove: maxConsecutiveNoMove,
-                cancellationToken: cancellationToken);
-        }
 
         public static async Task<List<SwipeTrace>> SwipeElementIntoComfortZoneAsync(
             IPage page,
@@ -450,6 +419,8 @@ namespace SMAd.Swiper
                 return traces;
             }
 
+            await DelayBeforeElementBrowseAsync(cancellationToken);
+
             for (int i = 0; i < maxSwipes; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -466,13 +437,21 @@ namespace SMAd.Swiper
                         var pos = await GetElementViewportPositionAsync(page, element);
 
                         if (pos == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
                             return traces;
+                        }
 
                         ScrollDirection direction = pos.CenterY < 0
                             ? ScrollDirection.Down
                             : ScrollDirection.Up;
 
-                        int? distance = (int)Math.Clamp(vh * 0.42, vh * 0.24, vh * 0.58);
+                        int? distance = (int)Math.Clamp(vh * 0.30, vh * 0.18, vh * 0.38);
 
                         var trace = await SwipeOnceHumanAsync(
                             page: page,
@@ -480,16 +459,25 @@ namespace SMAd.Swiper
                             direction: direction,
                             area: SwipeArea.Normal,
                             microSwipe: false,
+                            steps: CalcElementBrowseSwipeSteps(distance, vh, microSwipe: false),
                             totalDistancePx: distance,
                             verifyScrollChanged: true,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
                             return traces;
+                        }
 
                         traces.Add(trace);
 
-                        await Task.Delay(CommonHelper.NextInt(120, 280), cancellationToken);
+                        await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
                         continue;
                     }
 
@@ -510,11 +498,11 @@ namespace SMAd.Swiper
                             ? ScrollDirection.Down
                             : ScrollDirection.Up;
 
-                        bool useMicro = distanceToComfort < vh * 0.20;
+                        bool useMicro = distanceToComfort < vh * 0.24;
 
                         int? targetDistance = useMicro
-                            ? (int)Math.Clamp(distanceToComfort * 0.90, vh * 0.08, vh * 0.18)
-                            : (int)Math.Clamp(distanceToComfort * 0.94, vh * 0.18, vh * 0.42);
+                            ? CalcElementBrowseTargetDistance(distanceToComfort, vh, 0.58, 0.74, 0.06, 0.16)
+                            : CalcElementBrowseTargetDistance(distanceToComfort, vh, 0.64, 0.80, 0.14, 0.32);
 
                         var trace = await SwipeOnceHumanAsync(
                             page: page,
@@ -522,23 +510,32 @@ namespace SMAd.Swiper
                             direction: direction,
                             area: useMicro ? SwipeArea.Micro : SwipeArea.Normal,
                             microSwipe: useMicro,
+                            steps: CalcElementBrowseSwipeSteps(targetDistance, vh, useMicro),
                             totalDistancePx: targetDistance,
                             verifyScrollChanged: true,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
                             return traces;
+                        }
 
                         traces.Add(trace);
 
-                        await Task.Delay(CommonHelper.NextInt(100, 240), cancellationToken);
+                        await DelayAfterElementBrowseSwipeAsync(useMicro, cancellationToken);
                         continue;
                     }
 
                     if (top > vh)
                     {
                         double distance = top - comfortBottom;
-                        int? targetDistance = (int)Math.Clamp(distance * 0.92, vh * 0.22, vh * 0.58);
+                        int? targetDistance = CalcElementBrowseTargetDistance(distance, vh, 0.55, 0.76, 0.18, 0.42);
 
                         var trace = await SwipeOnceHumanAsync(
                             page: page,
@@ -546,23 +543,32 @@ namespace SMAd.Swiper
                             direction: ScrollDirection.Up,
                             area: SwipeArea.Normal,
                             microSwipe: false,
+                            steps: CalcElementBrowseSwipeSteps(targetDistance, vh, microSwipe: false),
                             totalDistancePx: targetDistance,
                             verifyScrollChanged: true,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
                             return traces;
+                        }
 
                         traces.Add(trace);
 
-                        await Task.Delay(CommonHelper.NextInt(120, 280), cancellationToken);
+                        await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
                         continue;
                     }
 
                     if (bottom < 0)
                     {
                         double distance = comfortTop - bottom;
-                        int? targetDistance = (int)Math.Clamp(distance * 0.92, vh * 0.18, vh * 0.46);
+                        int? targetDistance = CalcElementBrowseTargetDistance(distance, vh, 0.55, 0.76, 0.16, 0.36);
 
                         var trace = await SwipeOnceHumanAsync(
                             page: page,
@@ -570,16 +576,25 @@ namespace SMAd.Swiper
                             direction: ScrollDirection.Down,
                             area: SwipeArea.Normal,
                             microSwipe: false,
+                            steps: CalcElementBrowseSwipeSteps(targetDistance, vh, microSwipe: false),
                             totalDistancePx: targetDistance,
                             verifyScrollChanged: true,
                             cancellationToken: cancellationToken);
 
                         if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
                             return traces;
+                        }
 
                         traces.Add(trace);
 
-                        await Task.Delay(CommonHelper.NextInt(120, 280), cancellationToken);
+                        await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
                         continue;
                     }
                 }
@@ -593,7 +608,327 @@ namespace SMAd.Swiper
                 }
             }
 
+            await TryScrollIntoViewIfNeededAsync(element, cancellationToken);
+
             return traces;
+        }
+
+
+        public static async Task<List<SwipeTrace>> SwipeToElementAsync(
+            IPage page,
+            ICDPSession client,
+            IElementHandle element,
+            int maxSwipes = 10,
+            CancellationToken cancellationToken = default)
+        {
+            var traces = new List<SwipeTrace>();
+
+            if (page == null || page.IsClosed || client == null || element == null || page.ViewportSize == null || maxSwipes <= 0)
+                return traces;
+
+            int vh = page.ViewportSize.Height;
+
+            float comfortTop = vh * 0.22f;
+            float comfortBottom = vh * 0.72f;
+
+            try
+            {
+                // IElementHandle 没有 CountAsync，用 isConnected 判断节点是否仍在 DOM 中
+                var isConnected = await element.EvaluateAsync<bool>("el => !!el && el.isConnected");
+                if (!isConnected)
+                    return traces;
+            }
+            catch
+            {
+                return traces;
+            }
+
+            await DelayBeforeElementBrowseAsync(cancellationToken);
+
+            for (int i = 0; i < maxSwipes; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (page.IsClosed)
+                    return traces;
+
+                try
+                {
+                    var box = await element.BoundingBoxAsync();
+
+                    if (box == null)
+                    {
+                        var pos = await GetElementViewportPositionAsync(page, element);
+
+                        if (pos == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
+                            return traces;
+                        }
+
+                        ScrollDirection direction = pos.CenterY < 0
+                            ? ScrollDirection.Down
+                            : ScrollDirection.Up;
+
+                        int? distance = (int)Math.Clamp(vh * 0.30, vh * 0.18, vh * 0.38);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: direction,
+                            area: SwipeArea.Normal,
+                            microSwipe: false,
+                            steps: CalcElementBrowseSwipeSteps(distance, vh, microSwipe: false),
+                            totalDistancePx: distance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
+                            return traces;
+                        }
+
+                        traces.Add(trace);
+
+                        await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                        continue;
+                    }
+
+                    float top = (float)box.Y;
+                    float bottom = (float)(box.Y + box.Height);
+                    float centerY = (float)(box.Y + box.Height / 2.0);
+
+                    if (centerY >= comfortTop && centerY <= comfortBottom)
+                        return traces;
+
+                    if (bottom >= 0 && top <= vh)
+                    {
+                        double distanceToComfort = centerY < comfortTop
+                            ? comfortTop - centerY
+                            : centerY - comfortBottom;
+
+                        ScrollDirection direction = centerY < comfortTop
+                            ? ScrollDirection.Down
+                            : ScrollDirection.Up;
+
+                        bool useMicro = distanceToComfort < vh * 0.24;
+
+                        int? targetDistance = useMicro
+                            ? CalcElementBrowseTargetDistance(distanceToComfort, vh, 0.58, 0.74, 0.06, 0.16)
+                            : CalcElementBrowseTargetDistance(distanceToComfort, vh, 0.64, 0.80, 0.14, 0.32);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: direction,
+                            area: useMicro ? SwipeArea.Micro : SwipeArea.Normal,
+                            microSwipe: useMicro,
+                            steps: CalcElementBrowseSwipeSteps(targetDistance, vh, useMicro),
+                            totalDistancePx: targetDistance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
+                            return traces;
+                        }
+
+                        traces.Add(trace);
+
+                        await DelayAfterElementBrowseSwipeAsync(useMicro, cancellationToken);
+                        continue;
+                    }
+
+                    if (top > vh)
+                    {
+                        double distance = top - comfortBottom;
+                        int? targetDistance = CalcElementBrowseTargetDistance(distance, vh, 0.55, 0.76, 0.18, 0.42);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: ScrollDirection.Up,
+                            area: SwipeArea.Normal,
+                            microSwipe: false,
+                            steps: CalcElementBrowseSwipeSteps(targetDistance, vh, microSwipe: false),
+                            totalDistancePx: targetDistance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
+                            return traces;
+                        }
+
+                        traces.Add(trace);
+
+                        await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                        continue;
+                    }
+
+                    if (bottom < 0)
+                    {
+                        double distance = comfortTop - bottom;
+                        int? targetDistance = CalcElementBrowseTargetDistance(distance, vh, 0.55, 0.76, 0.16, 0.36);
+
+                        var trace = await SwipeOnceHumanAsync(
+                            page: page,
+                            client: client,
+                            direction: ScrollDirection.Down,
+                            area: SwipeArea.Normal,
+                            microSwipe: false,
+                            steps: CalcElementBrowseSwipeSteps(targetDistance, vh, microSwipe: false),
+                            totalDistancePx: targetDistance,
+                            verifyScrollChanged: true,
+                            cancellationToken: cancellationToken);
+
+                        if (trace == null)
+                        {
+                            if (await TryScrollIntoViewIfNeededAsync(element, cancellationToken))
+                            {
+                                await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                                continue;
+                            }
+
+                            return traces;
+                        }
+
+                        traces.Add(trace);
+
+                        await DelayAfterElementBrowseSwipeAsync(microSwipe: false, cancellationToken);
+                        continue;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    return traces;
+                }
+            }
+
+            await TryScrollIntoViewIfNeededAsync(element, cancellationToken);
+
+            return traces;
+        }
+
+
+        private static async Task<bool> TryScrollIntoViewIfNeededAsync(ILocator element, CancellationToken cancellationToken)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                await element.ScrollIntoViewIfNeededAsync(new()
+                {
+                    Timeout = CommonHelper.NextInt(1200, 2600)
+                });
+
+                cancellationToken.ThrowIfCancellationRequested();
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static async Task<bool> TryScrollIntoViewIfNeededAsync(IElementHandle element, CancellationToken cancellationToken)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                await element.ScrollIntoViewIfNeededAsync(new()
+                {
+                    Timeout = CommonHelper.NextInt(1200, 2600)
+                });
+
+                cancellationToken.ThrowIfCancellationRequested();
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static int? CalcElementBrowseTargetDistance(
+            double distanceToTarget,
+            int viewportHeight,
+            double minDistanceRatio,
+            double maxDistanceRatio,
+            double minViewportRatio,
+            double maxViewportRatio)
+        {
+            double browseRatio = CommonHelper.NextDouble(minDistanceRatio, maxDistanceRatio);
+
+            return (int)Math.Clamp(
+                distanceToTarget * browseRatio,
+                viewportHeight * minViewportRatio,
+                viewportHeight * maxViewportRatio);
+        }
+
+        private static int CalcElementBrowseSwipeSteps(int? targetDistancePx, int viewportHeight, bool microSwipe)
+        {
+            int approximateDistance = targetDistancePx ?? (int)(viewportHeight * (microSwipe ? 0.12 : 0.30));
+            int steps = CalcSteps(approximateDistance, viewportHeight, microSwipe);
+
+            steps += microSwipe
+                ? CommonHelper.NextInt(4, 9)
+                : CommonHelper.NextInt(8, 16);
+
+            return Math.Clamp(
+                steps,
+                microSwipe ? 16 : 32,
+                microSwipe ? 36 : 74);
+        }
+
+        private static Task DelayBeforeElementBrowseAsync(CancellationToken cancellationToken)
+        {
+            return Task.Delay(CommonHelper.NextInt(180, 420), cancellationToken);
+        }
+
+        private static Task DelayAfterElementBrowseSwipeAsync(bool microSwipe, CancellationToken cancellationToken)
+        {
+            return Task.Delay(
+                microSwipe
+                    ? CommonHelper.NextInt(260, 560)
+                    : CommonHelper.NextInt(420, 980),
+                cancellationToken);
         }
 
         #endregion
@@ -971,79 +1306,6 @@ namespace SMAd.Swiper
             return null;
         }
 
-        /// <summary>
-        /// 判断滑动起点是否适合按下去。
-        /// 这个版本已经放宽：
-        /// 不再拦截 a / button / role=button / role=link。
-        /// 只避开 input / textarea / select / iframe / video / canvas。
-        /// </summary>
-        private static async Task<bool> IsGoodSwipeStartPointAsync(IPage page, float x, float y)
-        {
-            if (page == null || page.IsClosed)
-                return false;
-
-            try
-            {
-                return await page.EvaluateAsync<bool>(@"
-(arg) => {
-    const x = Number(arg.x || 0);
-    const y = Number(arg.y || 0);
-
-    try {
-        const el = document.elementFromPoint(x, y);
-        if (!el) return false;
-
-        let p = el;
-        let depth = 0;
-
-        while (p && depth < 4) {
-            const tag = (p.tagName || '').toLowerCase();
-
-            // 输入类控件容易弹键盘或者触发聚焦，避开
-            if (
-                tag === 'input' ||
-                tag === 'textarea' ||
-                tag === 'select'
-            ) {
-                return false;
-            }
-
-            // 这些元素容易吞掉 touch 或者产生拖拽/媒体交互，避开
-            if (
-                tag === 'iframe' ||
-                tag === 'video' ||
-                tag === 'canvas'
-            ) {
-                return false;
-            }
-
-            const style = getComputedStyle(p);
-            if (!style) return false;
-
-            if (style.display === 'none' || style.visibility === 'hidden') {
-                return false;
-            }
-
-            if (Number(style.opacity) < 0.05) {
-                return false;
-            }
-
-            p = p.parentElement;
-            depth++;
-        }
-
-        return true;
-    } catch {
-        return false;
-    }
-}", new { x, y });
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         #endregion
 
         #region 兼容旧 document 判断
@@ -1204,13 +1466,13 @@ namespace SMAd.Swiper
             return (start, end);
         }
 
-        private static List<Vector2> GetHumanLikeSwipePoints(
+        private static List<Vector2> GetSwipePoints(
             Vector2 start,
             Vector2 end,
             int steps,
-            bool microSwipe)
+            SwipeGestureProfile profile)
         {
-            steps = Math.Max(steps, microSwipe ? 8 : 14);
+            steps = Math.Max(steps, profile.MinSteps);
 
             var points = new List<Vector2>(steps + 1);
 
@@ -1228,54 +1490,52 @@ namespace SMAd.Swiper
             float nx = -dy / distance;
             float ny = dx / distance;
 
-            float sideDriftBase = microSwipe
-                ? (float)CommonHelper.NextDouble(1.0, 2.4)
-                : (float)CommonHelper.NextDouble(2.2, 5.2);
+            float sideDriftBase = (float)CommonHelper.NextDouble(profile.MinSideDriftPx, profile.MaxSideDriftPx);
 
             float phase1 = (float)CommonHelper.NextDouble(0, Math.PI * 2);
             float phase2 = (float)CommonHelper.NextDouble(0, Math.PI * 2);
 
-            float amp1 = (float)CommonHelper.NextDouble(sideDriftBase * 0.35, sideDriftBase);
-            float amp2 = (float)CommonHelper.NextDouble(sideDriftBase * 0.12, sideDriftBase * 0.42);
+            float amp1 = (float)CommonHelper.NextDouble(sideDriftBase * profile.SideDriftLowRatio, sideDriftBase);
+            float amp2 = (float)CommonHelper.NextDouble(sideDriftBase * profile.SideDriftHighRatio, sideDriftBase * 0.42);
 
-            bool addTinyBack = !microSwipe && CommonHelper.Chance(0.24);
+            bool addTinyBack = profile.TinyBackChance > 0 && CommonHelper.Chance(profile.TinyBackChance);
+            float maxBackRatio = addTinyBack
+                ? (float)CommonHelper.NextDouble(profile.TinyBackMinRatio, profile.TinyBackMaxRatio)
+                : 0;
 
             for (int i = 0; i <= steps; i++)
             {
                 float tRaw = i / (float)steps;
-                float t = EaseInOutCubic(tRaw);
+                float t = EaseInOutQuint(tRaw);
 
-                float x = start.X + dx * t;
-                float y = start.Y + dy * t;
+                Vector2 point = Vector2.Lerp(start, end, t);
 
                 float drift =
-                    MathF.Sin(tRaw * MathF.PI * 1.05f + phase1) * amp1 +
-                    MathF.Sin(tRaw * MathF.PI * 2.10f + phase2) * amp2;
+                    MathF.Sin(tRaw * MathF.PI * 0.92f + phase1) * amp1 +
+                    MathF.Sin(tRaw * MathF.PI * 1.75f + phase2) * amp2;
 
-                float fade = MathF.Sin(tRaw * MathF.PI);
-                drift *= fade;
+                drift *= MathF.Sin(tRaw * MathF.PI);
 
-                x += nx * drift;
-                y += ny * drift;
+                point.X += nx * drift;
+                point.Y += ny * drift;
 
-                if (tRaw > 0.78f)
+                if (tRaw > 0.76f)
                 {
-                    float tiny = microSwipe
-                        ? (float)CommonHelper.NextDouble(0.10, 0.70)
-                        : (float)CommonHelper.NextDouble(0.25, 1.20);
+                    float settle = SmoothStep((tRaw - 0.76f) / 0.24f);
+                    float tiny = (float)CommonHelper.NextDouble(profile.SettleJitterMinPx, profile.SettleJitterMaxPx);
 
-                    x += (float)CommonHelper.NextDouble(-tiny, tiny);
-                    y += (float)CommonHelper.NextDouble(-tiny, tiny);
+                    point.X += MathF.Sin(tRaw * MathF.PI * 5.5f + phase2) * tiny * settle;
+                    point.Y += MathF.Sin(tRaw * MathF.PI * 4.5f + phase1) * tiny * settle * 0.55f;
                 }
 
                 if (addTinyBack && tRaw > 0.88f)
                 {
-                    float backRatio = (float)CommonHelper.NextDouble(0.002, 0.008);
-                    x -= dx * backRatio;
-                    y -= dy * backRatio;
+                    float backRatio = maxBackRatio * SmoothStep((tRaw - 0.88f) / 0.12f);
+                    point.X -= dx * backRatio;
+                    point.Y -= dy * backRatio;
                 }
 
-                points.Add(new Vector2(x, y));
+                points.Add(point);
             }
 
             return points;
@@ -1294,90 +1554,38 @@ namespace SMAd.Swiper
             bool microSwipe,
             CancellationToken cancellationToken)
         {
-            var points = GetHumanLikeSwipePoints(start, end, steps, microSwipe);
+            var profile = SwipeGestureProfile.For(microSwipe);
+            var points = GetSwipePoints(start, end, steps, profile);
+            var samples = BuildTouchSamples(points, profile, microSwipe);
 
             int totalDelay = 0;
             bool touchStarted = false;
 
             try
             {
-                double startForce = microSwipe
-                    ? CommonHelper.NextDouble(0.72, 0.92)
-                    : CommonHelper.NextDouble(0.78, 0.98);
-
-                int radius = microSwipe
-                    ? CommonHelper.NextInt(2, 4)
-                    : CommonHelper.NextInt(3, 7);
-
-                await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
-                {
-                    ["type"] = "touchStart",
-                    ["touchPoints"] = new object[]
-                    {
-                        new
-                        {
-                            x = MathF.Round(points[0].X, 2),
-                            y = MathF.Round(points[0].Y, 2),
-                            radiusX = radius,
-                            radiusY = radius,
-                            force = startForce,
-                            id = 0
-                        }
-                    },
-                    ["modifiers"] = 0
-                });
-
+                await DispatchTouchAsync(client, "touchStart", samples[0]);
                 touchStarted = true;
 
-                int holdBeforeMove = microSwipe
-                    ? CommonHelper.NextInt(18, 55)
-                    : CommonHelper.NextInt(35, 120);
+                int holdBeforeMove = CommonHelper.NextInt(
+                    profile.HoldBeforeMoveMinMs,
+                    profile.HoldBeforeMoveMaxMsExclusive);
 
                 await Task.Delay(holdBeforeMove, cancellationToken);
                 totalDelay += holdBeforeMove;
 
-                for (int i = 1; i < points.Count; i++)
+                for (int i = 1; i < samples.Count; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    float progress = i / (float)(points.Count - 1);
+                    await DispatchTouchAsync(client, "touchMove", samples[i]);
 
-                    int delay = GetHumanMoveDelay(progress, microSwipe);
-
-                    if (CommonHelper.Chance(microSwipe ? 0.04 : 0.08))
-                        delay += CommonHelper.NextInt(8, 28);
-
-                    double force = GetHumanForce(progress, microSwipe);
-
-                    int moveRadius = microSwipe
-                        ? CommonHelper.NextInt(2, 4)
-                        : CommonHelper.NextInt(3, 6);
-
-                    await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
-                    {
-                        ["type"] = "touchMove",
-                        ["touchPoints"] = new object[]
-                        {
-                            new
-                            {
-                                x = MathF.Round(points[i].X, 2),
-                                y = MathF.Round(points[i].Y, 2),
-                                radiusX = moveRadius,
-                                radiusY = moveRadius,
-                                force = force,
-                                id = 0
-                            }
-                        },
-                        ["modifiers"] = 0
-                    });
-
-                    await Task.Delay(delay, cancellationToken);
-                    totalDelay += delay;
+                    await Task.Delay(samples[i].DelayMs, cancellationToken);
+                    totalDelay += samples[i].DelayMs;
                 }
 
-                int holdAfterMove = microSwipe
-                    ? CommonHelper.NextInt(8, 35)
-                    : CommonHelper.NextInt(18, 70);
+                int holdAfterMove = CommonHelper.NextInt(
+                    profile.HoldAfterMoveMinMs,
+                    profile.HoldAfterMoveMaxMsExclusive);
 
                 await Task.Delay(holdAfterMove, cancellationToken);
                 totalDelay += holdAfterMove;
@@ -1419,6 +1627,58 @@ namespace SMAd.Swiper
             };
         }
 
+        private static List<TouchSample> BuildTouchSamples(
+            IReadOnlyList<Vector2> points,
+            SwipeGestureProfile profile,
+            bool microSwipe)
+        {
+            var samples = new List<TouchSample>(points.Count);
+
+            for (int i = 0; i < points.Count; i++)
+            {
+                float progress = points.Count <= 1
+                    ? 1
+                    : i / (float)(points.Count - 1);
+
+                int delay = i == 0
+                    ? 0
+                    : GetHumanMoveDelay(progress, microSwipe);
+
+                if (i > 0 && CommonHelper.Chance(profile.OccasionalPauseChance))
+                    delay += CommonHelper.NextInt(profile.OccasionalPauseMinMs, profile.OccasionalPauseMaxMsExclusive);
+
+                int radius = CommonHelper.NextInt(profile.TouchRadiusMin, profile.TouchRadiusMaxExclusive);
+                double force = i == 0
+                    ? CommonHelper.NextDouble(profile.StartForceMin, profile.StartForceMax)
+                    : GetHumanForce(progress, microSwipe);
+
+                samples.Add(new TouchSample(points[i], delay, radius, force));
+            }
+
+            return samples;
+        }
+
+        private static Task DispatchTouchAsync(ICDPSession client, string type, TouchSample sample)
+        {
+            return client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
+            {
+                ["type"] = type,
+                ["touchPoints"] = new object[]
+                {
+                    new
+                    {
+                        x = MathF.Round(sample.Point.X, 2),
+                        y = MathF.Round(sample.Point.Y, 2),
+                        radiusX = sample.Radius,
+                        radiusY = sample.Radius,
+                        force = sample.Force,
+                        id = 0
+                    }
+                },
+                ["modifiers"] = 0
+            });
+        }
+
         private static int GetHumanMoveDelay(float progress, bool microSwipe)
         {
             int delay;
@@ -1426,32 +1686,32 @@ namespace SMAd.Swiper
             if (progress < 0.08f)
             {
                 delay = microSwipe
-                    ? CommonHelper.NextInt(12, 24)
-                    : CommonHelper.NextInt(18, 35);
+                    ? CommonHelper.NextInt(10, 20)
+                    : CommonHelper.NextInt(14, 28);
             }
             else if (progress < 0.22f)
             {
                 delay = microSwipe
-                    ? CommonHelper.NextInt(7, 16)
-                    : CommonHelper.NextInt(9, 22);
+                    ? CommonHelper.NextInt(7, 14)
+                    : CommonHelper.NextInt(9, 18);
             }
             else if (progress < 0.72f)
             {
                 delay = microSwipe
-                    ? CommonHelper.NextInt(4, 11)
-                    : CommonHelper.NextInt(5, 15);
+                    ? CommonHelper.NextInt(5, 10)
+                    : CommonHelper.NextInt(6, 13);
             }
             else if (progress < 0.90f)
             {
                 delay = microSwipe
-                    ? CommonHelper.NextInt(7, 16)
-                    : CommonHelper.NextInt(9, 22);
+                    ? CommonHelper.NextInt(7, 15)
+                    : CommonHelper.NextInt(10, 20);
             }
             else
             {
                 delay = microSwipe
-                    ? CommonHelper.NextInt(12, 26)
-                    : CommonHelper.NextInt(15, 38);
+                    ? CommonHelper.NextInt(11, 22)
+                    : CommonHelper.NextInt(15, 30);
             }
 
             return delay;
@@ -1505,8 +1765,8 @@ namespace SMAd.Swiper
             if (distance <= 0)
                 return microSwipe ? 8 : 14;
 
-            int minSteps = microSwipe ? 8 : 14;
-            int maxSteps = microSwipe ? 18 : 34;
+            int minSteps = microSwipe ? 12 : 24;
+            int maxSteps = microSwipe ? 28 : 58;
 
             double ratio = Math.Min(distance / (viewportHeight * 0.75), 1.0);
 
@@ -1522,6 +1782,21 @@ namespace SMAd.Swiper
             return t < 0.5f
                 ? 4 * t * t * t
                 : 1 - MathF.Pow(-2 * t + 2, 3) / 2;
+        }
+
+        private static float EaseInOutQuint(float t)
+        {
+            t = Math.Clamp(t, 0f, 1f);
+
+            return t < 0.5f
+                ? 16 * t * t * t * t * t
+                : 1 - MathF.Pow(-2 * t + 2, 5) / 2;
+        }
+
+        private static float SmoothStep(float t)
+        {
+            t = Math.Clamp(t, 0f, 1f);
+            return t * t * (3 - 2 * t);
         }
 
         private sealed class ElementViewportPosition
@@ -1563,6 +1838,42 @@ namespace SMAd.Swiper
                         return null;
                     }
                 }", handle);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static async Task<ElementViewportPosition?> GetElementViewportPositionAsync(
+        IPage page,
+        IElementHandle element)
+        {
+            if (page == null || page.IsClosed || element == null)
+                return null;
+
+            try
+            {
+                return await element.EvaluateAsync<ElementViewportPosition?>(@"
+                    (el) => {
+                        try {
+                            if (!el || !el.isConnected) {
+                                return null;
+                            }
+
+                            const r = el.getBoundingClientRect();
+
+                            return {
+                                Top: Number(r.top || 0),
+                                Bottom: Number(r.bottom || 0),
+                                CenterY: Number((r.top + r.bottom) / 2 || 0),
+                                ViewportHeight: Number(window.innerHeight || document.documentElement.clientHeight || 0)
+                            };
+                        } catch {
+                            return null;
+                        }
+                    }
+                ");
             }
             catch
             {

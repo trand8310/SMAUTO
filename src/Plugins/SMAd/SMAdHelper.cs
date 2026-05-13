@@ -1,15 +1,49 @@
 ﻿using Microsoft.Playwright;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace SMAd
 {
     public class SMAdHelper
     {
+
+        public static bool IsBlockedMediaUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+            try
+            {
+                var uri = new Uri(url);
+                var path = uri.AbsolutePath.ToLowerInvariant();
+                return path.EndsWith(".mp4") ||
+                       path.EndsWith(".webm") ||
+                       path.EndsWith(".m3u8") ||
+                       path.EndsWith(".ts") ||
+                       path.EndsWith(".m4s") ||
+                       path.EndsWith(".mov") ||
+                       path.EndsWith(".avi") ||
+                       path.EndsWith(".flv") ||
+                       path.EndsWith(".mp3") ||
+                       path.EndsWith(".wav") ||
+                       path.EndsWith(".aac") ||
+                       path.EndsWith(".ogg");
+            }
+            catch
+            {
+                var cleanUrl = url.Split('?')[0].Split('#')[0].ToLowerInvariant();
+                return cleanUrl.EndsWith(".mp4") ||
+                       cleanUrl.EndsWith(".webm") ||
+                       cleanUrl.EndsWith(".m3u8") ||
+                       cleanUrl.EndsWith(".ts") ||
+                       cleanUrl.EndsWith(".m4s") ||
+                       cleanUrl.EndsWith(".mov") ||
+                       cleanUrl.EndsWith(".avi") ||
+                       cleanUrl.EndsWith(".flv") ||
+                       cleanUrl.EndsWith(".mp3") ||
+                       cleanUrl.EndsWith(".wav") ||
+                       cleanUrl.EndsWith(".aac") ||
+                       cleanUrl.EndsWith(".ogg");
+            }
+        }
+
 
         public static async Task<ILocator?> WaitVisibleLocatorAsync(
         IEnumerable<ILocator> locators,

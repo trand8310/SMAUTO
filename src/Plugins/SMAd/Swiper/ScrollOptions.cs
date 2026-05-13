@@ -1,6 +1,4 @@
-﻿
-
-namespace SMAd.Swiper
+﻿namespace SMAd.Swiper
 {
     /// <summary>
     /// 如果你项目里已经有 ScrollOptions，就不要重复定义这个类。

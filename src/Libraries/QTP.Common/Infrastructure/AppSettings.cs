@@ -156,6 +156,14 @@
         public string Protocol { get; set; } = "http";
 
 
+        /// <summary>
+        /// 禁止视频
+        /// </summary>
+        public bool BlockMedia { get; set; }
+
+        /// 禁止图片
+        /// </summary>
+        public bool BlockImage { get; set; }
 
 
 
