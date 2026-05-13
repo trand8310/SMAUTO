@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
+using QTP.Common.Models;
 using QTP.Common.Plugins;
 
 namespace QTP.Common
@@ -7,7 +8,7 @@ namespace QTP.Common
     public interface IQTPService
     {
         string Title { get; }
-        Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
+        Task<WorkerExecutionResult> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
         public event EventHandler<TaskAdWordEventArgs>? OnTaskAdWordEventHandler;

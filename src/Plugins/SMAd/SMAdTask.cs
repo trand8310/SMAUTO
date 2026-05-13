@@ -1128,206 +1128,269 @@ namespace QTP.Plugins
 
         #region ExecuteWorkerAsync
 
-        public override async Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token)
+        public override async Task<WorkerExecutionResult> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token)
         {
             WorkerRunContext? ctx = null;
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
             try
             {
-                var config = BuildTaskConfig(uniqueId, taskArgs, linkedCts);
+                ctx = CreateWorkerRunContext(uniqueId, taskArgs, linkedCts);
 
-                ctx = new WorkerRunContext(config)
-                {
-                    LandingDispatcher = new LandingPageStrategyDispatcher(new ILandingPageStrategy[]
-                    {
-                        new UMobLandingPageStrategy(this),
-                        new AiSiteLandingPageStrategy(this),
-                        new AiStudyLandingPageStrategy(this),
-                        new GenericLandingPageStrategy(this),
-                    })
-                };
-
-                this.QTPExecuteStart(config.TaskId);
+                this.QTPExecuteStart(ctx.Config.TaskId);
                 LogWriteLine($"{this.Title}:ExecuteWorker:Start");
 
-                ctx.Playwright = await _playwrightProvider.GetAsync();
-                linkedCts.Token.ThrowIfCancellationRequested();
+                var initializationFailure = await InitializeWorkerAsync(ctx, linkedCts.Token);
+                if (initializationFailure != null)
+                    return initializationFailure;
 
-                var browser = await StartAndConnectBrowserAsync(ctx, linkedCts.Token);
-                if (browser == null)
-                {
-                    if (ctx.ProxyFailed)
-                    {
-                        LogWriteLine($"{this.Title}:ExecuteWorker:浏览器/CDP建立失败，疑似代理异常: {ctx.ProxyFailedReason}");
-                    }
-                    else
-                    {
-                        LogWriteLine($"{this.Title}:ExecuteWorker:浏览器启动或CDP连接失败");
-                    }
-
-                    return (false, false, 0);
-                }
-
-                ctx.Browser = browser;
-
-                if (!ctx.Browser.IsConnected)
-                {
-                    ctx.ProxyFailed = true;
-                    ctx.ProxyFailedReason ??= "Browser.IsConnected == false";
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Browser未连接: {ctx.ProxyFailedReason}");
-                    return (false, false, 0);
-                }
-
-                if (ctx.Browser.Contexts == null || ctx.Browser.Contexts.Count == 0)
-                {
-                    ctx.ProxyFailed = true;
-                    ctx.ProxyFailedReason ??= "Browser.Contexts.Count == 0";
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Browser无可用Context: {ctx.ProxyFailedReason}");
-                    return (false, false, 0);
-                }
-
-                ctx.Context = ctx.Browser.Contexts[0];
-                ctx.CdpManager = new CDPSessionManager(ctx.Context);
-
-                await ConfigureContextAsync(ctx, linkedCts.Token);
-                await AttachLifecycleEventsAsync(ctx, linkedCts.Token);
-
-                if (ctx.ProxyFailed)
-                {
-                    LogWriteLine($"{this.Title}:ExecuteWorker:初始化阶段已判定代理异常: {ctx.ProxyFailedReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
-                }
-
-                if (ctx.PageCrashed)
-                {
-                    LogWriteLine($"{this.Title}:ExecuteWorker:初始化阶段页面崩溃: {ctx.LastFailureReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
-                }
-
-                var ok = await RunMainFlowAsync(ctx, linkedCts.Token);
-                if (!ok)
-                {
-                    if (ctx.ProxyFailed)
-                    {
-                        LogWriteLine($"{this.Title}:ExecuteWorker:任务失败，代理异常: {ctx.ProxyFailedReason}");
-                    }
-                    else if (ctx.PageCrashed)
-                    {
-                        LogWriteLine($"{this.Title}:ExecuteWorker:任务失败，页面崩溃: {ctx.LastFailureReason}");
-                    }
-                    else if (!string.IsNullOrWhiteSpace(ctx.LastFailureReason))
-                    {
-                        LogWriteLine($"{this.Title}:ExecuteWorker:任务失败: {ctx.LastFailureReason}");
-                    }
-                }
-
-                return (ok, ctx.PageTriggerClick, ctx.PageAdsCount);
+                return await ExecuteMainFlowAndBuildResultAsync(ctx, linkedCts.Token);
             }
             catch (OperationCanceledException)
             {
+                var result = BuildFailureResult(ctx, WorkerFailureKind.Canceled, ctx?.LastFailureReason);
                 if (ctx?.ProxyFailed == true)
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker:Canceled(代理异常): {ctx.ProxyFailedReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
                 }
-
-                if (ctx?.PageCrashed == true)
+                else if (ctx?.PageCrashed == true)
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker:Canceled(页面崩溃): {ctx.LastFailureReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
                 }
-
-                if (ctx != null && !string.IsNullOrWhiteSpace(ctx.LastFailureReason))
+                else if (ctx != null && !string.IsNullOrWhiteSpace(ctx.LastFailureReason))
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker:Canceled: {ctx.LastFailureReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+                else
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Canceled");
                 }
 
-                LogWriteLine($"{this.Title}:ExecuteWorker:Canceled");
-                return (false, ctx?.PageTriggerClick ?? false, ctx?.PageAdsCount ?? 0);
+                return result;
             }
             catch (PlaywrightException ex)
             {
                 if (ctx != null)
                     ctx.LastFailureReason = ex.Message;
 
+                var result = BuildFailureResult(ctx, WorkerFailureKind.PlaywrightException, ex.Message);
                 if (ctx?.ProxyFailed == true)
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker:PlaywrightException(代理异常): {ctx.ProxyFailedReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
                 }
-
-                if (ctx?.PageCrashed == true)
+                else if (ctx?.PageCrashed == true)
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker:PlaywrightException(页面崩溃): {ctx.LastFailureReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+                else
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:PlaywrightException: {ex}");
                 }
 
-                LogWriteLine($"{this.Title}:ExecuteWorker:PlaywrightException: {ex}");
-                return (false, ctx?.PageTriggerClick ?? false, ctx?.PageAdsCount ?? 0);
+                return result;
             }
             catch (Exception ex)
             {
                 if (ctx != null)
                     ctx.LastFailureReason = ex.Message;
 
+                var result = BuildFailureResult(ctx, WorkerFailureKind.UnhandledException, ex.Message);
                 if (ctx?.ProxyFailed == true)
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker:异常(代理异常): {ctx.ProxyFailedReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
                 }
-
-                if (ctx?.PageCrashed == true)
+                else if (ctx?.PageCrashed == true)
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker:异常(页面崩溃): {ctx.LastFailureReason}");
-                    return (false, ctx.PageTriggerClick, ctx.PageAdsCount);
+                }
+                else
+                {
+                    LogWriteLine(ex.ToString());
                 }
 
-                LogWriteLine(ex.ToString());
-                return (false, ctx?.PageTriggerClick ?? false, ctx?.PageAdsCount ?? 0);
+                return result;
             }
             finally
             {
-                try
-                {
-                    if (!linkedCts.IsCancellationRequested)
-                        linkedCts.Cancel();
-                }
-                catch
-                {
-                }
-
-                if (ctx != null)
-                {
-                    try
-                    {
-                        if (ctx.CdpManager != null)
-                            await ctx.CdpManager.DisposeAsync();
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        if (ctx.Browser != null && ctx.Browser.IsConnected)
-                            await ctx.Browser.CloseAsync();
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        await CloseBrowserProcess(uniqueId);
-                    }
-                    catch
-                    {
-                    }
-                }
+                await CleanupWorkerAsync(ctx, uniqueId, linkedCts);
             }
         }
+
+        private WorkerRunContext CreateWorkerRunContext(string uniqueId, JObject taskArgs, CancellationTokenSource linkedCts)
+        {
+            var config = BuildTaskConfig(uniqueId, taskArgs, linkedCts);
+
+            return new WorkerRunContext(config)
+            {
+                LandingDispatcher = new LandingPageStrategyDispatcher(new ILandingPageStrategy[]
+                {
+                    new UMobLandingPageStrategy(this),
+                    new AiSiteLandingPageStrategy(this),
+                    new AiStudyLandingPageStrategy(this),
+                    new GenericLandingPageStrategy(this),
+                })
+            };
+        }
+
+        private async Task<WorkerExecutionResult?> InitializeWorkerAsync(WorkerRunContext ctx, CancellationToken token)
+        {
+            ctx.Playwright = await _playwrightProvider.GetAsync();
+            token.ThrowIfCancellationRequested();
+
+            var browser = await StartAndConnectBrowserAsync(ctx, token);
+            if (browser == null)
+            {
+                if (ctx.ProxyFailed)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:浏览器/CDP建立失败，疑似代理异常: {ctx.ProxyFailedReason}");
+                    return BuildFailureResult(ctx, WorkerFailureKind.ProxyFailed, ctx.ProxyFailedReason);
+                }
+
+                LogWriteLine($"{this.Title}:ExecuteWorker:浏览器启动或CDP连接失败");
+                return BuildFailureResult(ctx, WorkerFailureKind.BrowserStartFailed, ctx.LastFailureReason);
+            }
+
+            ctx.Browser = browser;
+
+            if (!ctx.Browser.IsConnected)
+            {
+                ctx.ProxyFailed = true;
+                ctx.ProxyFailedReason ??= "Browser.IsConnected == false";
+                LogWriteLine($"{this.Title}:ExecuteWorker:Browser未连接: {ctx.ProxyFailedReason}");
+                return BuildFailureResult(ctx, WorkerFailureKind.BrowserDisconnected, ctx.ProxyFailedReason);
+            }
+
+            if (ctx.Browser.Contexts == null || ctx.Browser.Contexts.Count == 0)
+            {
+                ctx.ProxyFailed = true;
+                ctx.ProxyFailedReason ??= "Browser.Contexts.Count == 0";
+                LogWriteLine($"{this.Title}:ExecuteWorker:Browser无可用Context: {ctx.ProxyFailedReason}");
+                return BuildFailureResult(ctx, WorkerFailureKind.NoBrowserContext, ctx.ProxyFailedReason);
+            }
+
+            ctx.Context = ctx.Browser.Contexts[0];
+            ctx.CdpManager = new CDPSessionManager(ctx.Context);
+
+            await ConfigureContextAsync(ctx, token);
+            await AttachLifecycleEventsAsync(ctx, token);
+
+            if (ctx.ProxyFailed)
+            {
+                LogWriteLine($"{this.Title}:ExecuteWorker:初始化阶段已判定代理异常: {ctx.ProxyFailedReason}");
+                return BuildFailureResult(ctx, WorkerFailureKind.ProxyFailed, ctx.ProxyFailedReason);
+            }
+
+            if (ctx.PageCrashed)
+            {
+                LogWriteLine($"{this.Title}:ExecuteWorker:初始化阶段页面崩溃: {ctx.LastFailureReason}");
+                return BuildFailureResult(ctx, WorkerFailureKind.PageCrashed, ctx.LastFailureReason);
+            }
+
+            return null;
+        }
+
+        private async Task<WorkerExecutionResult> ExecuteMainFlowAndBuildResultAsync(WorkerRunContext ctx, CancellationToken token)
+        {
+            var ok = await RunMainFlowAsync(ctx, token);
+            if (!ok)
+            {
+                if (ctx.ProxyFailed)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:任务失败，代理异常: {ctx.ProxyFailedReason}");
+                }
+                else if (ctx.PageCrashed)
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:任务失败，页面崩溃: {ctx.LastFailureReason}");
+                }
+                else if (!string.IsNullOrWhiteSpace(ctx.LastFailureReason))
+                {
+                    LogWriteLine($"{this.Title}:ExecuteWorker:任务失败: {ctx.LastFailureReason}");
+                }
+
+                return BuildFailureResult(ctx, WorkerFailureKind.MainFlowFailed, ctx.LastFailureReason);
+            }
+
+            return WorkerExecutionResult.Success(ctx.PageTriggerClick, ctx.PageAdsCount);
+        }
+
+        private static WorkerExecutionResult BuildFailureResult(
+            WorkerRunContext? ctx,
+            WorkerFailureKind fallbackFailureKind,
+            string? fallbackReason)
+        {
+            if (ctx?.ProxyFailed == true && ShouldPreferContextFailure(fallbackFailureKind))
+            {
+                return WorkerExecutionResult.Failure(
+                    WorkerFailureKind.ProxyFailed,
+                    ctx.ProxyFailedReason ?? fallbackReason,
+                    ctx.PageTriggerClick,
+                    ctx.PageAdsCount);
+            }
+
+            if (ctx?.PageCrashed == true && ShouldPreferContextFailure(fallbackFailureKind))
+            {
+                return WorkerExecutionResult.Failure(
+                    WorkerFailureKind.PageCrashed,
+                    ctx.LastFailureReason ?? fallbackReason,
+                    ctx.PageTriggerClick,
+                    ctx.PageAdsCount);
+            }
+
+            return WorkerExecutionResult.Failure(
+                fallbackFailureKind,
+                ctx?.LastFailureReason ?? fallbackReason,
+                ctx?.PageTriggerClick ?? false,
+                ctx?.PageAdsCount ?? 0);
+        }
+
+
+        private static bool ShouldPreferContextFailure(WorkerFailureKind fallbackFailureKind) =>
+            fallbackFailureKind is WorkerFailureKind.Canceled
+                or WorkerFailureKind.PlaywrightException
+                or WorkerFailureKind.UnhandledException
+                or WorkerFailureKind.MainFlowFailed;
+
+        private async Task CleanupWorkerAsync(WorkerRunContext? ctx, string uniqueId, CancellationTokenSource linkedCts)
+        {
+            try
+            {
+                if (!linkedCts.IsCancellationRequested)
+                    linkedCts.Cancel();
+            }
+            catch
+            {
+            }
+
+            if (ctx == null)
+                return;
+
+            try
+            {
+                if (ctx.CdpManager != null)
+                    await ctx.CdpManager.DisposeAsync();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (ctx.Browser != null && ctx.Browser.IsConnected)
+                    await ctx.Browser.CloseAsync();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                await CloseBrowserProcess(uniqueId);
+            }
+            catch
+            {
+            }
+        }
+
         #endregion
 
         #region Main Flow

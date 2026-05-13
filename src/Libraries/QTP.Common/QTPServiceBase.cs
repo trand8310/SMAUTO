@@ -10,7 +10,7 @@ namespace QTP.Common
     public abstract class QTPServiceBase : IQTPService
     {
         public abstract string Title { get; }
-        public abstract Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
+        public abstract Task<WorkerExecutionResult> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
         protected readonly AppSettings _appSettings;
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
