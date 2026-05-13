@@ -1973,10 +1973,9 @@ namespace MainClient
 
                 try
                 {
-                    var (_, isPageTriggerClick, _) =
-                        await pluginService.ExecuteWorkerAsync(uniqueId, args, token);
+                    var executionResult = await pluginService.ExecuteWorkerAsync(uniqueId, args, token);
 
-                    if (ctx.TotalUV > 1 && isPageTriggerClick && _appSettings.UVsTriggerOne)
+                    if (ctx.TotalUV > 1 && executionResult.IsPageTriggerClick && _appSettings.UVsTriggerOne)
                         return true;
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
