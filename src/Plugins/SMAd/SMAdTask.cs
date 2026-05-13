@@ -23,6 +23,8 @@ namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
+        private const string AliAppDownloadModalCloseSelector = ".androidOpenModal .closeBtn, .iosOpenModal .closeIcon";
+
         private static readonly object CdpFinalFailureLock = new();
         private static int CdpFinalFailureCount;
         private static bool CdpFinalFailureRestartRequested;
@@ -316,63 +318,73 @@ namespace QTP.Plugins
         /// <param name="cdpSession"></param>
         /// <param name="token"></param>
 
-        private void ProcessingPageElementTask(IPage page, ICDPSession cdpSession, CancellationToken token)
+        private void ProcessingPageElementTask(WorkerRunContext ctx, CancellationToken token)
         {
+            if (Interlocked.Exchange(ref ctx.PageElementGuardStarted, 1) == 1)
+                return;
+
             _ = Task.Run(async () =>
             {
-                int redoTryCount = 0;
-
-                while (redoTryCount++ < 10 && !token.IsCancellationRequested)
+                try
                 {
-                    try
+                    while (!token.IsCancellationRequested)
                     {
-                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                        try
+                        {
+                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
-                        if (page == null || page.IsClosed)
+                            var page = ctx.Page;
+                            var cdpSession = ctx.CdpSession;
+                            if (page == null || cdpSession == null)
+                                continue;
+
+                            if (page.IsClosed)
+                                break;
+
+                            var closeBtn = page.Locator(AliAppDownloadModalCloseSelector);
+                            var closeBtnCount = await closeBtn.CountAsync();
+                            if (closeBtnCount <= 0)
+                                continue;
+
+                            for (var index = 0; index < closeBtnCount; index++)
+                            {
+                                if (token.IsCancellationRequested || page.IsClosed)
+                                    break;
+
+                                var target = closeBtn.Nth(index);
+                                if (!await target.IsVisibleAsync())
+                                    continue;
+
+                                await CDPHelper.MouseClickAsync(page, cdpSession, target);
+                                LogWriteLine($"{this.Title}:ProcessingPageElementTask 已关闭1688弹框");
+                                await Task.Delay(CommonHelper.RandomRange(300, 600), token);
+                                break;
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
                             break;
-
-                        var closeBtn = page.Locator(".androidOpenModal .closeBtn, .iosOpenModal .closeIcon");
-                        if (await closeBtn.CountAsync() <= 0)
-                            continue;
-
-
-                        //else if (await page.Locator(".enquiryFormContentnew").CountAsync() > 0 && await page.Locator(".successTipNew_close_new").CountAsync() > 0)
-                        //{
-                        //    var closeBtn = page.Locator(".successTipNew_close_new");
-                        //    if (await closeBtn.CountAsync() > 0)
-                        //    {
-                        //        await CDPHelper.MouseClickAsync(page, cdpSession, closeBtn);
-                        //        break;
-                        //    }
-                        //}
-
-                        var target = closeBtn.First;
-                        if (!await target.IsVisibleAsync())
-                            continue;
-
-                        if (page.IsClosed)
+                        }
+                        catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
+                        {
+                            LogWriteLine($"{this.Title}:ProcessingPageElementTask 页面已关闭: {ex.Message}");
                             break;
-
-                        await CDPHelper.MouseClickAsync(page, cdpSession, target);
-                        break;
+                        }
+                        catch (Exception ex)
+                        {
+                            LogWriteLine($"{this.Title}:ProcessingPageElementTask异常: {ex.Message}");
+                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                        }
                     }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                    catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
-                    {
-                        LogWriteLine($"{this.Title}:ProcessingPageElementTask 页面已关闭: {ex.Message}");
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogWriteLine($"{this.Title}:ProcessingPageElementTask异常: {ex.Message}");
-                        break;
-                    }
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref ctx.PageElementGuardStarted, 0);
                 }
             }, token);
         }
+
+
 
         /// <summary>
         /// 清除1688APP下载
@@ -3013,7 +3025,7 @@ namespace QTP.Plugins
                             }
 
 
-                            _owner.ProcessingPageElementTask(ctx.Page!, ctx.CdpSession!, token);
+                            _owner.ProcessingPageElementTask(ctx, token);
 
                             if (ctx.Page.Url.StartsWith("https://re.1688.com/"))
                             {
@@ -5201,6 +5213,7 @@ namespace QTP.Plugins
             public bool PageCrashed { get; set; }
             public string? LastFailureReason { get; set; }
 
+            public int PageElementGuardStarted;
 
             public void ResetPerPvState()
             {

@@ -1907,7 +1907,7 @@ namespace MainClient
                 ["noTrigger1688"] = _appSettings.NoTrigger1688,
                 ["cleaningWords"] = _appSettings.CleaningWords,
                 ["notTriggerDownload"] = _appSettings.NotTriggerDownload,
-                ["protocol"] = _appSettings.ProxyIpUrl.Contains("api.xingyuip.com") ? _appSettings.Protocol : "http",  // "socks5",//"http"
+                ["protocol"] = _appSettings.Protocol,  // "socks5",//"http"
             };
 
             return args;
