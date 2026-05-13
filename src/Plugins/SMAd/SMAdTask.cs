@@ -25,6 +25,7 @@ namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
+        private const string AliAppDownloadModalCloseSelector = ".androidOpenModal .closeBtn, .iosOpenModal .closeIcon";
         private int _disposeStarted;
         private readonly ConcurrentDictionary<string, WorkerRunContext> _activeContexts = new();
         private static bool IsClosedPlaywrightException(PlaywrightException ex)
@@ -162,49 +163,66 @@ namespace QTP.Plugins
 
         public void ProcessingPageElementTask(WorkerRunContext ctx, CancellationToken token)
         {
+            if (Interlocked.Exchange(ref ctx.PageElementGuardStarted, 1) == 1)
+                return;
+
             _ = Task.Run(async () =>
             {
-                int redoTryCount = 0;
-
-                while (redoTryCount++ < 10 && !token.IsCancellationRequested)
+                try
                 {
-                    try
+                    while (!token.IsCancellationRequested)
                     {
-                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        var page = ctx.Page;
-                        var cdpSession = ctx.CdpSession;
-                        if (page == null || page.IsClosed || cdpSession == null)
+                        try
+                        {
+                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                            var page = ctx.Page;
+                            var cdpSession = ctx.CdpSession;
+                            if (page == null || cdpSession == null)
+                                continue;
+
+                            if (page.IsClosed)
+                                break;
+
+                            var closeBtn = page.Locator(AliAppDownloadModalCloseSelector);
+                            var closeBtnCount = await closeBtn.CountAsync();
+                            if (closeBtnCount <= 0)
+                                continue;
+
+                            for (var index = 0; index < closeBtnCount; index++)
+                            {
+                                if (token.IsCancellationRequested || page.IsClosed)
+                                    break;
+
+                                var target = closeBtn.Nth(index);
+                                if (!await target.IsVisibleAsync())
+                                    continue;
+
+                                await CDPHelper.MouseClickAsync(page, cdpSession, target);
+                                LogWriteLine($"{this.Title}:ProcessingPageElementTask 已关闭1688弹框");
+                                await Task.Delay(CommonHelper.RandomRange(300, 600), token);
+                                break;
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
                             break;
-
-                        var closeBtn = page.Locator(".androidOpenModal .closeBtn, .iosOpenModal .closeIcon");
-                        if (await closeBtn.CountAsync() <= 0)
-                            continue;
-
-
-                        var target = closeBtn.First;
-                        if (!await target.IsVisibleAsync())
-                            continue;
-
-                        if (page.IsClosed)
+                        }
+                        catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
+                        {
+                            LogWriteLine($"{this.Title}:ProcessingPageElementTask 页面已关闭: {ex.Message}");
                             break;
-
-                        await CDPHelper.MouseClickAsync(page, cdpSession, target);
-                        break;
+                        }
+                        catch (Exception ex)
+                        {
+                            LogWriteLine($"{this.Title}:ProcessingPageElementTask异常: {ex.Message}");
+                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                        }
                     }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                    catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
-                    {
-                        LogWriteLine($"{this.Title}:ProcessingPageElementTask 页面已关闭: {ex.Message}");
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogWriteLine($"{this.Title}:ProcessingPageElementTask异常: {ex.Message}");
-                        break;
-                    }
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref ctx.PageElementGuardStarted, 0);
                 }
             }, token);
         }
@@ -220,7 +238,7 @@ namespace QTP.Plugins
             try
             {
                 //                var closeBtn = ctx.Page!.Locator(".successTipNew_close_new,.newSuccessTipNew_close_new");
-                var closeBtn = page.Locator(".androidOpenModal .closeBtn, .iosOpenModal .closeIcon");
+                var closeBtn = page.Locator(AliAppDownloadModalCloseSelector);
                 if (await closeBtn.CountAsync() > 0)
                 {
                     var target = closeBtn.First;
@@ -246,7 +264,7 @@ namespace QTP.Plugins
         {
             try
             {
-                var closeBtn = page.Locator(".successTipNew_close_new,.newSuccessTipNew_close_new,.androidOpenModal .closeBtn, .iosOpenModal .closeIcon");
+                var closeBtn = page.Locator($".successTipNew_close_new,.newSuccessTipNew_close_new,{AliAppDownloadModalCloseSelector}");
                 if (await closeBtn.CountAsync() > 0)
                 {
                     var target = closeBtn.First;
