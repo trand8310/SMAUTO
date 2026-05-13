@@ -2842,7 +2842,7 @@ namespace QTP.Plugins
                 await HumanScrollHelper.TouchPageLongScrollAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(1, 4),
+                    scrollCount: CommonHelper.RandomRange(1, 5),
                     direction: PageScrollDirection.Up,
                     cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
@@ -3361,13 +3361,22 @@ namespace QTP.Plugins
                 try
                 {
                     LogWriteLine("滑动操作");
+                    if (CommonHelper.Chance(0.2))
+                    {
+                        await HumanScrollHelper.SynthesizedGesturePageScrollOnceAsync(ctx.Page!, ctx.CdpSession!, direction: direction);
+                    }
+                    else
+                    {
+                        await HumanScrollHelper.TouchPageShortScrollAsync(
+                        ctx.Page!,
+                        ctx.CdpSession!,
+                        scrollCount: 1,
+                        direction: direction,
+                        cancellationToken: token);
 
-                    await HumanScrollHelper.TouchPageLongScrollAsync(
-                    ctx.Page!,
-                    ctx.CdpSession!,
-                    scrollCount: 1,
-                    direction: direction,
-                    cancellationToken: token);
+                    }
+
+
 
                     token.ThrowIfCancellationRequested();
 
