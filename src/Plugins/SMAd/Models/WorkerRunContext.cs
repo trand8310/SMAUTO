@@ -43,6 +43,8 @@ namespace SMAd.Models
         public bool PageCrashed { get; set; }
         public string? LastFailureReason { get; set; }
 
+        public int PageElementGuardStarted;
+
         public SemaphoreSlim CleanupLock { get; } = new(1, 1);
         public void ResetPerPvState()
         {
