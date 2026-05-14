@@ -30,6 +30,7 @@ namespace MainClient
         [STAThread]
         static void Main()
         {
+ 
             ApplicationConfiguration.Initialize();
 
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
