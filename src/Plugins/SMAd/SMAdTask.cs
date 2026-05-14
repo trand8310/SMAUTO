@@ -1838,7 +1838,6 @@ namespace QTP.Plugins
                 //"--disable-default-apps",
                 //"--disable-component-update",
                 //"--touch-events=enabled",
-                //"--virtual-clipboard",
                 //"--use-mock-keychain",
                 //"--metrics-recording-only",
                 //"--disable-client-side-phishing-detection",
@@ -1849,6 +1848,7 @@ namespace QTP.Plugins
                 //"--force-color-profile=srgb",
                 //"--disable-features=LensOverlay,Translate",
 
+                "--virtual-clipboard",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--disable-logging",

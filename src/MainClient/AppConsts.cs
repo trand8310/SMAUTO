@@ -4,6 +4,6 @@ namespace MainClient
 {
     public class AppConsts
     {
-        public const string AppVersion = "2026.3.0.84";
+        public const string AppVersion = "2026.3.0.85";
     }
 }
