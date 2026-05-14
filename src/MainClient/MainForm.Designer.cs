@@ -335,7 +335,6 @@
             // 
             // buttonClear
             // 
-            buttonClear.Font = new Font("宋体", 9F);
             buttonClear.ForeColor = Color.Red;
             buttonClear.Location = new Point(806, 121);
             buttonClear.Margin = new Padding(6, 6, 6, 6);
@@ -727,7 +726,6 @@
             // 
             // button3
             // 
-            button3.Font = new Font("宋体", 9F);
             button3.ForeColor = Color.Red;
             button3.Location = new Point(806, 167);
             button3.Margin = new Padding(6, 6, 6, 6);
@@ -740,7 +738,6 @@
             // 
             // button2
             // 
-            button2.Font = new Font("宋体", 9F);
             button2.ForeColor = Color.Red;
             button2.Location = new Point(898, 121);
             button2.Margin = new Padding(6, 6, 6, 6);
@@ -844,7 +841,6 @@
             // 
             // btnStartStop
             // 
-            btnStartStop.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
             btnStartStop.Location = new Point(806, 10);
             btnStartStop.Margin = new Padding(6, 6, 6, 6);
             btnStartStop.Name = "btnStartStop";
@@ -1400,7 +1396,7 @@
             // 
             // MainForm
             // 
-            AutoScaleDimensions = new SizeF(144F, 144F);
+            AutoScaleDimensions = new SizeF(120F, 120F);
             AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(1309, 944);
             Controls.Add(groupBox33);
