@@ -147,6 +147,14 @@ namespace QTP.Common
         {
             return Random.Shared.Next(min, max);
         }
+        public static double RandomRangeDouble(double min, double max)
+        {
+            if (max < min)
+                (min, max) = (max, min);
+
+            return min + Random.Shared.NextDouble() * (max - min);
+        }
+
 
         /// <summary>
         /// 返回[min, max)之间的随机整数

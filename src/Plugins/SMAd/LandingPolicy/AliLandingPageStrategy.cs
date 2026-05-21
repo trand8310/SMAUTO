@@ -1,13 +1,9 @@
-﻿using QTP.Common;
+﻿using PlaywrightHumanInput;
+using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
-using SMAd.Swiper;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+
 
 namespace SMAd.LandingPolicy
 {
@@ -52,11 +48,12 @@ namespace SMAd.LandingPolicy
                 int count = await offerItems.CountAsync();
                 var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                await SwipeEmulator.SwipeToElementAsync(
-                ctx.Page!,
-                ctx.CdpSession!,
-                item,
-                cancellationToken: token);
+                await HumanSwipeOperator.MoveToElementAsync(
+                  ctx.Page!,
+                  ctx.CdpSession!,
+                  item,
+                  maxSwipes: 10,
+                  cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
@@ -93,13 +90,13 @@ namespace SMAd.LandingPolicy
 
                     if (ctx.Page.Url.StartsWith("https://re.1688.com/"))
                     {
-                        await HumanScrollHelper.TouchPageLongScrollAsync(
+                        await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                         ctx.Page!,
                         ctx.CdpSession!,
-                        scrollCount: CommonHelper.RandomRange(1, 4),
-                        direction: PageScrollDirection.Up,
+                        duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                         cancellationToken: token);
-                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+ 
                         count = await CenterClickableFinder.MarkCandidatesAsync(ctx.Page);
                         if (count > 0)
                         {

@@ -1,12 +1,7 @@
-﻿using QTP.Common;
+﻿using PlaywrightHumanInput;
+using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
-using SMAd.Swiper;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace SMAd.LandingPolicy
 {
@@ -37,11 +32,12 @@ namespace SMAd.LandingPolicy
                     int count = await offerItems.CountAsync();
                     var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                    await SwipeEmulator.SwipeToElementAsync(
-                    ctx.Page,
-                    ctx.CdpSession!,
-                    item,
-                    cancellationToken: token);
+                    await HumanSwipeOperator.MoveToElementAsync(
+                      ctx.Page!,
+                      ctx.CdpSession!,
+                      item,
+                      maxSwipes: 10,
+                      cancellationToken: token);
 
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 

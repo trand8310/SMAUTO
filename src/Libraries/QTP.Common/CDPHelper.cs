@@ -19,10 +19,11 @@ namespace QTP.Common
         public static async Task InitCDPSession(ICDPSession cdpSession, int maxTouchPoints)
         {
             //await SetAutoDarkModeOverride(cdpSession, true);
-            await CDPHelper.SetTouchEmulationEnabled(cdpSession, true, maxTouchPoints);
-            await CDPHelper.SetScrollbarsHidden(cdpSession, true);
-            await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
-            await CDPHelper.ChangeDeviceOrientationAsync(cdpSession);
+            //await CDPHelper.SetTouchEmulationEnabled(cdpSession, true, maxTouchPoints);
+            // await CDPHelper.SetScrollbarsHidden(cdpSession, true);
+            //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
+            //await CDPHelper.ChangeDeviceOrientationAsync(cdpSession);
+            await Task.CompletedTask;
         }
 
         public static async Task SetDeviceMetricsOverride(ICDPSession cdpSession, int width, int height, float deviceScaleFactor, bool mobile = true)
@@ -102,8 +103,6 @@ namespace QTP.Common
             }
 
         }
-
-
         public static async Task SetBrowserPermission(ICDPSession cdpSession)
         {
             try
@@ -124,9 +123,6 @@ namespace QTP.Common
             }
 
         }
-
-
-
         public static async Task SetScrollbarsHidden(ICDPSession cdpSession, bool hidden = true)
         {
             try
@@ -140,7 +136,6 @@ namespace QTP.Common
             }
 
         }
-
 
         public static async Task SetTouchEmulationEnabled(ICDPSession cdpSession, bool enabled = true, int maxTouchPoints = 1)
         {
@@ -187,11 +182,6 @@ namespace QTP.Common
 
             }
         }
-
-
-
-
-
 
         public static async Task TouchMoveAsync(ICDPSession cdpSession, TouchPoint startPoint, TouchPoint endPoint)
         {
@@ -263,21 +253,17 @@ namespace QTP.Common
             await page.Mouse.UpAsync();
         }
 
-
-
         public static async Task<bool> TapAsync(IPage page, ICDPSession cdpSession, ILocator element, int dir = 0, Action<string>? action = null)
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
-                //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
-                    var xmin = 15;
-                    var xmax = 85;
-                    var ymin = 15;
-                    var ymax = 85;
+                    var xmin = 20;
+                    var xmax = 80;
+                    var ymin = 20;
+                    var ymax = 80;
                     if (dir == 1)
                     {
                         //靠上
@@ -305,8 +291,6 @@ namespace QTP.Common
                         y = (double)(bounding.Height / 2.0);
 
                     action?.Invoke($"Tap:bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
-
-                    await ChangeDeviceOrientationAsync(cdpSession);
                     await element.TapAsync(new LocatorTapOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = 5000 });
                     return true;
                 }
@@ -321,7 +305,7 @@ namespace QTP.Common
             }
             finally
             {
-                //await SetEmitTouchEventsForMouse(cdpSession, true);
+
             }
             return false;
 
@@ -331,16 +315,13 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
-                //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
-                //await element.ScrollIntoViewIfNeededAsync();
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
-                    var xmin = 15;
-                    var xmax = 85;
-                    var ymin = 15;
-                    var ymax = 85;
+                    var xmin = 20;
+                    var xmax = 80;
+                    var ymin = 20;
+                    var ymax = 80;
                     if (dir == 1)
                     {
                         //靠上
@@ -366,10 +347,9 @@ namespace QTP.Common
                         x = (double)(bounding.Width / 2.0);
                     if (y == 0)
                         y = (double)(bounding.Height / 2.0);
+
                     action?.Invoke($"Tap:bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
 
-
-                    await ChangeDeviceOrientationAsync(cdpSession);
                     await element.TapAsync(new ElementHandleTapOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = 5000 });
                     return true;
                 }
@@ -384,7 +364,7 @@ namespace QTP.Common
             }
             finally
             {
-                // await SetEmitTouchEventsForMouse(cdpSession, true);
+
             }
             return false;
         }
@@ -393,7 +373,6 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
@@ -428,9 +407,9 @@ namespace QTP.Common
                         y = (double)(bounding.Height / 2.0);
 
                     action?.Invoke($"MouseClick::bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
-
-                    await ChangeDeviceOrientationAsync(cdpSession);
                     await element.ClickAsync(new LocatorClickOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = timeout });
+                    //action?.Invoke($"Tap:bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
+                    //await element.TapAsync(new LocatorTapOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = 5000 });
                     return true;
                 }
             }
@@ -448,123 +427,6 @@ namespace QTP.Common
             }
             return false;
         }
-
-        public static async Task DispatchMouseMoveAsync(
-        ICDPSession cdp,
-        double x,
-        double y,
-        CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await cdp.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
-            {
-                ["type"] = "mouseMoved",
-                ["x"] = x,
-                ["y"] = y,
-                ["button"] = "none",
-                ["buttons"] = 0,
-                ["pointerType"] = "mouse"
-            });
-        }
-
-
-        public static async Task DispatchMouseClickAsync(
-           ICDPSession cdp,
-           double x,
-           double y,
-           CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await cdp.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
-            {
-                ["type"] = "mousePressed",
-                ["x"] = x,
-                ["y"] = y,
-                ["button"] = "left",
-                ["buttons"] = 1,
-                ["clickCount"] = 1,
-                ["pointerType"] = "mouse"
-            });
-
-            await Task.Delay(50, cancellationToken);
-
-            await cdp.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
-            {
-                ["type"] = "mouseReleased",
-                ["x"] = x,
-                ["y"] = y,
-                ["button"] = "left",
-                ["buttons"] = 1,
-                ["clickCount"] = 1,
-                ["pointerType"] = "mouse"
-            });
-        }
-
-
-
-
-        public static async Task<bool> MouseClickAsync(IFrame page, ICDPSession cdpSession, ILocator element, int dir = 0, Action<string>? action = null)
-        {
-            try
-            {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
-                var bounding = await element.BoundingBoxAsync();
-                if (bounding != null)
-                {
-                    var xmin = 15;
-                    var xmax = 85;
-                    var ymin = 15;
-                    var ymax = 85;
-                    if (dir == 1)
-                    {
-                        //靠上
-                        ymin = 15;
-                        ymax = 45;
-                    }
-                    else if (dir == 2)
-                    {
-                        //居中
-                        ymin = 45;
-                        ymax = 65;
-                    }
-                    else if (dir == 3)
-                    {
-                        //靠下
-                        ymin = 55;
-                        ymax = 85;
-                    }
-
-                    var x = bounding.Width * (CommonHelper.RandomRange(xmin, xmax) * 0.01);
-                    var y = bounding.Height * (CommonHelper.RandomRange(ymin, ymax) * 0.01);
-                    if (x == 0)
-                        x = (double)(bounding.Width / 2.0);
-                    if (y == 0)
-                        y = (double)(bounding.Height / 2.0);
-
-                    action?.Invoke($"MouseClick::bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
-
-                    await ChangeDeviceOrientationAsync(cdpSession);
-                    await element.ClickAsync(new LocatorClickOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = 5000 });
-                    return true;
-                }
-            }
-            catch (TimeoutException)
-            {
-                action?.Invoke($"MouseClick:超时");
-            }
-            catch
-            {
-                throw;
-            }
-            finally
-            {
-
-            }
-            return false;
-        }
-
 
         /// <summary>
         /// 
@@ -578,7 +440,6 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
@@ -614,10 +475,10 @@ namespace QTP.Common
                         y = (double)(bounding.Height / 2.0);
 
                     action?.Invoke($"MouseClick::bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
-                    //var x = new Random().Next((int)(bounding.Width * 0.20), (int)(bounding.Width * 0.80));
-                    //var y = new Random().Next((int)(bounding.Height * 0.20), (int)(bounding.Height * 0.80));
-                    await ChangeDeviceOrientationAsync(cdpSession);
                     await element.ClickAsync(new ElementHandleClickOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = timeout });
+
+                    //action?.Invoke($"Tap:bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
+                    //await element.TapAsync(new ElementHandleTapOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = timeout });
                     return true;
                 }
             }
@@ -649,8 +510,6 @@ namespace QTP.Common
             }
             return false;
         }
-
-
 
 
         public static async Task<bool> TouchClickVisibleLocatorAsync(
@@ -822,8 +681,6 @@ namespace QTP.Common
             }
 
         }
-
-
 
         public static async Task ClearDeviceOrientationOverrideAsync(ICDPSession cdpSession)
         {
