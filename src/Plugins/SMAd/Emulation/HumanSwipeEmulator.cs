@@ -152,6 +152,30 @@ namespace PlaywrightHumanInput
         public int MaxPathTry { get; set; } = 10;
 
         public Action<string>? Log { get; set; }
+        public HumanSwipeStyleProfile? StyleProfile { get; set; }
+    }
+
+    public sealed class HumanSwipeStyleProfile
+    {
+        public int Seed { get; init; } = Environment.TickCount;
+        public double SpeedBias { get; init; } = 1.0;
+        public double DistanceBias { get; init; } = 1.0;
+        public double JitterBias { get; init; } = 1.0;
+        public double CrossAxisBias { get; init; } = 1.0;
+
+        public static HumanSwipeStyleProfile CreateRandom()
+        {
+            var seed = Guid.NewGuid().GetHashCode();
+            var rnd = new Random(seed);
+            return new HumanSwipeStyleProfile
+            {
+                Seed = seed,
+                SpeedBias = 0.88 + rnd.NextDouble() * 0.28,
+                DistanceBias = 0.86 + rnd.NextDouble() * 0.30,
+                JitterBias = 0.80 + rnd.NextDouble() * 0.45,
+                CrossAxisBias = 0.85 + rnd.NextDouble() * 0.40
+            };
+        }
     }
 
     public sealed class HumanSwipeTracePoint
@@ -278,6 +302,14 @@ namespace PlaywrightHumanInput
     {
         private static readonly ThreadLocal<Random> RandomLocal =
             new(() => new Random(Guid.NewGuid().GetHashCode()));
+        private static readonly AsyncLocal<HumanSwipeStyleProfile?> StyleScope = new();
+
+        public static IDisposable BeginStyleScope(HumanSwipeStyleProfile? styleProfile)
+        {
+            var previous = StyleScope.Value;
+            StyleScope.Value = styleProfile;
+            return new Scope(() => StyleScope.Value = previous);
+        }
 
         #region 对外入口
 
@@ -328,6 +360,7 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOptions();
+            ApplyStyle(options);
 
             if (page == null || page.IsClosed || cdp == null || page.ViewportSize == null)
                 return null;
@@ -2581,5 +2614,25 @@ namespace PlaywrightHumanInput
         }
 
         #endregion
+        private static void ApplyStyle(HumanSwipeOptions options)
+        {
+            var profile = options.StyleProfile ?? StyleScope.Value;
+            if (profile == null) return;
+            var rnd = new Random(unchecked(profile.Seed ^ Environment.TickCount));
+            double f(double min, double max) => min + (max - min) * rnd.NextDouble();
+            options.SpeedFactor = Math.Clamp(options.SpeedFactor * profile.SpeedBias * f(0.95, 1.05), 0.35, 3.2);
+            if (options.DistancePx.HasValue)
+                options.DistancePx = Math.Max(8, (int)Math.Round(options.DistancePx.Value * profile.DistanceBias * f(0.96, 1.04)));
+            options.MaxJitter = Math.Clamp(options.MaxJitter * profile.JitterBias * f(0.9, 1.1), 0.1, 6.0);
+            options.CrossAxisJitter = Math.Max(0, (int)Math.Round(options.CrossAxisJitter * profile.CrossAxisBias * f(0.9, 1.1)));
+        }
+
+        private sealed class Scope : IDisposable
+        {
+            private readonly Action _onDispose;
+            public Scope(Action onDispose) => _onDispose = onDispose;
+            public void Dispose() => _onDispose();
+        }
+
     }
 }
