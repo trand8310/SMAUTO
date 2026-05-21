@@ -1,4 +1,5 @@
 ﻿using Microsoft.Playwright;
+using PlaywrightHumanInput;
 using QTP.Plugins;
 using SMAd.LandingPolicy;
 using System;
@@ -15,10 +16,12 @@ namespace SMAd.Models
         {
             Config = config;
             StartTime = DateTime.Now;
+            SwipeStyleProfile = HumanSwipeStyleProfile.CreateRandom();
         }
 
         public TaskConfig Config { get; }
         public DateTime StartTime { get; }
+        public HumanSwipeStyleProfile SwipeStyleProfile { get; }
 
         public IPlaywright? Playwright { get; set; }
         public IBrowser? Browser { get; set; }
