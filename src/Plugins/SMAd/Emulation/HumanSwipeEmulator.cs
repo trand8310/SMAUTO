@@ -152,6 +152,55 @@ namespace PlaywrightHumanInput
         public int MaxPathTry { get; set; } = 10;
 
         public Action<string>? Log { get; set; }
+        public HumanSwipeStyleProfile? StyleProfile { get; set; }
+    }
+
+    public sealed class HumanSwipeStyleProfile
+    {
+        public string ProfileId { get; init; } = Guid.NewGuid().ToString("N");
+        public int Seed { get; init; } = Environment.TickCount;
+
+        public double SpeedBias { get; init; } = 1.0;
+        public double CurveBias { get; init; } = 1.0;
+        public double JitterBias { get; init; } = 1.0;
+        public double DriftBias { get; init; } = 1.0;
+        public double ForceBias { get; init; } = 1.0;
+        public double TouchAreaBias { get; init; } = 1.0;
+        public double PauseBias { get; init; } = 1.0;
+        public double HesitationBias { get; init; } = 1.0;
+        public double PullBackBias { get; init; } = 1.0;
+        public double DistanceBias { get; init; } = 1.0;
+
+        public double VerticalCenterXRatio { get; init; } = 0.5;
+        public double HorizontalCenterYRatio { get; init; } = 0.5;
+        public double StartHoldBias { get; init; } = 1.0;
+        public double EndHoldBias { get; init; } = 1.0;
+
+        public static HumanSwipeStyleProfile CreateRandom()
+        {
+            var seed = Guid.NewGuid().GetHashCode();
+            var rnd = new Random(seed);
+            double n(double min, double max) => min + rnd.NextDouble() * (max - min);
+            return new HumanSwipeStyleProfile
+            {
+                ProfileId = Guid.NewGuid().ToString("N"),
+                Seed = seed,
+                SpeedBias = n(0.85, 1.20),
+                CurveBias = n(0.85, 1.20),
+                JitterBias = n(0.75, 1.30),
+                DriftBias = n(0.75, 1.30),
+                ForceBias = n(0.82, 1.20),
+                TouchAreaBias = n(0.82, 1.20),
+                PauseBias = n(0.75, 1.35),
+                HesitationBias = n(0.70, 1.45),
+                PullBackBias = n(0.70, 1.45),
+                DistanceBias = n(0.85, 1.20),
+                VerticalCenterXRatio = n(0.40, 0.72),
+                HorizontalCenterYRatio = n(0.40, 0.70),
+                StartHoldBias = n(0.75, 1.35),
+                EndHoldBias = n(0.75, 1.35)
+            };
+        }
     }
 
     public sealed class HumanSwipeTracePoint
@@ -278,6 +327,14 @@ namespace PlaywrightHumanInput
     {
         private static readonly ThreadLocal<Random> RandomLocal =
             new(() => new Random(Guid.NewGuid().GetHashCode()));
+        private static readonly AsyncLocal<HumanSwipeStyleProfile?> StyleScope = new();
+
+        public static IDisposable BeginStyleScope(HumanSwipeStyleProfile? styleProfile)
+        {
+            var previous = StyleScope.Value;
+            StyleScope.Value = styleProfile;
+            return new Scope(() => StyleScope.Value = previous);
+        }
 
         #region 对外入口
 
@@ -328,6 +385,7 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOptions();
+            ApplyStyle(options);
 
             if (page == null || page.IsClosed || cdp == null || page.ViewportSize == null)
                 return null;
@@ -2581,5 +2639,57 @@ namespace PlaywrightHumanInput
         }
 
         #endregion
+        private static void ApplyStyle(HumanSwipeOptions options)
+        {
+            var profile = options.StyleProfile ?? StyleScope.Value;
+            if (profile == null) return;
+
+            var rnd = new Random(unchecked(profile.Seed ^ Environment.TickCount));
+            double f(double min, double max) => min + (max - min) * rnd.NextDouble();
+            double clamp01(double x) => Math.Clamp(x, 0.0, 1.0);
+
+            options.SpeedFactor = Math.Clamp(options.SpeedFactor * profile.SpeedBias * f(0.95, 1.05), 0.35, 3.2);
+            if (options.DistancePx.HasValue)
+                options.DistancePx = Math.Max(8, (int)Math.Round(options.DistancePx.Value * profile.DistanceBias * f(0.96, 1.04)));
+
+            options.UseBezierCurve = options.UseBezierCurve && profile.CurveBias >= 0.85;
+            options.MaxJitter = Math.Clamp(options.MaxJitter * profile.JitterBias * f(0.9, 1.1), 0.1, 6.0);
+            options.CrossAxisJitter = Math.Max(0, (int)Math.Round(options.CrossAxisJitter * profile.DriftBias * f(0.9, 1.1)));
+
+            if (options.MaxCrossAxisDriftPx.HasValue)
+                options.MaxCrossAxisDriftPx = Math.Clamp(options.MaxCrossAxisDriftPx.Value * profile.DriftBias * f(0.92, 1.08), 0.0, 80.0);
+
+            options.EnableForceCurve = options.EnableForceCurve && profile.ForceBias >= 0.80;
+            options.EnableTouchAreaCurve = options.EnableTouchAreaCurve && profile.TouchAreaBias >= 0.80;
+
+            if (options.HesitationChance.HasValue)
+                options.HesitationChance = clamp01(options.HesitationChance.Value * profile.HesitationBias * f(0.92, 1.08));
+            options.MinHesitationMs = Math.Max(0, (int)Math.Round(options.MinHesitationMs * profile.PauseBias * f(0.95, 1.05)));
+            options.MaxHesitationMs = Math.Max(options.MinHesitationMs, (int)Math.Round(options.MaxHesitationMs * profile.PauseBias * f(0.95, 1.05)));
+
+            if (options.EndPullBackChance.HasValue)
+                options.EndPullBackChance = clamp01(options.EndPullBackChance.Value * profile.PullBackBias * f(0.92, 1.08));
+            options.MinPullBackPx = Math.Max(0, (int)Math.Round(options.MinPullBackPx * profile.PullBackBias * f(0.95, 1.05)));
+            options.MaxPullBackPx = Math.Max(options.MinPullBackPx, (int)Math.Round(options.MaxPullBackPx * profile.PullBackBias * f(0.95, 1.05)));
+
+            options.MinVisualConfirmMs = Math.Max(0, (int)Math.Round(options.MinVisualConfirmMs * profile.PauseBias * f(0.95, 1.05)));
+            options.MaxVisualConfirmMs = Math.Max(options.MinVisualConfirmMs, (int)Math.Round(options.MaxVisualConfirmMs * profile.PauseBias * f(0.95, 1.05)));
+            options.NearTargetExtraPauseMs = Math.Max(0, (int)Math.Round(options.NearTargetExtraPauseMs * profile.PauseBias * f(0.95, 1.05)));
+
+            options.HoldBeforeMove = profile.StartHoldBias >= 0.75 ? options.HoldBeforeMove : false;
+            if (options.HoldBeforeEnd.HasValue)
+            {
+                options.HoldBeforeEnd = profile.EndHoldBias >= 0.75 ? options.HoldBeforeEnd : false;
+            }
+
+        }
+
+        private sealed class Scope : IDisposable
+        {
+            private readonly Action _onDispose;
+            public Scope(Action onDispose) => _onDispose = onDispose;
+            public void Dispose() => _onDispose();
+        }
+
     }
 }
