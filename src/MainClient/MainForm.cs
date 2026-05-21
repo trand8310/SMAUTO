@@ -695,8 +695,8 @@ namespace MainClient
         #endregion
 
 
- 
- 
+
+
 
         public MainForm(
             IPlaywrightProvider playwrightProvider,
@@ -951,7 +951,7 @@ namespace MainClient
         private void ApplyOneTimeLocalPatch()
         {
 
-            string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
+            string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "patches");
             if (!Directory.Exists(patchDir))
                 Directory.CreateDirectory(patchDir);
             string patchFile = Path.Combine(patchDir, "patch_page_loading202605062117.done");
@@ -1125,6 +1125,20 @@ namespace MainClient
 
         private void buttonClear_Click(object sender, EventArgs e)
         {
+
+            var result = MessageBox.Show(
+                "确定要清理缓存吗？",
+                "系统提示",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            if (result != DialogResult.Yes)
+            {
+                return;
+            }
+
+
             buttonClear.Enabled = false;
             btnStartStop.Enabled = false;
             Task.Run(() =>
@@ -1642,7 +1656,7 @@ namespace MainClient
                 if (_appSettings.IsRealIp)
                 {
                     ctx.RealIp =
-                        ipEntity.json["rip"]?.ToString()??
+                        ipEntity.json["rip"]?.ToString() ??
                         ipEntity.json["real_ip"]?.ToString() ??
                         ipEntity.json["realIp"]?.ToString() ??
                         string.Empty;
