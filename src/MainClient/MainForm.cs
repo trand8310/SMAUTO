@@ -841,7 +841,6 @@ namespace MainClient
         {
             StartLogConsumer();
             _logger.LogInformation("应用已启动");
-
             Task.Run(async () =>
             {
                 CommonHelper.ClearLocalChromeProcesses();
@@ -982,8 +981,6 @@ namespace MainClient
             //    }
 
             //}
-
-
 
             UserConfigService.Save("AppSettings", _appSettings);
             // 创建标记文件
@@ -1565,7 +1562,7 @@ namespace MainClient
 
                     if (_appSettings.GetIpInfo || _appSettings.IsRealIp || _appSettings.IsIpDuplicate)
                     {
-                        var ok = await TryFillIpInfoAsync(ctx, token);
+                        var ok = await TryFillIpInfoAsync(ctx, _appSettings.Protocol, token);
                         if (!ok)
                         {
                             LogWriteLine($"无法获取IP信息,{ctx.ProxyServer}");
@@ -1687,8 +1684,15 @@ namespace MainClient
         /// <param name="ctx"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async Task<bool> TryFillIpInfoAsync(ConsumerTaskContext ctx, CancellationToken token)
+        private async Task<bool> TryFillIpInfoAsync(ConsumerTaskContext ctx, string protocol, CancellationToken token)
         {
+
+            var proxy_server = ctx.ProxyServer;
+            if(protocol.Equals("socks5"))
+            {
+                proxy_server = $"socks5://{proxy_server}";
+            }
+
             var result = await _ipTester.TestAsync(ctx.ProxyServer);
             if (!result.IsValid)
                 return false;

@@ -402,10 +402,8 @@ namespace QTP.Plugins
 
             var full_version = taskArgs.SelectToken("dev.full_version").Value<string>();
             var full_version_values = full_version.Split(new string[] { "." }, StringSplitOptions.RemoveEmptyEntries);
-
             result.Add($"--platform-version={taskArgs.SelectToken("dev.osv").Value<string>()}");
             result.Add($"--full-version={full_version}");
-
             if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand")?.Value<string>()))
             {
                 var brand = taskArgs.SelectToken("dev.brand")?.Value<string>();
@@ -3360,7 +3358,7 @@ namespace QTP.Plugins
                 duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                 cancellationToken: token);
 
-                if (!_appSettings.NoTrigger1688Shop)
+                if (!_appSettings.NoTrigger1688Shop ||  CommonHelper.Chance(0.25))
                 {
                     var locator_detail = ctx.Page!.Locator("*:text-is('全部商品')");
                     var locator_detail_count = await locator_detail.CountAsync();
@@ -3592,7 +3590,7 @@ namespace QTP.Plugins
                 duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                 cancellationToken: token);
 
-                if (!_appSettings.NoTrigger1688Shop)
+                if (!_appSettings.NoTrigger1688Shop || CommonHelper.Chance(0.25))
                 {
                     var locator = ctx.Page.Locator("*:text-is('进店看看')");
                     var locator_count = await locator.CountAsync();

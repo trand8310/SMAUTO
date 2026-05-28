@@ -20,7 +20,7 @@ namespace Updater
         public string File { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
         public long Size { get; set; }
-        public string Text => Path.GetFileNameWithoutExtension(File).Replace("SMAD_", "");
+        public string Text => Path.GetFileNameWithoutExtension(File);
     }
 
     public class VersionResponse
