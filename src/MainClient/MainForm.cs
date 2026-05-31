@@ -954,7 +954,7 @@ namespace MainClient
             string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
             if (!Directory.Exists(patchDir))
                 Directory.CreateDirectory(patchDir);
-            string patchFile = Path.Combine(patchDir, "patch_page_loading202605062117.done");
+            string patchFile = Path.Combine(patchDir, "patch_page_loading202605311800.done");
             if (File.Exists(patchFile))
                 return;
 
@@ -969,19 +969,20 @@ namespace MainClient
             //_appSettings.NoTrigger1688Shop = true;
             //_appSettings.Protocol = "http";
 
-            //var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", "130.0.6723.139");
-            //if(Directory.Exists(chromePath))
-            //{
-            //    try
-            //    {
-            //        System.IO.Directory.Delete(chromePath, true);
-            //    }
-            //    catch (Exception)
-            //    {
+            var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win");
+            if (Directory.Exists(chromePath))
+            {
+                try
+                {
+                    System.IO.Directory.Delete(chromePath, true);
+                }
+                catch (Exception)
+                {
 
-            //    }
+                }
 
-            //}
+            }
+
 
 
 

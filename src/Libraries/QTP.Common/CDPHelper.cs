@@ -21,8 +21,8 @@ namespace QTP.Common
             //await SetAutoDarkModeOverride(cdpSession, true);
             await CDPHelper.SetTouchEmulationEnabled(cdpSession, true, maxTouchPoints);
             await CDPHelper.SetScrollbarsHidden(cdpSession, true);
-            await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
-            await CDPHelper.ChangeDeviceOrientationAsync(cdpSession);
+            //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
+            //await CDPHelper.ChangeDeviceOrientationAsync(cdpSession);
         }
 
         public static async Task SetDeviceMetricsOverride(ICDPSession cdpSession, int width, int height, float deviceScaleFactor, bool mobile = true)
@@ -269,7 +269,7 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
+                //await ClearDeviceOrientationOverrideAsync(cdpSession);
                 //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
@@ -306,7 +306,7 @@ namespace QTP.Common
 
                     action?.Invoke($"Tap:bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
 
-                    await ChangeDeviceOrientationAsync(cdpSession);
+                    //await ChangeDeviceOrientationAsync(cdpSession);
                     await element.TapAsync(new LocatorTapOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = 5000 });
                     return true;
                 }
@@ -331,7 +331,7 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
+                //await ClearDeviceOrientationOverrideAsync(cdpSession);
                 //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
                 //await element.ScrollIntoViewIfNeededAsync();
                 var bounding = await element.BoundingBoxAsync();
@@ -369,7 +369,7 @@ namespace QTP.Common
                     action?.Invoke($"Tap:bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
 
 
-                    await ChangeDeviceOrientationAsync(cdpSession);
+                    //await ChangeDeviceOrientationAsync(cdpSession);
                     await element.TapAsync(new ElementHandleTapOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = 5000 });
                     return true;
                 }
@@ -393,7 +393,7 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
+                //await ClearDeviceOrientationOverrideAsync(cdpSession);
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
@@ -429,7 +429,7 @@ namespace QTP.Common
 
                     action?.Invoke($"MouseClick::bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
 
-                    await ChangeDeviceOrientationAsync(cdpSession);
+                    //await ChangeDeviceOrientationAsync(cdpSession);
                     await element.ClickAsync(new LocatorClickOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = timeout });
                     return true;
                 }
@@ -509,7 +509,7 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
+                //await ClearDeviceOrientationOverrideAsync(cdpSession);
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
@@ -545,7 +545,7 @@ namespace QTP.Common
 
                     action?.Invoke($"MouseClick::bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
 
-                    await ChangeDeviceOrientationAsync(cdpSession);
+                    //await ChangeDeviceOrientationAsync(cdpSession);
                     await element.ClickAsync(new LocatorClickOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = 5000 });
                     return true;
                 }
@@ -578,7 +578,7 @@ namespace QTP.Common
         {
             try
             {
-                await ClearDeviceOrientationOverrideAsync(cdpSession);
+                //await ClearDeviceOrientationOverrideAsync(cdpSession);
                 var bounding = await element.BoundingBoxAsync();
                 if (bounding != null)
                 {
@@ -616,7 +616,7 @@ namespace QTP.Common
                     action?.Invoke($"MouseClick::bounding={JsonConvert.SerializeObject(bounding)},action:x={x},y={y}");
                     //var x = new Random().Next((int)(bounding.Width * 0.20), (int)(bounding.Width * 0.80));
                     //var y = new Random().Next((int)(bounding.Height * 0.20), (int)(bounding.Height * 0.80));
-                    await ChangeDeviceOrientationAsync(cdpSession);
+                    //await ChangeDeviceOrientationAsync(cdpSession);
                     await element.ClickAsync(new ElementHandleClickOptions() { Position = new Position() { X = (float)x, Y = (float)y }, Force = true, Timeout = timeout });
                     return true;
                 }

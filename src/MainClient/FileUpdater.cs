@@ -23,7 +23,7 @@ namespace MainClient
         public string File { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
         public long Size { get; set; }
-        public string Text => Path.GetFileNameWithoutExtension(File).Replace("SMAD_", "");
+        public string Text => Path.GetFileNameWithoutExtension(File);//.Replace("SMAD_", "");
     }
 
     public class VersionResponse
@@ -91,7 +91,7 @@ namespace MainClient
             {
                 //app=smad&runtime_version=1.2.3.4
                 var baseUrl = new Uri(taskApiUrl).GetLeftPart(UriPartial.Authority);
-                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_latest&prefix=SMAD_&runtime_version={AppConsts.AppVersion}&_t={DateTime.Now.Ticks}";
+                var url = $"{baseUrl}/api{_apiVersion}/update.php?action=get_latest&prefix={AppConsts.AppPrefix}&runtime_version={AppConsts.AppVersion}&_t={DateTime.Now.Ticks}";
                 using var response = await _httpClient.GetAsync(url, token);
                 response.EnsureSuccessStatusCode();
                 var content = await response.Content.ReadAsStringAsync(token);
