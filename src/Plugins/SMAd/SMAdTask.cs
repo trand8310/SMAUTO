@@ -1398,7 +1398,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    //entry.FirstPageUrl = "https://www.browserscan.net/zh";
+                    entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
+
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
@@ -1808,8 +1809,9 @@ namespace QTP.Plugins
                 "--use-mock-keychain",
                 "--no-service-autorun",
                 "--force-color-profile=srgb",
-                "--disable-features=LensOverlay,Translate",
+                "--disable-features=LensOverlay,Translate,DnsOverHttps,UseDnsHttpsSvcbAlpn",
                 "--disable-logging",
+                "--disable-quic",
                 "--virtual-clipboard",
                 "--touch-events=enabled",
                 "--use-fake-ui-for-media-stream",
@@ -1818,6 +1820,9 @@ namespace QTP.Plugins
                 "--disable-http2-grease-settings",
                 "--hide-bad-flags",
                 "--hide-crashed-bubble",
+                "--enable-unsafe-swiftshader",
+                "--mouse-as-touch",
+                "--touch-events=enabled",
                 $"--user-agent=\"{config.UserAgent}\"",
                 $"--window-size=\"{config.Sw + 16},{config.Sh + 96}\"",
                 "--window-position=0,0",
@@ -2622,12 +2627,15 @@ namespace QTP.Plugins
                 }
 
                 int score = 0;
-                if (dataUrl.Contains("1688.com")) score = 50;
+                if (dataUrl.Contains("baidu.com")) score = 50;
                 else if (dataUrl.Contains("jd.com")) score = 60;
                 else if (dataUrl.Contains("qq.com")) score = 70;
-                else if (dataUrl.Contains("baidu.com")) score = 80;
-                else if (dataUrl.Contains("taobao.com")) score = 100;
-                else if (dataUrl.Contains("pinduoduo.com")) score = 800;
+                else if (dataUrl.Contains("pinduoduo.com")) score = 80;
+                else if (dataUrl.Contains("1688.com")) score = 800;
+                else if (dataUrl.Contains("taobao.com")) score = 900;
+
+
+
 
 
                 scored.Add((score * 1000 + i, sponsored));
@@ -3805,7 +3813,7 @@ namespace QTP.Plugins
                 direction: PageScrollDirection.Up,
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                if (!_appSettings.NoTrigger1688Shop)
+                if (!_appSettings.NoTrigger1688Shop || CommonHelper.Chance(0.25))
                 {
                     var locator_detail = ctx.Page!.Locator("*:text-is('全部商品')");
                     var locator_detail_count = await locator_detail.CountAsync();
@@ -4197,20 +4205,30 @@ namespace QTP.Plugins
                 }
                 else
                 {
-                    var texts = new[]
-                    {
-                        "有没有现货","价格还有空间吗","什么时间发货","有活动吗","工厂在哪里","实物图是否一致",
-                        "能否提供质检","可以寄样品给我吗","批发价是多少","可以开发票吧","这款支持一件代发吗","包邮吗"
-                    };
-
+                    var chatText = ChatTextHelper.GetChatText();
                     el = ctx.Page.Locator("textarea#new_od_xst_msg_input_val_new_message,textarea#od_xst_msg_input_val_new_message");
                     if (await el.CountAsync() > 0)
                     {
                         await el.First.FillAsync("");
                         await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-                        await el.First.PressSequentiallyAsync(texts[CommonHelper.RandomRange(0, texts.Length)]);
+                        await el.First.PressSequentiallyAsync(chatText);
                         await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
                     }
+                    
+                    //var texts = new[]
+                    //{
+                    //    "有没有现货","价格还有空间吗","什么时间发货","有活动吗","工厂在哪里","实物图是否一致",
+                    //    "能否提供质检","可以寄样品给我吗","批发价是多少","可以开发票吧","这款支持一件代发吗","包邮吗"
+                    //};
+
+                    //el = ctx.Page.Locator("textarea#new_od_xst_msg_input_val_new_message,textarea#od_xst_msg_input_val_new_message");
+                    //if (await el.CountAsync() > 0)
+                    //{
+                    //    await el.First.FillAsync("");
+                    //    await Task.Delay(CommonHelper.RandomRange(50, 100), token);
+                    //    await el.First.PressSequentiallyAsync(texts[CommonHelper.RandomRange(0, texts.Length)]);
+                    //    await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
+                    //}
                 }
 
                 el = ctx.Page.Locator(".new_successTipNew_wangwang_new,.successTipNew_call_new");
@@ -4250,7 +4268,7 @@ namespace QTP.Plugins
                 cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
-                if (!_appSettings.NoTrigger1688Shop)
+                if (!_appSettings.NoTrigger1688Shop || CommonHelper.Chance(0.25))
                 {
                     var locator = ctx.Page.Locator("*:text-is('进店看看')");
                     var locator_count = await locator.CountAsync();
