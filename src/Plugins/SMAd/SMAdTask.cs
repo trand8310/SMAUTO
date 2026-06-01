@@ -6,6 +6,8 @@ using QTP.Common.Infrastructure;
 using QTP.Common.Models;
 using QTP.Common.Win32;
 using SMAd;
+using SMAd.LandingPolicy;
+using SMAd.Models;
 using SMAd.SMAd;
 using SMAd.Swiper;
 using System;
@@ -318,7 +320,7 @@ namespace QTP.Plugins
         /// <param name="cdpSession"></param>
         /// <param name="token"></param>
 
-        private void ProcessingPageElementTask(WorkerRunContext ctx, CancellationToken token)
+        public void ProcessingPageElementTask(WorkerRunContext ctx, CancellationToken token)
         {
             if (Interlocked.Exchange(ref ctx.PageElementGuardStarted, 1) == 1)
                 return;
@@ -1156,7 +1158,7 @@ namespace QTP.Plugins
                         new UMobLandingPageStrategy(this),
                         new AiSiteLandingPageStrategy(this),
                         new AiStudyLandingPageStrategy(this),
-                        new GenericLandingPageStrategy(this),
+                        new DefaultLandingPageStrategy(this),
                     })
                 };
 
@@ -1398,7 +1400,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
+                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
 
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1683,84 +1685,7 @@ namespace QTP.Plugins
 
         #endregion
 
-        #region RetryPolicy
 
-        private static class RetryPolicy
-        {
-            public static async Task<RetryResult<T>> ExecuteAsync<T>(
-                Func<CancellationToken, Task<T>> action,
-                int maxAttempts,
-                Func<T, bool>? successPredicate = null,
-                Func<Exception, bool>? shouldRetryOnException = null,
-                Func<int, int>? delayMsFactory = null,
-                Action<int, Exception?>? onRetry = null,
-                CancellationToken token = default)
-            {
-                if (maxAttempts <= 0)
-                    throw new ArgumentOutOfRangeException(nameof(maxAttempts));
-
-                successPredicate ??= (_ => true);
-                shouldRetryOnException ??= (_ => true);
-                delayMsFactory ??= (attempt => Math.Min(300 * attempt, 1500));
-
-                Exception? lastException = null;
-                T? lastValue = default;
-
-                for (int attempt = 1; attempt <= maxAttempts; attempt++)
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    try
-                    {
-                        lastValue = await action(token);
-                        if (successPredicate(lastValue))
-                            return RetryResult<T>.Success(lastValue, attempt);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastException = ex;
-                        if (!shouldRetryOnException(ex) || attempt >= maxAttempts)
-                            break;
-
-                        onRetry?.Invoke(attempt, ex);
-                        await Task.Delay(delayMsFactory(attempt), token);
-                        continue;
-                    }
-
-                    if (attempt < maxAttempts)
-                    {
-                        onRetry?.Invoke(attempt, null);
-                        await Task.Delay(delayMsFactory(attempt), token);
-                    }
-                }
-
-                return RetryResult<T>.Fail(lastValue, lastException, maxAttempts);
-            }
-
-            public static async Task<RetryResult<bool>> ExecuteBoolAsync(
-                Func<CancellationToken, Task<bool>> action,
-                int maxAttempts,
-                Func<Exception, bool>? shouldRetryOnException = null,
-                Func<int, int>? delayMsFactory = null,
-                Action<int, Exception?>? onRetry = null,
-                CancellationToken token = default)
-            {
-                return await ExecuteAsync(
-                    action,
-                    maxAttempts,
-                    successPredicate: v => v,
-                    shouldRetryOnException: shouldRetryOnException,
-                    delayMsFactory: delayMsFactory,
-                    onRetry: onRetry,
-                    token: token);
-            }
-        }
-
-        #endregion
 
         #region Browser Boot / Events
 
@@ -2712,393 +2637,19 @@ namespace QTP.Plugins
             return await ctx.LandingDispatcher.DispatchAsync(ctx, token);
         }
 
-        private interface ILandingPageStrategy
-        {
-            bool CanHandle(string url);
-            Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token);
-        }
 
-        private sealed class LandingPageStrategyDispatcher
-        {
-            private readonly List<ILandingPageStrategy> _strategies;
 
-            public LandingPageStrategyDispatcher(IEnumerable<ILandingPageStrategy> strategies)
-            {
-                _strategies = strategies.ToList();
-            }
 
-            public async Task<FlowControl> DispatchAsync(WorkerRunContext ctx, CancellationToken token)
-            {
-                token.ThrowIfCancellationRequested();
 
-                var url = ctx.Page?.Url ?? string.Empty;
-                foreach (var strategy in _strategies)
-                {
-                    if (strategy.CanHandle(url))
-                        return await strategy.HandleAsync(ctx, token);
-                }
 
-                return FlowControl.Continue;
-            }
-        }
 
-        private sealed class UMobLandingPageStrategy : ILandingPageStrategy
-        {
-            private readonly SMAdTask _owner;
 
-            public UMobLandingPageStrategy(SMAdTask owner)
-            {
-                _owner = owner;
-            }
-
-            public bool CanHandle(string url) => url.StartsWith("https://site.u-mob.cn/", StringComparison.OrdinalIgnoreCase);
-
-            public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
-            {
-                token.ThrowIfCancellationRequested();
-
-                await HumanScrollHelper.TouchPageLongScrollAsync(
-                    page: ctx.Page!,
-                    client: ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(0, 5),
-                    direction: PageScrollDirection.Up,
-                    cancellationToken: token);
-
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-
-                var tagItems = ctx.Page!.Locator(".tag-panel .tag-item");
-                var count = await tagItems.CountAsync();
-                if (count > 0)
-                {
-                    var clickCount = CommonHelper.RandomRange(1, count);
-                    var indices = Enumerable.Range(0, count)
-                        .OrderBy(_ => Guid.NewGuid())
-                        .Take(clickCount)
-                        .ToList();
-
-                    foreach (var i in indices)
-                    {
-                        token.ThrowIfCancellationRequested();
-                        await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, tagItems.Nth(i));
-                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                    }
-                }
-
-                if (!ctx.Config.NotTriggerDownload)
-                {
-                    var button = ctx.Page.Locator(":text('下载')");
-                    if (await button.CountAsync() > 0)
-                    {
-                        if (new[] { 1, 3, 5, 7, 9 }.Contains(CommonHelper.RandomRange(0, 10)))
-                        {
-                            await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, button.First);
-                            await Task.Delay(CommonHelper.RandomRange(1500, 2500), token);
-                        }
-                    }
-                }
-
-                return FlowControl.Continue;
-            }
-        }
-
-        private sealed class AiSiteLandingPageStrategy : ILandingPageStrategy
-        {
-            private readonly SMAdTask _owner;
-
-            public AiSiteLandingPageStrategy(SMAdTask owner)
-            {
-                _owner = owner;
-            }
-
-            public bool CanHandle(string url) => url.StartsWith("https://aisite.wejianzhan.com", StringComparison.OrdinalIgnoreCase);
-
-            public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
-            {
-                token.ThrowIfCancellationRequested();
-                await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                var no_result_title = ctx.Page!.GetByText("抱歉，未能匹配到合适的课程");
-                if (await no_result_title.CountAsync() > 0)
-                {
-                    var refreshBtn = ctx.Page!.Locator(".no-result-btn").GetByText("刷新");
-                    if (await refreshBtn.CountAsync() > 0)
-                    {
-                        await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, refreshBtn.First);
-                        await ctx.Page.WaitForTimeoutAsync(2000);
-                    }
-                    no_result_title = ctx.Page!.GetByText("抱歉，未能匹配到合适的课程");
-                    if (await no_result_title.CountAsync() > 0)
-                    {
-                        return FlowControl.Continue;
-                    }
-                }
-
-                var openBtn = ctx.Page!.Locator(".animate-container svg image");
-                if (await openBtn.CountAsync() > 0)
-                {
-
-                    int imageCount = await openBtn.CountAsync();
-                    await _owner.ClickAndDetectNavigationAsync(ctx, openBtn.Nth(imageCount - 1), token);
-                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                }
-
-                openBtn = ctx.Page.Locator(".welcome-popup-open-button");
-                if (await openBtn.CountAsync() > 0)
-                {
-
-                    if (new[] { 1, 2, 3, 7, 8, 9 }.Contains(CommonHelper.RandomRange(1, 10)))
-                    {
-                        var clicked = await _owner.ClickAndDetectNavigationAsync(ctx, openBtn.First, token);
-                        if (clicked.Navigated)
-                            return FlowControl.Continue;
-                    }
-                }
-
-                var closeBtn = ctx.Page.Locator(".close-btn,.close-area .close-icon,.layui-layer-close,.layui-layer-btn");
-                if (await closeBtn.CountAsync() > 0)
-                {
-                    await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, closeBtn.First);
-                    await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                }
-
-
-
-                await HumanScrollHelper.TouchPageLongScrollAsync(
-                ctx.Page!,
-                ctx.CdpSession!,
-                scrollCount: CommonHelper.RandomRange(0, 3),
-                direction: PageScrollDirection.Up,
-                cancellationToken: token);
-                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                var offerItems = ctx.Page.Locator(".ad-card-title,.ad-card-image,.ad-card-conv-btn");
-                if (await offerItems.CountAsync() > 0)
-                {
-                    int count = await offerItems.CountAsync();
-                    var offer = offerItems.Nth(CommonHelper.RandomRange(0, count));
-
-                    await SwipeEmulator.SwipeToElementAsync(
-                        ctx.Page,
-                        ctx.CdpSession!,
-                        offer,
-                        maxSwipes: 10,
-                        cancellationToken: token);
-
-
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                    var click = await _owner.ClickAndDetectNavigationAsync(ctx, offer, token);
-                    if (click.Navigated)
-                    {
-                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                    }
-
-                    return FlowControl.Continue;
-                }
-
-                var jsClick = await _owner.TryRandomViewportClickableClickAsync(ctx, token);
-                if (!jsClick.Navigated)
-                    await _owner.TryRandomLinkClickAsync(ctx, "a,img", token);
-
-                return FlowControl.Continue;
-            }
-        }
-
-        private sealed class AiStudyLandingPageStrategy : ILandingPageStrategy
-        {
-            private readonly SMAdTask _owner;
-
-            public AiStudyLandingPageStrategy(SMAdTask owner)
-            {
-                _owner = owner;
-            }
-
-            public bool CanHandle(string url) => url.StartsWith("https://aistudy.baidu.com/", StringComparison.OrdinalIgnoreCase);
-
-            public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
-            {
-                token.ThrowIfCancellationRequested();
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-
-                var recommend = ctx.Page!.Locator(".recommend-adlist .waterfall-column");
-                var count = await recommend.CountAsync();
-
-                if (count == 0)
-                {
-                    var ok1 = await CDPHelper.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".search-page-container input");
-                    var ok2 = ok1 && await CDPHelper.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".search-page-container .search");
-
-                    if (ok2)
-                    {
-                        var retry = await RetryPolicy.ExecuteBoolAsync(
-                            async ct =>
-                            {
-                                ct.ThrowIfCancellationRequested();
-
-                                recommend = ctx.Page.Locator(".recommend-adlist .waterfall-column");
-                                count = await recommend.CountAsync();
-                                if (count > 0)
-                                    return true;
-
-                                if (await CDPHelper.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".no-result-btn"))
-                                    await Task.Delay(1500, ct);
-
-                                return false;
-                            },
-                            maxAttempts: 5,
-                            token: token);
-
-                        if (retry.IsSuccess)
-                        {
-                            recommend = ctx.Page.Locator(".recommend-adlist .waterfall-column");
-                            count = await recommend.CountAsync();
-                        }
-                    }
-                }
-
-                if (count > 0)
-                {
-                    var item = recommend.Nth(CommonHelper.RandomRange(0, count));
-                    await SwipeEmulator.SwipeToElementAsync(
-                    ctx.Page,
-                    ctx.CdpSession!,
-                    item,
-                    maxSwipes: 10,
-                    cancellationToken: token);
-
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                    await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
-                }
-
-                return FlowControl.Continue;
-            }
-        }
-
-        /// <summary>
-        /// 通用的落地页处理策略
-        /// </summary>
-        private sealed class GenericLandingPageStrategy : ILandingPageStrategy
-        {
-            private readonly SMAdTask _owner;
-
-            public GenericLandingPageStrategy(SMAdTask owner)
-            {
-                _owner = owner;
-            }
-
-            public bool CanHandle(string url) => true;
-
-            public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
-            {
-                token.ThrowIfCancellationRequested();
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                if (_owner._appSettings.p4psearch && _owner._appSettings.p4psearchRate > 0 && ctx.Page!.Url.Contains("m.1688.com"))
-                {
-                    await _owner.TryHandle1688RecommendWordsAsync(ctx, token);
-                }
-                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                var offerItems = await _owner.ResolveOfferItemsAsync(ctx, token);
-
-                if (!ctx.Page!.Url.StartsWith("https://plogin.m.jd.com/"))
-                {
-
-                    if (offerItems != null && await offerItems.CountAsync() > 0)
-                    {
-                        int count = await offerItems.CountAsync();
-                        var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
-
-                        await SwipeEmulator.SwipeToElementAsync(
-                        ctx.Page,
-                        ctx.CdpSession!,
-                        item,
-                        maxSwipes: CommonHelper.RandomRange(1, 5),
-                        cancellationToken: token);
-
-                        await item.ScrollIntoViewIfNeededAsync();
-                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        var click = await _owner.ClickElementAndDetectNavigationAsync(ctx, item, token);
-                        if (click.Navigated)
-                        {
-                            if (ctx.Page!.Url.Contains("1688.com") && ctx.Page.Url.Contains("_tmd_") && ctx.Page!.Url.Contains("punish?x5secdata"))
-                            {
-                                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                if (await TouchDragHelper.WaitAllVisibleWithTextsAsync(ctx.Page!, 5000))
-                                {
-                                    if (await TouchDragHelper.DragSliderAsync(ctx.Page!, ctx.CdpSession!, ".btn_slide", ".slidetounlock", token))
-                                    {
-                                        await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
-                                    }
-                                }
-                                else
-                                {
-                                    return FlowControl.Continue;
-                                }
-                            }
-
-
-                            _owner.ProcessingPageElementTask(ctx, token);
-
-                            if (ctx.Page.Url.StartsWith("https://re.1688.com/"))
-                            {
-                                await HumanScrollHelper.TouchPageLongScrollAsync(
-                                ctx.Page!,
-                                ctx.CdpSession!,
-                                scrollCount: CommonHelper.RandomRange(1, 4),
-                                direction: PageScrollDirection.Up,
-                                cancellationToken: token);
-                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                                count = await CenterClickableFinder.MarkCandidatesAsync(ctx.Page);
-                                if (count > 0)
-                                {
-                                    var locator_list = CenterClickableFinder.GetMarkedLocator(ctx.Page);
-                                    var locator_count = await locator_list.CountAsync();
-                                    if (locator_count > 0)
-                                    {
-                                        foreach (var target_index in Enumerable.Range(0, locator_count).OrderBy(o => Guid.NewGuid()))
-                                        {
-                                            var target = locator_list.Nth(target_index);
-                                            var result = await _owner.ClickAndDetectNavigationAsync(ctx, target, token);
-                                            if (result.Navigated)
-                                            {
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    var locator = ctx.Page
-                                    .Locator("body,iframe")
-                                    .Filter(new() { Visible = true })
-                                    .First;
-                                    if (await locator.CountAsync() > 0)
-                                    {
-                                        await locator.First.ScrollIntoViewIfNeededAsync();
-                                        await _owner.ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-                                    }
-                                }
-                            }
-
-                            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                        }
-                    }
-                    else
-                    {
-                        //await _owner.TryRandomLinkClickAsync(ctx, "a:visible", token);
-                    }
-                }
-
-
-
-
-
-
-                return FlowControl.Continue;
-            }
-        }
 
         #endregion
 
         #region Generic Landing Helpers
 
-        private async Task TryHandle1688RecommendWordsAsync(WorkerRunContext ctx, CancellationToken token)
+        public async Task TryHandle1688RecommendWordsAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
@@ -3216,7 +2767,7 @@ namespace QTP.Plugins
             catch { }
         }
 
-        private async Task<ILocator?> ResolveOfferItemsAsync(WorkerRunContext ctx, CancellationToken token)
+        public async Task<ILocator?> ResolveOfferItemsAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
@@ -4861,7 +4412,7 @@ namespace QTP.Plugins
         /// <param name="locator"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async Task<ClickResult> ClickAndDetectNavigationAsync(WorkerRunContext ctx, ILocator locator, CancellationToken token)
+        public async Task<ClickResult> ClickAndDetectNavigationAsync(WorkerRunContext ctx, ILocator locator, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
@@ -4907,7 +4458,7 @@ namespace QTP.Plugins
             }
         }
 
-        private async Task<ClickResult> TryRandomViewportClickableClickAsync(WorkerRunContext ctx, CancellationToken token)
+        public async Task<ClickResult> TryRandomViewportClickableClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
@@ -5028,7 +4579,7 @@ namespace QTP.Plugins
             }
         }
 
-        private async Task<ClickResult> ClickElementAndDetectNavigationAsync(WorkerRunContext ctx, ILocator target, CancellationToken token)
+        public async Task<ClickResult> ClickElementAndDetectNavigationAsync(WorkerRunContext ctx, ILocator target, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
@@ -5073,7 +4624,7 @@ namespace QTP.Plugins
             }
         }
 
-        private async Task<ClickResult> TryRandomLinkClickAsync(WorkerRunContext ctx, string selector, CancellationToken token)
+        public async Task<ClickResult> TryRandomLinkClickAsync(WorkerRunContext ctx, string selector, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
@@ -5152,141 +4703,6 @@ namespace QTP.Plugins
 
         #endregion
 
-        #region Internal Types
-
-        private sealed class TaskConfig
-        {
-            public string UniqueId { get; set; } = "";
-            public JObject TaskArgs { get; set; } = default!;
-            public CancellationTokenSource LinkedCts { get; set; } = default!;
-
-            public int TaskId { get; set; }
-            public string TaskUrl { get; set; } = "";
-            public int SleepMs { get; set; }
-            public bool IsLocalAdWord { get; set; }
-            public int PageLoadingTimeoutMs { get; set; }
-            public int PageLoadedDelayMs { get; set; }
-
-            public int HomepageTrigger { get; set; }
-            public bool PriorityNon1688 { get; set; }
-
-            public string UserAgent { get; set; } = "";
-            public int Os { get; set; }
-            public int? DevSw { get; set; }
-            public float DeviceScale { get; set; }
-            public int Sw { get; set; }
-            public int Sh { get; set; }
-
-            public string WordName { get; set; } = "";
-            public bool NoTrigger1688 { get; set; }
-            public bool CleaningWords { get; set; }
-            public bool NotTriggerDownload { get; set; }
-            public bool PvsTriggerOne { get; set; }
-            public int CurrentUV { get; set; }
-
-            public string KernelVersion { get; set; } = "132";
-            public int MaxTouchPoints { get; set; }
-            public int ProcessIndex { get; set; }
-
-            public bool IsTest { get; set; }
-            public int TotalPV { get; set; }
-
-            public string CacheDir { get; set; } = "";
-            public string UserDataDir { get; set; } = "";
-        }
-
-        private sealed class WorkerRunContext
-        {
-            public WorkerRunContext(TaskConfig config)
-            {
-                Config = config;
-                StartTime = DateTime.Now;
-            }
-
-            public TaskConfig Config { get; }
-            public DateTime StartTime { get; }
-
-            public IPlaywright? Playwright { get; set; }
-            public IBrowser? Browser { get; set; }
-            public IBrowserContext? Context { get; set; }
-            public IPage? Page { get; set; }
-            public ICDPSession? CdpSession { get; set; }
-            public CDPSessionManager? CdpManager { get; set; }
-
-            public LandingPageStrategyDispatcher? LandingDispatcher { get; set; }
-
-            public int DebugPort { get; set; }
-
-            public int TriggerDownloadSign;
-            public int PageAdsCount { get; set; }
-            public bool PageTriggerClick { get; set; }
-            public bool JumpClick { get; set; }
-
-            public int PagesCount { get; set; }
-            public string CurrentPageUrl { get; set; } = "";
-            public int PvIndex { get; set; }
-
-            public bool ProxyFailed { get; set; }
-            public string? ProxyFailedReason { get; set; }
-            public bool PageCrashed { get; set; }
-            public string? LastFailureReason { get; set; }
-
-            public int PageElementGuardStarted;
-
-            public void ResetPerPvState()
-            {
-
-                TriggerDownloadSign = 0;
-                PageTriggerClick = false;
-                JumpClick = false;
-                PagesCount = 0;
-                CurrentPageUrl = string.Empty;
-            }
-        }
-
-        private sealed class EntryPreparationResult
-        {
-            public bool Success { get; set; }
-            public bool EndTask { get; set; }
-            public bool IsHomepageTrigger { get; set; }
-            public string? QueryWord { get; set; }
-            public string? FirstPageUrl { get; set; }
-        }
-
-        private sealed class ClickResult
-        {
-            public bool Attempted { get; private set; }
-            public bool Navigated { get; private set; }
-            public bool OpenedNewPage { get; private set; }
-
-            public static ClickResult Fail() => new() { Attempted = false, Navigated = false, OpenedNewPage = false };
-            public static ClickResult NoNavigation() => new() { Attempted = true, Navigated = false, OpenedNewPage = false };
-            public static ClickResult SuccessSamePage() => new() { Attempted = true, Navigated = true, OpenedNewPage = false };
-            public static ClickResult SuccessNewPage() => new() { Attempted = true, Navigated = true, OpenedNewPage = true };
-        }
-
-        private sealed class RetryResult<T>
-        {
-            public bool IsSuccess { get; private set; }
-            public T? Value { get; private set; }
-            public Exception? Exception { get; private set; }
-            public int Attempts { get; private set; }
-
-            public static RetryResult<T> Success(T? value, int attempts) =>
-                new RetryResult<T> { IsSuccess = true, Value = value, Attempts = attempts };
-
-            public static RetryResult<T> Fail(T? value, Exception? exception, int attempts) =>
-                new RetryResult<T> { IsSuccess = false, Value = value, Exception = exception, Attempts = attempts };
-        }
-
-        private enum FlowControl
-        {
-            Continue = 0,
-            NextPv = 1,
-            EndTask = 2
-        }
-
-        #endregion
 
 
     }

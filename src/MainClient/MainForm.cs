@@ -954,7 +954,7 @@ namespace MainClient
             string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
             if (!Directory.Exists(patchDir))
                 Directory.CreateDirectory(patchDir);
-            string patchFile = Path.Combine(patchDir, "patch_page_loading202605311800.done");
+            string patchFile = Path.Combine(patchDir, "patch_page_loading202606012212.done");
             if (File.Exists(patchFile))
                 return;
 

@@ -11,7 +11,7 @@ namespace QTP.Common
     {
         public abstract string Title { get; }
         public abstract Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
-        protected readonly AppSettings _appSettings;
+        public readonly AppSettings _appSettings;
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
         public event EventHandler<TaskAdWordEventArgs>? OnTaskAdWordEventHandler;
