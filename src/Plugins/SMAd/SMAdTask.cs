@@ -1500,7 +1500,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://www.browserscan.net/zh";
-                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
+                    entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
@@ -1779,9 +1779,6 @@ namespace QTP.Plugins
         {
             var args = new List<string>
             {
-
-
-
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--disable-logging",
@@ -1852,6 +1849,10 @@ namespace QTP.Plugins
             {
                 args.Add("--blink-settings=imagesEnabled=false");
             }
+
+
+
+
 
             args.AddRange(InitFPArgs(config.TaskArgs, config.MaxTouchPoints));
             return args;
