@@ -1,7 +1,7 @@
-﻿using QTP.Common;
+﻿using PlaywrightHumanInput;
+using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
-using SMAd.Swiper;
 
 namespace SMAd.LandingPolicy
 {
@@ -20,14 +20,11 @@ namespace SMAd.LandingPolicy
         {
             token.ThrowIfCancellationRequested();
 
-            await HumanScrollHelper.TouchPageLongScrollAsync(
-                page: ctx.Page!,
-                client: ctx.CdpSession!,
-                scrollCount: CommonHelper.RandomRange(0, 5),
-                direction: PageScrollDirection.Up,
-                cancellationToken: token);
-
-            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+            await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
+            ctx.Page!,
+            ctx.CdpSession!,
+            duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
+            cancellationToken: token);
 
             var tagItems = ctx.Page!.Locator(".tag-panel .tag-item");
             var count = await tagItems.CountAsync();
@@ -63,4 +60,5 @@ namespace SMAd.LandingPolicy
             return FlowControl.Continue;
         }
     }
+
 }

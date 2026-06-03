@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
+using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Common.Models;
@@ -8,15 +9,7 @@ using QTP.Common.Win32;
 using SMAd;
 using SMAd.LandingPolicy;
 using SMAd.Models;
-using SMAd.SMAd;
-using SMAd.Swiper;
-using System;
-using System.Collections.Specialized;
-using System.Data.Common;
-using System.Diagnostics;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Xml.Linq;
 
 
 
@@ -836,70 +829,6 @@ namespace QTP.Plugins
         }
 
 
-        public async Task ScrollWithTimeoutAsync(
-           IPage page,
-           CDPSessionManager cdpManager,
-           int durationMs,
-           CancellationToken cancellationToken = default)
-        {
-            if (page == null) throw new ArgumentNullException(nameof(page));
-            if (cdpManager == null) throw new ArgumentNullException(nameof(cdpManager));
-            if (durationMs <= 0) return;
-            var first_delay_ms = CommonHelper.RandomRange(5432, 7890);
-            await Task.Delay(first_delay_ms, cancellationToken);
-
-            var cdpSession = await cdpManager.GetOrCreateSessionAsync(page);
-            long deadline = Environment.TickCount64 + (durationMs - first_delay_ms);
-
-            while (Environment.TickCount64 < deadline)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var scrollStateBefore = await GetPageScrollStateAsync(page);
-
-                // 当前不能再向下滚动（手势向上滑）
-                // 不立即结束，而是在 durationMs 时间窗口内继续等待一下再检查
-                if (!scrollStateBefore.CanScrollDown)
-                {
-                    int remainMs = (int)Math.Max(0, deadline - Environment.TickCount64);
-                    if (remainMs <= 0)
-                        break;
-
-                    int waitMs = Math.Min(CommonHelper.RandomRange(300, 700), remainMs);
-                    await Task.Delay(waitMs, cancellationToken);
-                    continue;
-                }
-
-                var beforeY = scrollStateBefore.ScrollY;
-
-                await HumanScrollHelper.TouchPageScrollOnceAsync(
-                    page,
-                    cdpSession,
-                    direction: PageScrollDirection.Up,
-                    cancellationToken: cancellationToken);
-
-                var scrollStateAfter = await GetPageScrollStateAsync(page);
-                var afterY = scrollStateAfter.ScrollY;
-                bool moved = afterY > beforeY;
-
-                int remainAfterScroll = (int)Math.Max(0, deadline - Environment.TickCount64);
-                if (remainAfterScroll <= 0)
-                    break;
-
-                // 没移动，说明这次滑动无效；在剩余时间内稍等后继续判断
-                if (!moved)
-                {
-                    int waitMs = Math.Min(CommonHelper.RandomRange(400, 800), remainAfterScroll);
-                    await Task.Delay(waitMs, cancellationToken);
-                    continue;
-                }
-
-                int delayMs = Math.Min(CommonHelper.RandomRange(1000, 2000), remainAfterScroll);
-                await Task.Delay(delayMs, cancellationToken);
-            }
-        }
-
-
 
         private sealed class PageScrollState
         {
@@ -1158,6 +1087,7 @@ namespace QTP.Plugins
                         new UMobLandingPageStrategy(this),
                         new AiSiteLandingPageStrategy(this),
                         new AiStudyLandingPageStrategy(this),
+                        new AliLandingPageStrategy(this),
                         new DefaultLandingPageStrategy(this),
                     })
                 };
@@ -1400,7 +1330,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
+                    entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
 
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1470,35 +1400,17 @@ namespace QTP.Plugins
                 else
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}");
-                    token.ThrowIfCancellationRequested();
-
-                    if (ctx.Page == null || ctx.Page.IsClosed)
-                    {
-                        LogWriteLine($"{this.Title}:RunMainFlow: 滚动前 Page为空或已关闭");
-                        continue;
-                    }
-
-                    if (ctx.Browser == null || !ctx.Browser.IsConnected)
-                    {
-                        LogWriteLine($"{this.Title}:RunMainFlow: 滚动前 Browser已断开");
-                        continue;
-                    }
-
-                    try
-                    {
-                        await ScrollWithTimeoutAsync(ctx.Page, ctx.CdpManager!, Math.Abs(ctx.Config.PageLoadedDelayMs), token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
-                    {
-                        LogWriteLine($"{this.Title}:RunMainFlow: ScrollWithTimeoutAsync 页面已关闭: {ex.Message}");
-                        continue;
-                    }
+                    var delay_ms = CommonHelper.RandomRange(5000, 8000);
+                    await Task.Delay(delay_ms, token);
+                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    duration: TimeSpan.FromMilliseconds(Math.Abs(ctx.Config.PageLoadedDelayMs - delay_ms)),
+                    cancellationToken: token);
                 }
 
+
+                token.ThrowIfCancellationRequested();
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
                     LogWriteLine($"{this.Title}:RunMainFlow: 广告检测前 Page为空或已关闭");
@@ -1511,7 +1423,16 @@ namespace QTP.Plugins
                     continue;
                 }
 
+                await HumanSwipeOperator.RandomUpUntilStopAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    minTimes: 0,
+                    maxTimes: 5,
+                    cancellationToken: token);
+
                 await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
+
+
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
                 if (!adsOk)
                     continue;
@@ -1531,22 +1452,11 @@ namespace QTP.Plugins
                 if (ctx.JumpClick)
                 {
 
-                    await HumanScrollHelper.TouchPageLongScrollAsync(
-                     ctx.Page,
-                     ctx.CdpSession!,
-                     scrollCount: CommonHelper.RandomRange(1, 4),
-                     direction: PageScrollDirection.Up,
-                     cancellationToken: token);
-
-                    await Task.Delay(CommonHelper.RandomRange(3120, 5678), token);
-
-                    await HumanScrollHelper.TouchPageLongScrollAsync(
-                      ctx.Page,
-                      ctx.CdpSession!,
-                      scrollCount: CommonHelper.RandomRange(1, 2),
-                      direction: PageScrollDirection.Down,
-                      cancellationToken: token);
-
+                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(3000, 8000)),
+                    cancellationToken: token);
 
                     var clickFlow = await TryExecuteJumpClickAsync(ctx, token);
                     if (clickFlow == FlowControl.EndTask)
@@ -1737,8 +1647,7 @@ namespace QTP.Plugins
                 "--disable-features=LensOverlay,Translate,DnsOverHttps,UseDnsHttpsSvcbAlpn",
                 "--disable-logging",
                 "--disable-quic",
-                "--virtual-clipboard",
-                "--touch-events=enabled",
+                //"--virtual-clipboard",
                 "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream",
                 "--show-avatar-button=never",
@@ -2346,7 +2255,7 @@ namespace QTP.Plugins
                         continue;
 
                     var rootDomain = string.Join(".", uri.Host.Split(".").Reverse().Take(2).Reverse());
- 
+
 
 
                     var tagText = "广告";
@@ -2457,15 +2366,17 @@ namespace QTP.Plugins
             foreach (var sponsored in candidates)
             {
                 token.ThrowIfCancellationRequested();
+                await HumanSwipeOperator.MoveToElementAsync(
+                  ctx.Page!,
+                  ctx.CdpSession!,
+                  sponsored,
+                  maxSwipes: 10,
+                  cancellationToken: token);
 
-                await SwipeEmulator.SwipeToElementAsync(
-                    ctx.Page,
-                    ctx.CdpSession!,
-                    sponsored,
-                    maxSwipes: 10,
-                    cancellationToken: token);
+                await sponsored.ScrollIntoViewIfNeededAsync();
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
                 var target = await PickSponsoredTargetAsync(sponsored, token);
                 if (target == null)
                     continue;
@@ -2505,6 +2416,7 @@ namespace QTP.Plugins
             }
             return FlowControl.Continue;
         }
+
 
 
 
@@ -2647,8 +2559,16 @@ namespace QTP.Plugins
 
         #endregion
 
+
+
         #region Generic Landing Helpers
 
+        /// <summary>
+        /// 1688列表页重定向
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async Task TryHandle1688RecommendWordsAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
@@ -2668,13 +2588,10 @@ namespace QTP.Plugins
 
             try
             {
-
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanSwipeOperator.RandomUpUntilAsync(
                   ctx.Page!,
                   ctx.CdpSession!,
-                  scrollCount: CommonHelper.RandomRange(8, 10),
-                  direction: PageScrollDirection.Up,
-                  predexp: async _ =>
+                  stopVerifier: async _ =>
                   {
                       var panel = ctx.Page!.Locator("div[class*='ab-recommend-words']");
                       if (await panel.CountAsync() > 0)
@@ -2684,14 +2601,16 @@ namespace QTP.Plugins
                       }
                       return false;
                   },
+                  minTimes: 3,
+                  maxTimes: 10,
                   cancellationToken: token);
-
-
-
 
                 token.ThrowIfCancellationRequested();
 
-                await SwipeEmulator.SwipeOnceHumanAsync(ctx.Page!, ctx.CdpSession!, direction: ScrollDirection.Up, microSwipe: true, cancellationToken: token);
+                await HumanSwipeOperator.MicroUpAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(100, 200), token);
 
@@ -2779,23 +2698,24 @@ namespace QTP.Plugins
                 if (_appSettings.Rfq1688 && _appSettings.Rfq1688Rate > 0)
                     _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_rfq1688");
 
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(1, 4),
-                    direction: PageScrollDirection.Up,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                     cancellationToken: token);
+
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 offerItems = ctx.Page.Locator("//div[starts-with(@class,'offer-item')]");
             }
             else if (url.Contains("m.1688.com"))
             {
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(1, 4),
-                    direction: PageScrollDirection.Up,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                     cancellationToken: token);
+
+
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
 
@@ -2803,12 +2723,13 @@ namespace QTP.Plugins
             }
             else if (url.Contains("b2b.baidu.com"))
             {
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(1, 4),
-                    direction: PageScrollDirection.Up,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                     cancellationToken: token);
+
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
                 offerItems = ctx.Page.Locator(".img-content,.list-title,.content-without-title");
@@ -2859,12 +2780,12 @@ namespace QTP.Plugins
                 }
                 else
                 {
-                    await HumanScrollHelper.TouchPageLongScrollAsync(
+                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                         ctx.Page!,
                         ctx.CdpSession!,
-                        scrollCount: CommonHelper.RandomRange(1, 4),
-                        direction: PageScrollDirection.Up,
+                        duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                         cancellationToken: token);
+
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                     offerItems = ctx.Page.Locator("//div[contains(@class,'ec_content')]");
                     if (await offerItems.CountAsync() == 0)
@@ -2878,7 +2799,7 @@ namespace QTP.Plugins
                             if (await locator.CountAsync() > 0)
                             {
                                 await locator.First.ScrollIntoViewIfNeededAsync();
-                                var result = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
+                                var result = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
                                 if (result.Navigated)
                                 {
                                     break;
@@ -2890,12 +2811,12 @@ namespace QTP.Plugins
             }
             else if (url.Contains("uland.taobao.com"))
             {
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(1, 4),
-                    direction: PageScrollDirection.Up,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                     cancellationToken: token);
+
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 offerItems = ctx.Page.Locator("//a[starts-with(@class,'link')]");
             }
@@ -2918,12 +2839,12 @@ namespace QTP.Plugins
             }
             else if (url.Contains("m.jd.com"))
             {
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
-                    scrollCount: CommonHelper.RandomRange(1, 4),
-                    direction: PageScrollDirection.Up,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                     cancellationToken: token);
+
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
                 offerItems = ctx.Page.Locator(".commodity-list .commodity-desc,.list-con .product,a.goods,.feed-product-container");
@@ -2946,7 +2867,7 @@ namespace QTP.Plugins
                                 var target_text = await target.InnerTextAsync();
                                 if (!string.IsNullOrWhiteSpace(target_text))
                                     LogWriteLine(target_text);
-                                var result = await ClickElementAndDetectNavigationAsync(ctx, target, token);
+                                var result = await ClickAndDetectNavigationAsync(ctx, target, token);
                                 if (result.Navigated)
                                 {
                                     break;
@@ -3024,7 +2945,7 @@ namespace QTP.Plugins
                         var target_text = await target.InnerTextAsync();
                         if (!string.IsNullOrWhiteSpace(target_text))
                             LogWriteLine(target_text);
-                        var result = await ClickElementAndDetectNavigationAsync(ctx, target, token);
+                        var result = await ClickAndDetectNavigationAsync(ctx, target, token);
                         if (result.Navigated)
                         {
                             if (ctx.Page.Url.Contains("aden.baidu.com") || ctx.Page.Url.Contains("ada.baidu.com"))
@@ -3137,12 +3058,13 @@ namespace QTP.Plugins
 
 
             await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            await HumanScrollHelper.TouchPageLongScrollAsync(
+
+            await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                 ctx.Page!,
                 ctx.CdpSession!,
-                scrollCount: CommonHelper.RandomRange(1, 4),
-                direction: PageScrollDirection.Up,
+                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                 cancellationToken: token);
+
             await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
             if (medical)
             {
@@ -3159,7 +3081,7 @@ namespace QTP.Plugins
                         var target_text = await target.InnerTextAsync();
                         if (!string.IsNullOrWhiteSpace(target_text))
                             LogWriteLine(target_text);
-                        result = await ClickElementAndDetectNavigationAsync(ctx, target, token);
+                        result = await ClickAndDetectNavigationAsync(ctx, target, token);
                         if (result.Navigated)
                         {
                             break;
@@ -3183,7 +3105,7 @@ namespace QTP.Plugins
                             var target_text = await target.InnerTextAsync();
                             if (!string.IsNullOrWhiteSpace(target_text))
                                 LogWriteLine(target_text);
-                            result = await ClickElementAndDetectNavigationAsync(ctx, target, token);
+                            result = await ClickAndDetectNavigationAsync(ctx, target, token);
                             if (result.Navigated)
                             {
                                 break;
@@ -3200,7 +3122,7 @@ namespace QTP.Plugins
                     if (await locator.CountAsync() > 0)
                     {
                         await locator.First.ScrollIntoViewIfNeededAsync();
-                        result = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
+                        result = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
                     }
                 }
             }
@@ -3230,6 +3152,7 @@ namespace QTP.Plugins
         }
 
         #endregion
+
 
         #region Task Sleep Phase
 
@@ -3302,7 +3225,6 @@ namespace QTP.Plugins
 
 
             LogWriteLine("延时停留");
-            PageScrollDirection direction = PageScrollDirection.Up;
             var loop = 0;
             while (true)
             {
@@ -3313,19 +3235,18 @@ namespace QTP.Plugins
                 {
                     LogWriteLine("滑动操作");
 
-                    await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                    await HumanSwipeOperator.ChaoticBrowseOnceAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
-                    scrollCount: 1,
-                    direction: direction,
                     cancellationToken: token);
 
                     token.ThrowIfCancellationRequested();
 
                     if (await IsPageEnd(ctx.Page))
-                        direction = PageScrollDirection.Down;
+                        await HumanSwipeOperator.RandomDownOnceAsync(ctx.Page!, ctx.CdpSession!, cancellationToken: token);
                     else if (await IsPageTop(ctx.Page))
-                        direction = PageScrollDirection.Up;
+                        await HumanSwipeOperator.RandomUpOnceAsync(ctx.Page!, ctx.CdpSession!, cancellationToken: token);
 
                     if ((int)(DateTime.Now - start).TotalMilliseconds >= ctx.Config.SleepMs)
                         break;
@@ -3348,6 +3269,12 @@ namespace QTP.Plugins
             return FlowControl.EndTask;
         }
 
+        /// <summary>
+        /// 1688详情页,非询价处理
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         private async Task TryHandleNoRfq1688Async(WorkerRunContext ctx, CancellationToken token)
         {
             try
@@ -3357,13 +3284,13 @@ namespace QTP.Plugins
                 await Task.Delay(CommonHelper.RandomRange(200, 300), token);
                 await ClearSuccessTipNewCloseNew(ctx.Page!, ctx.CdpSession!);
                 await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                 ctx.Page!,
                 ctx.CdpSession!,
-                scrollCount: CommonHelper.RandomRange(0, 3),
-                direction: PageScrollDirection.Up,
+                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                 cancellationToken: token);
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
                 if (!_appSettings.NoTrigger1688Shop || CommonHelper.Chance(0.25))
                 {
                     var locator_detail = ctx.Page!.Locator("*:text-is('全部商品')");
@@ -3388,21 +3315,21 @@ namespace QTP.Plugins
                     {
                         await locator_detail.ScrollIntoViewIfNeededAsync();
                         await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
+                        var clickRes2 = await ClickAndDetectNavigationAsync(ctx, locator_detail.First, token);
                         if (clickRes2.Navigated)
                         {
-                            await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
+                            await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
                             await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
                             await Task.Delay(CommonHelper.RandomRange(200, 300), token);
                             await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
                             await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                            await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                            await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                             ctx.Page!,
                             ctx.CdpSession!,
-                            scrollCount: CommonHelper.RandomRange(0, 3),
-                            direction: PageScrollDirection.Up,
+                            duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                             cancellationToken: token);
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
                             locator_detail = ctx.Page
                                 .Locator("body,iframe")
                                 .Filter(new() { Visible = true })
@@ -3412,21 +3339,21 @@ namespace QTP.Plugins
                             {
                                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                                 await locator_detail.First.ScrollIntoViewIfNeededAsync();
-                                var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
+                                var clickRes3 = await ClickAndDetectNavigationAsync(ctx, locator_detail.First, token);
                                 if (clickRes3.Navigated)
                                 {
-                                    await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
+                                    await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
                                     await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
                                     await Task.Delay(CommonHelper.RandomRange(200, 300), token);
                                     await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
                                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                    await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                                     ctx.Page!,
                                     ctx.CdpSession!,
-                                    scrollCount: CommonHelper.RandomRange(0, 3),
-                                    direction: PageScrollDirection.Up,
+                                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                                     cancellationToken: token);
-                                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
                                 }
 
                             }
@@ -3442,21 +3369,19 @@ namespace QTP.Plugins
 
                         if (await locator_detail.CountAsync() > 0)
                         {
-                            var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator_detail.First, token);
+                            var clickRes3 = await ClickAndDetectNavigationAsync(ctx, locator_detail.First, token);
                             if (clickRes3.Navigated)
                             {
-                                await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
+                                await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
                                 await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
                                 await Task.Delay(CommonHelper.RandomRange(200, 300), token);
                                 await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
                                 await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                await HumanScrollHelper.TouchPageLongScrollAsync(
+                                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                                 ctx.Page!,
                                 ctx.CdpSession!,
-                                scrollCount: CommonHelper.RandomRange(0, 3),
-                                direction: PageScrollDirection.Up,
+                                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                                 cancellationToken: token);
-                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                             }
 
                         }
@@ -3476,222 +3401,17 @@ namespace QTP.Plugins
             return;
         }
 
+        /// <summary>
+        /// 1688详情页,询价处理
+        /// </summary>
+        /// <param name="ctx"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         private async Task TryHandleRfq1688Async(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             if (!ctx.Page!.Url.Contains("1688.com"))
                 return;
-
-            #region RFQ
-            //if (CommonHelper.RandomRange(0, 11) % 2 > 0)
-            //{
-            //    if (ctx.Page!.Url.Contains("m.1688.com"))
-            //    {
-            //        await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-            //        await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-            //        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //        await HumanScrollHelper.TouchPageLongScrollAsync(
-            //        ctx.Page!,
-            //        ctx.CdpSession!,
-            //        scrollCount: CommonHelper.RandomRange(0, 3),
-            //        direction: PageScrollDirection.Up,
-            //        cancellationToken: token);
-            //        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //        var locator = ctx.Page.Locator("*:text-is('全部商品')");
-            //        var locator_count = await locator.CountAsync();
-            //        if (locator_count == 0)
-            //        {
-            //            locator = ctx.Page.Locator("*:text-is('进店看看')");
-            //            locator_count = await locator.CountAsync();
-            //        }
-            //        if (locator_count == 0)
-            //        {
-            //            locator = ctx.Page.Locator("*:text-is('进店看厂')");
-            //            locator_count = await locator.CountAsync();
-            //        }
-            //        if (locator_count == 0)
-            //        {
-            //            locator = ctx.Page.Locator(".recommend-container");
-            //            locator_count = await locator.CountAsync();
-            //        }
-
-            //        if (locator_count > 0)
-            //        {
-            //            await locator.ScrollIntoViewIfNeededAsync();
-            //            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //            var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-            //            if (clickRes2.Navigated)
-            //            {
-            //                await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-            //                await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-            //                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //                await HumanScrollHelper.TouchPageLongScrollAsync(
-            //                ctx.Page!,
-            //                ctx.CdpSession!,
-            //                scrollCount: CommonHelper.RandomRange(0, 3),
-            //                direction: PageScrollDirection.Up,
-            //                cancellationToken: token);
-            //                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //                locator = ctx.Page
-            //                    .Locator("body,iframe")
-            //                    .Filter(new() { Visible = true })
-            //                    .First;
-
-            //                if (await locator.CountAsync() > 0)
-            //                {
-            //                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //                    await locator.First.ScrollIntoViewIfNeededAsync();
-            //                    var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-            //                    if (clickRes3.Navigated)
-            //                    {
-            //                        await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-            //                        await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-            //                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //                        await HumanScrollHelper.TouchPageLongScrollAsync(
-            //                        ctx.Page!,
-            //                        ctx.CdpSession!,
-            //                        scrollCount: CommonHelper.RandomRange(0, 3),
-            //                        direction: PageScrollDirection.Up,
-            //                        cancellationToken: token);
-            //                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //                    }
-
-            //                }
-            //            }
-
-            //        }
-            //        else
-            //        {
-            //            locator = ctx.Page
-            //                .Locator("body,iframe")
-            //                .Filter(new() { Visible = true })
-            //                .First;
-
-            //            if (await locator.CountAsync() > 0)
-            //            {
-            //                var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-            //                if (clickRes3.Navigated)
-            //                {
-            //                    await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-            //                    await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-            //                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //                    await HumanScrollHelper.TouchPageLongScrollAsync(
-            //                    ctx.Page!,
-            //                    ctx.CdpSession!,
-            //                    scrollCount: CommonHelper.RandomRange(0, 3),
-            //                    direction: PageScrollDirection.Up,
-            //                    cancellationToken: token);
-            //                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //                }
-
-            //            }
-            //        }
-            //        return;
-            //    }
-
-            //    if (!(_appSettings.Rfq1688 && _appSettings.Rfq1688Rate > 0 && ctx.Page!.Url.Contains("m.p4psearch.1688.com")))
-            //    {
-            //        await ClearPageCloseBtn(ctx.Page!, ctx.CdpSession!);
-            //        await ClearSuccessTipNewCloseNew(ctx.Page!, ctx.CdpSession!);
-            //        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //        await HumanScrollHelper.TouchPageLongScrollAsync(
-            //        ctx.Page!,
-            //        ctx.CdpSession!,
-            //        scrollCount: CommonHelper.RandomRange(0, 3),
-            //        direction: PageScrollDirection.Up,
-            //        cancellationToken: token);
-            //        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //        var locator = ctx.Page.Locator("*:text-is('全部商品')");
-            //        var locator_count = await locator.CountAsync();
-            //        if (locator_count == 0)
-            //        {
-            //            locator = ctx.Page.Locator("*:text-is('进店看看')");
-            //            locator_count = await locator.CountAsync();
-            //        }
-            //        if (locator_count == 0)
-            //        {
-            //            locator = ctx.Page.Locator("*:text-is('进店看厂')");
-            //            locator_count = await locator.CountAsync();
-            //        }
-            //        if (locator_count == 0)
-            //        {
-            //            locator = ctx.Page.Locator(".recommend-container");
-            //            locator_count = await locator.CountAsync();
-            //        }
-
-            //        if (locator_count > 0)
-            //        {
-            //            await locator.ScrollIntoViewIfNeededAsync();
-            //            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //            var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-            //            if (clickRes2.Navigated)
-            //            {
-            //                await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-            //                await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-            //                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //                await HumanScrollHelper.TouchPageLongScrollAsync(
-            //                ctx.Page!,
-            //                ctx.CdpSession!,
-            //                scrollCount: CommonHelper.RandomRange(0, 3),
-            //                direction: PageScrollDirection.Up,
-            //                cancellationToken: token);
-            //                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //                locator = ctx.Page
-            //                    .Locator("body,iframe")
-            //                    .Filter(new() { Visible = true })
-            //                    .First;
-
-            //                if (await locator.CountAsync() > 0)
-            //                {
-            //                    var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-            //                    if (clickRes3.Navigated)
-            //                    {
-            //                        await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-            //                        await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-            //                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //                        await HumanScrollHelper.TouchPageLongScrollAsync(
-            //                        ctx.Page!,
-            //                        ctx.CdpSession!,
-            //                        scrollCount: CommonHelper.RandomRange(0, 3),
-            //                        direction: PageScrollDirection.Up,
-            //                        cancellationToken: token);
-            //                        await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //                    }
-
-            //                }
-            //            }
-
-            //        }
-            //        else
-            //        {
-            //            locator = ctx.Page
-            //                .Locator("body,iframe")
-            //                .Filter(new() { Visible = true })
-            //                .First;
-
-            //            if (await locator.CountAsync() > 0)
-            //            {
-            //                var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
-            //                if (clickRes3.Navigated)
-            //                {
-            //                    await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
-            //                    await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
-            //                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-            //                    await HumanScrollHelper.TouchPageLongScrollAsync(
-            //                    ctx.Page!,
-            //                    ctx.CdpSession!,
-            //                    scrollCount: CommonHelper.RandomRange(0, 3),
-            //                    direction: PageScrollDirection.Up,
-            //                    cancellationToken: token);
-            //                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-            //                }
-
-            //            }
-            //        }
-            //        return;
-            //    }
-            //}
-            #endregion
 
             try
             {
@@ -3765,21 +3485,6 @@ namespace QTP.Plugins
                         await el.First.PressSequentiallyAsync(chatText);
                         await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
                     }
-                    
-                    //var texts = new[]
-                    //{
-                    //    "有没有现货","价格还有空间吗","什么时间发货","有活动吗","工厂在哪里","实物图是否一致",
-                    //    "能否提供质检","可以寄样品给我吗","批发价是多少","可以开发票吧","这款支持一件代发吗","包邮吗"
-                    //};
-
-                    //el = ctx.Page.Locator("textarea#new_od_xst_msg_input_val_new_message,textarea#od_xst_msg_input_val_new_message");
-                    //if (await el.CountAsync() > 0)
-                    //{
-                    //    await el.First.FillAsync("");
-                    //    await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-                    //    await el.First.PressSequentiallyAsync(texts[CommonHelper.RandomRange(0, texts.Length)]);
-                    //    await Task.Delay(CommonHelper.RandomRange(1500, 2000), token);
-                    //}
                 }
 
                 el = ctx.Page.Locator(".new_successTipNew_wangwang_new,.successTipNew_call_new");
@@ -3811,13 +3516,12 @@ namespace QTP.Plugins
                 await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
                 await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
                 await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                 ctx.Page!,
                 ctx.CdpSession!,
-                scrollCount: CommonHelper.RandomRange(0, 3),
-                direction: PageScrollDirection.Up,
+                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                 cancellationToken: token);
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
                 if (!_appSettings.NoTrigger1688Shop || CommonHelper.Chance(0.25))
                 {
@@ -3843,19 +3547,20 @@ namespace QTP.Plugins
                     {
                         await locator.ScrollIntoViewIfNeededAsync();
                         await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        var clickRes2 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
+                        var clickRes2 = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
                         if (clickRes2.Navigated)
                         {
                             await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
                             await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
                             await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                            await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                            await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                             ctx.Page!,
                             ctx.CdpSession!,
-                            scrollCount: CommonHelper.RandomRange(0, 3),
-                            direction: PageScrollDirection.Up,
+                            duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                             cancellationToken: token);
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+
                             locator = ctx.Page
                                 .Locator("body,iframe")
                                 .Filter(new() { Visible = true })
@@ -3863,19 +3568,17 @@ namespace QTP.Plugins
 
                             if (await locator.CountAsync() > 0)
                             {
-                                var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
+                                var clickRes3 = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
                                 if (clickRes3.Navigated)
                                 {
                                     await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
                                     await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
                                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                    await HumanScrollHelper.TouchPageLongScrollAsync(
+                                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                                     ctx.Page!,
                                     ctx.CdpSession!,
-                                    scrollCount: CommonHelper.RandomRange(0, 3),
-                                    direction: PageScrollDirection.Up,
+                                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                                     cancellationToken: token);
-                                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                                 }
 
                             }
@@ -3891,19 +3594,20 @@ namespace QTP.Plugins
 
                         if (await locator.CountAsync() > 0)
                         {
-                            var clickRes3 = await ClickElementAndDetectNavigationAsync(ctx, locator.First, token);
+                            var clickRes3 = await ClickAndDetectNavigationAsync(ctx, locator.First, token);
                             if (clickRes3.Navigated)
                             {
                                 await ClearPageCloseBtn(ctx.Page, ctx.CdpSession!);
                                 await ClearSuccessTipNewCloseNew(ctx.Page, ctx.CdpSession!);
                                 await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                await HumanScrollHelper.TouchPageLongScrollAsync(
+
+                                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                                 ctx.Page!,
                                 ctx.CdpSession!,
-                                scrollCount: CommonHelper.RandomRange(0, 3),
-                                direction: PageScrollDirection.Up,
+                                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                                 cancellationToken: token);
-                                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+
                             }
 
                         }
@@ -3996,13 +3700,11 @@ namespace QTP.Plugins
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                 ctx.Page!,
                 ctx.CdpSession!,
-                scrollCount: CommonHelper.RandomRange(2, 4),
-                direction: PageScrollDirection.Up,
+                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                 cancellationToken: token);
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
                 ClickResult? clickResult = null;
                 var options = new ClickAreaOptions
@@ -4042,12 +3744,12 @@ namespace QTP.Plugins
                 {
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
 
-                    await HumanScrollHelper.TouchPageLongScrollAsync(
-                      ctx.Page!,
-                      ctx.CdpSession!,
-                      scrollCount: CommonHelper.RandomRange(2, 4),
-                      direction: PageScrollDirection.Up,
-                      cancellationToken: token);
+                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
+                    cancellationToken: token);
+
 
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                     nodes = await PlaywrightClickableHelper.GetClickableNodesAsync(ctx.Page, options);
@@ -4084,13 +3786,12 @@ namespace QTP.Plugins
         }
 
 
+
         private async Task TryHandleAllAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             if (ctx.Page!.Url.Contains("taobao.com") || ctx.Page!.Url.Contains("1688.com") || ctx.Page!.Url.Contains("jd.com") || ctx.Page!.Url.Contains("baidu.com"))
                 return;
-
-
             try
             {
                 await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
@@ -4110,13 +3811,12 @@ namespace QTP.Plugins
                 }
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 
-                await HumanScrollHelper.TouchPageLongScrollAsync(
+                await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                 ctx.Page!,
                 ctx.CdpSession!,
-                scrollCount: CommonHelper.RandomRange(2, 4),
-                direction: PageScrollDirection.Up,
+                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
                 cancellationToken: token);
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
                 ClickResult? clickResult = null;
                 var bd_locator = ctx.Page.Locator("div.baidu-ad").Filter(new() { Visible = true });
                 var bd_locator_count = await bd_locator.CountAsync();
@@ -4151,7 +3851,7 @@ namespace QTP.Plugins
                             var box = await el.BoundingBoxAsync();
                             if (box == null || box.Width <= 0 || box.Height <= 0)
                                 continue;
-                            clickResult = await ClickElementHandleAndDetectNavigationAsync(ctx, el, token);
+                            clickResult = await ClickAndDetectNavigationAsync(ctx, el, token);
                             if (clickResult.Navigated)
                             {
                                 break;
@@ -4200,12 +3900,12 @@ namespace QTP.Plugins
                 {
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
 
-                    await HumanScrollHelper.TouchPageLongScrollAsync(
-                      ctx.Page!,
-                      ctx.CdpSession!,
-                      scrollCount: CommonHelper.RandomRange(0, 3),
-                      direction: PageScrollDirection.Up,
-                      cancellationToken: token);
+                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
+                    cancellationToken: token);
+
 
                     await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
                     var options = new ClickAreaOptions
@@ -4253,7 +3953,12 @@ namespace QTP.Plugins
 
 
 
+
+
         #endregion
+
+
+
 
         #region Test Branch
 
@@ -4409,18 +4114,17 @@ namespace QTP.Plugins
         /// 点击目标,处理弹窗
         /// </summary>
         /// <param name="ctx"></param>
-        /// <param name="locator"></param>
+        /// <param name="element"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<ClickResult> ClickAndDetectNavigationAsync(WorkerRunContext ctx, ILocator locator, CancellationToken token)
+        public async Task<ClickResult> ClickAndDetectNavigationAsync(WorkerRunContext ctx, ILocator element, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-
             try
             {
                 ctx.PagesCount = ctx.Context!.Pages.Count;
                 ctx.CurrentPageUrl = ctx.Page!.Url;
-                await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, locator);
+                await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, element);
                 await Task.Delay(CommonHelper.RandomRange(50, 100), token);
 
                 try
@@ -4457,7 +4161,49 @@ namespace QTP.Plugins
                 return ClickResult.Fail();
             }
         }
+        public async Task<ClickResult> ClickAndDetectNavigationAsync(WorkerRunContext ctx, IElementHandle element, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                ctx.PagesCount = ctx.Context!.Pages.Count;
+                ctx.CurrentPageUrl = ctx.Page!.Url;
+                await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, element);
+                await Task.Delay(CommonHelper.RandomRange(50, 100), token);
+                try
+                {
+                    await ctx.Page!.WaitForURLAsync(
+                        u => !u.Equals(ctx.CurrentPageUrl),
+                        new PageWaitForURLOptions
+                        {
+                            WaitUntil = WaitUntilState.DOMContentLoaded,
+                            Timeout = 10000
+                        });
+                }
+                catch (TimeoutException) { }
 
+                if (ctx.Context.Pages.Count > ctx.PagesCount)
+                {
+                    ctx.Page = ctx.Context.Pages[^1];
+                    ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
+                    await CDPHelper.InitCDPSession(ctx.CdpSession, ctx.Config.MaxTouchPoints);
+                    return ClickResult.SuccessNewPage();
+                }
+
+                if (!ctx.Page.Url.StartsWith(ctx.CurrentPageUrl))
+                    return ClickResult.SuccessSamePage();
+
+                return ClickResult.NoNavigation();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return ClickResult.Fail();
+            }
+        }
         public async Task<ClickResult> TryRandomViewportClickableClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
@@ -4471,7 +4217,7 @@ namespace QTP.Plugins
                 foreach (var target in elements.OrderBy(_ => Guid.NewGuid()))
                 {
                     token.ThrowIfCancellationRequested();
-                    var result = await ClickElementHandleAndDetectNavigationAsync(ctx, target, token);
+                    var result = await ClickAndDetectNavigationAsync(ctx, target, token);
                     if (result.Navigated)
                         return result;
                 }
@@ -4484,146 +4230,6 @@ namespace QTP.Plugins
 
             return ClickResult.NoNavigation();
         }
-
-        private async Task<ClickResult> ClickElementHandleAndDetectNavigationAsync(WorkerRunContext ctx, IElementHandle handle, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            try
-            {
-                ctx.PagesCount = ctx.Context!.Pages.Count;
-                ctx.CurrentPageUrl = ctx.Page!.Url;
-
-                await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, handle);
-                await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-
-                try
-                {
-                    await ctx.Page!.WaitForURLAsync(
-                        u => !u.Equals(ctx.CurrentPageUrl),
-                        new PageWaitForURLOptions
-                        {
-                            WaitUntil = WaitUntilState.DOMContentLoaded,
-                            Timeout = 10000
-                        });
-                }
-                catch (TimeoutException) { }
-
-                if (ctx.Context.Pages.Count > ctx.PagesCount)
-                {
-                    ctx.Page = ctx.Context.Pages[^1];
-                    ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-                    await CDPHelper.InitCDPSession(ctx.CdpSession, ctx.Config.MaxTouchPoints);
-                    return ClickResult.SuccessNewPage();
-                }
-
-                if (!ctx.Page.Url.StartsWith(ctx.CurrentPageUrl))
-                    return ClickResult.SuccessSamePage();
-
-                return ClickResult.NoNavigation();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                return ClickResult.Fail();
-            }
-        }
-
-        private async Task<ClickResult> ClickElementHandleAndDetectNavigationAsync(WorkerRunContext ctx, ILocator handle, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            try
-            {
-                ctx.PagesCount = ctx.Context!.Pages.Count;
-                ctx.CurrentPageUrl = ctx.Page!.Url;
-
-                await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, handle);
-                await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-
-                try
-                {
-                    await ctx.Page!.WaitForURLAsync(
-                        u => !u.Equals(ctx.CurrentPageUrl),
-                        new PageWaitForURLOptions
-                        {
-                            WaitUntil = WaitUntilState.DOMContentLoaded,
-                            Timeout = 10000
-                        });
-                }
-                catch (TimeoutException) { }
-
-                if (ctx.Context.Pages.Count > ctx.PagesCount)
-                {
-                    ctx.Page = ctx.Context.Pages[^1];
-                    ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-                    await CDPHelper.InitCDPSession(ctx.CdpSession, ctx.Config.MaxTouchPoints);
-                    return ClickResult.SuccessNewPage();
-                }
-
-                if (!ctx.Page.Url.StartsWith(ctx.CurrentPageUrl))
-                    return ClickResult.SuccessSamePage();
-
-                return ClickResult.NoNavigation();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                return ClickResult.Fail();
-            }
-        }
-
-        public async Task<ClickResult> ClickElementAndDetectNavigationAsync(WorkerRunContext ctx, ILocator target, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            try
-            {
-                ctx.PagesCount = ctx.Context!.Pages.Count;
-                ctx.CurrentPageUrl = ctx.Page!.Url;
-
-                await CDPHelper.TouchClickVisibleLocatorAsync(ctx.Page!, ctx.CdpSession!, target);
-                //await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, target);
-                await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-                try
-                {
-                    await ctx.Page!.WaitForURLAsync(
-                        u => !u.Equals(ctx.CurrentPageUrl),
-                        new PageWaitForURLOptions
-                        {
-                            WaitUntil = WaitUntilState.DOMContentLoaded,
-                            Timeout = 10000
-                        });
-                }
-                catch (TimeoutException) { }
-                if (ctx.Context.Pages.Count > ctx.PagesCount)
-                {
-                    ctx.Page = ctx.Context.Pages[^1];
-                    ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-                    await CDPHelper.InitCDPSession(ctx.CdpSession, ctx.Config.MaxTouchPoints);
-                    return ClickResult.SuccessNewPage();
-                }
-                if (!ctx.Page.Url.StartsWith(ctx.CurrentPageUrl))
-                    return ClickResult.SuccessSamePage();
-
-                return ClickResult.NoNavigation();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                return ClickResult.Fail();
-            }
-        }
-
         public async Task<ClickResult> TryRandomLinkClickAsync(WorkerRunContext ctx, string selector, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
@@ -4644,19 +4250,15 @@ namespace QTP.Plugins
             foreach (var link in clickable.OrderBy(_ => Guid.NewGuid()))
             {
                 token.ThrowIfCancellationRequested();
-
                 await link.ScrollIntoViewIfNeededAsync();
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-
                 var result = await ClickAndDetectNavigationAsync(ctx, link.First, token);
                 if (result.Navigated)
                     return result;
             }
-
             return ClickResult.NoNavigation();
         }
-
-        private async Task<List<IElementHandle>> GetCurrentViewportClickableElementsAsync(IPage page, CancellationToken token)
+        public async Task<List<IElementHandle>> GetCurrentViewportClickableElementsAsync(IPage page, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
@@ -4700,7 +4302,6 @@ namespace QTP.Plugins
 
             return elements;
         }
-
         #endregion
 
 

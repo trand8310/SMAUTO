@@ -1,13 +1,10 @@
-﻿using QTP.Common;
+﻿using PlaywrightHumanInput;
+using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
-using SMAd.Swiper;
- 
+
 namespace SMAd.LandingPolicy
 {
-
-
-
     public sealed class AiStudyLandingPageStrategy : ILandingPageStrategy
     {
         private readonly SMAdTask _owner;
@@ -63,13 +60,13 @@ namespace SMAd.LandingPolicy
             if (count > 0)
             {
                 var item = recommend.Nth(CommonHelper.RandomRange(0, count));
-                await SwipeEmulator.SwipeToElementAsync(
-                ctx.Page,
-                ctx.CdpSession!,
-                item,
-                maxSwipes: 10,
-                cancellationToken: token);
 
+                await HumanSwipeOperator.MoveToElementVisibleAsync(
+                  ctx.Page!,
+                  ctx.CdpSession!,
+                  item,
+                  maxSwipes: 10,
+                  cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
             }

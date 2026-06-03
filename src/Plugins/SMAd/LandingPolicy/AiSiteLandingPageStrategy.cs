@@ -1,9 +1,8 @@
-﻿using QTP.Common;
+﻿using PlaywrightHumanInput;
+using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
-using SMAd.Swiper;
-
-
+using System.Runtime.Intrinsics.Arm;
 namespace SMAd.LandingPolicy
 {
     public sealed class AiSiteLandingPageStrategy : ILandingPageStrategy
@@ -67,26 +66,27 @@ namespace SMAd.LandingPolicy
 
 
 
-            await HumanScrollHelper.TouchPageLongScrollAsync(
-            ctx.Page!,
-            ctx.CdpSession!,
-            scrollCount: CommonHelper.RandomRange(0, 3),
-            direction: PageScrollDirection.Up,
-            cancellationToken: token);
-            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+
+            await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
+                ctx.Page!,
+                ctx.CdpSession!,
+                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
+                cancellationToken: token);
+
+
+
             var offerItems = ctx.Page.Locator(".ad-card-title,.ad-card-image,.ad-card-conv-btn");
             if (await offerItems.CountAsync() > 0)
             {
                 int count = await offerItems.CountAsync();
                 var offer = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                await SwipeEmulator.SwipeToElementAsync(
+                await HumanSwipeOperator.MoveToElementVisibleAsync(
                     ctx.Page,
                     ctx.CdpSession!,
                     offer,
                     maxSwipes: 10,
                     cancellationToken: token);
-
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 var click = await _owner.ClickAndDetectNavigationAsync(ctx, offer, token);

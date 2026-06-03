@@ -20,7 +20,18 @@ namespace QTP.Common
         private const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 
-
+        public static uint GetStableHash(string s)
+        {
+            unchecked
+            {
+                uint hash = 2166136261;
+                foreach (char c in s)
+                {
+                    hash = (hash ^ c) * 16777619;
+                }
+                return hash;
+            }
+        }
 
         /// <summary>
         /// 生成一个随机数
@@ -136,6 +147,14 @@ namespace QTP.Common
         {
             return Random.Shared.Next(min, max);
         }
+        public static double RandomRangeDouble(double min, double max)
+        {
+            if (max < min)
+                (min, max) = (max, min);
+
+            return min + Random.Shared.NextDouble() * (max - min);
+        }
+
 
         /// <summary>
         /// 返回[min, max)之间的随机整数
