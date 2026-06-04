@@ -49,6 +49,9 @@ namespace MainClient
         private readonly ChineseNameGenerator _nameGenerator;
         private readonly FileCleanupQueue _fileCleanupQueue = new();
         private int _startupAutomationTriggered = 0;
+
+        public float scaleX = 1.0f;
+        public float scaleY = 1.0f;
         private WsClientService? _wsClient;
         #region 任务调度
         private PipelineRunner<JToken>? _pipeline;
@@ -951,10 +954,10 @@ namespace MainClient
         private void ApplyOneTimeLocalPatch()
         {
 
-            string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Data", "patches");
+            string patchDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "patches");
             if (!Directory.Exists(patchDir))
                 Directory.CreateDirectory(patchDir);
-            string patchFile = Path.Combine(patchDir, "patch_page_loading202606012212.done");
+            string patchFile = Path.Combine(patchDir, "patch_page_loading202606031350.done");
             if (File.Exists(patchFile))
                 return;
 
@@ -1639,7 +1642,7 @@ namespace MainClient
                 if (_appSettings.IsRealIp)
                 {
                     ctx.RealIp =
-                        ipEntity.json["rip"]?.ToString()??
+                        ipEntity.json["rip"]?.ToString() ??
                         ipEntity.json["real_ip"]?.ToString() ??
                         ipEntity.json["realIp"]?.ToString() ??
                         string.Empty;
@@ -1829,6 +1832,8 @@ namespace MainClient
                 ["cleaningWords"] = _appSettings.CleaningWords,
                 ["notTriggerDownload"] = _appSettings.NotTriggerDownload,
                 ["protocol"] = _appSettings.Protocol,  // "socks5",//"http"
+                ["scaleX"] = this.scaleX,
+                ["scaleY"] = this.scaleY,
             };
 
             return args;
@@ -1890,7 +1895,7 @@ namespace MainClient
 
                 LogWriteLine(
                     $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
-   
+
 
                 try
                 {
@@ -2161,6 +2166,15 @@ namespace MainClient
                 return;
 
             btnStartStop.Enabled = false;
+
+            using (Graphics g = this.CreateGraphics())
+            {
+                float dpiX = g.DpiX;
+                float dpiY = g.DpiY;
+                scaleX = dpiX / 96f;
+                scaleY = dpiY / 96f;
+            }
+
 
             try
             {

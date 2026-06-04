@@ -9,6 +9,7 @@ using QTP.Common.Win32;
 using SMAd;
 using SMAd.LandingPolicy;
 using SMAd.Models;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 
@@ -597,7 +598,7 @@ namespace QTP.Plugins
                     }
                     else
                     {
-                        result.Add($"--webrtc-ip-handling-policy=default_public_interface_only");
+                        result.Add($"--webrtc-ip-handling-policy=default");
                     }
                 }
                 else
@@ -712,11 +713,6 @@ namespace QTP.Plugins
             if (dev_hash % 2 == 0)
             {
                 result.Add("--disable-pdf-viewer");
-            }
-
-            if (new bool[] { true, true, false, true, true, false, true, true, false, true }[CommonHelper.RandomRange(0, 10)])
-            {
-                result.Add("--disable-geolocation");
             }
 
 
@@ -1165,7 +1161,7 @@ namespace QTP.Plugins
                         LogWriteLine($"{this.Title}:ExecuteWorker:任务失败: {ctx.LastFailureReason}");
                     }
                 }
-
+                await Task.Delay(CommonHelper.RandomRange(1200, 2500));
                 return (ok, ctx.PageTriggerClick, ctx.PageAdsCount);
             }
             catch (OperationCanceledException)
@@ -1278,6 +1274,8 @@ namespace QTP.Plugins
 
         private async Task<bool> RunMainFlowAsync(WorkerRunContext ctx, CancellationToken token)
         {
+            using var swipeStyleScope = HumanSwipeEmulator.BeginStyleScope(ctx.SwipeStyleProfile);
+
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
             {
                 token.ThrowIfCancellationRequested();
@@ -1305,6 +1303,7 @@ namespace QTP.Plugins
                     continue;
                 }
 
+
                 if (ctx.Config.IsTest)
                 {
                     //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=塑料";
@@ -1330,7 +1329,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
+                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
 
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1629,40 +1628,57 @@ namespace QTP.Plugins
 
         private List<string> BuildChromiumArgs(TaskConfig config, out string proxyServer)
         {
+
+
+            var scaleX = config.TaskArgs.SelectToken("scaleX")?.Value<float>() ?? 1.0;
+            var scaleY = config.TaskArgs.SelectToken("scaleY")?.Value<float>() ?? 1.0;
+
             var args = new List<string>
             {
-                "--disable-extensions",
-                "--disable-default-apps",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-component-update",
+                "--disable-field-trial-config",
                 "--disable-background-networking",
-                "--metrics-recording-only",
-                "--disable-client-side-phishing-detection",
-                "--disable-popup-blocking",
-                "--disable-infobars",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-breakpad",
+                "--no-default-browser-check",
+                "--disable-dev-shm-usage",
+                "--disable-edgeupdater",
+                "--disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion,DnsOverHttps,UseDnsHttpsSvcbAlpn",
+                "--enable-features=CDPScreenshotNewSurface",
+                "--disable-hang-monitor",
+                "--disable-prompt-on-repost",
+                "--disable-renderer-backgrounding",
+                "--force-color-profile=srgb",
+                "--no-first-run",
+                "--password-store=basic",
                 "--use-mock-keychain",
                 "--no-service-autorun",
-                "--force-color-profile=srgb",
-                "--disable-features=LensOverlay,Translate,DnsOverHttps,UseDnsHttpsSvcbAlpn",
+                "--export-tagged-pdf",
+                "--disable-search-engine-choice-screen",
+                "--edge-skip-compat-layer-relaunch",
+                "--disable-infobars",
+                "--disable-sync",
+                "--disable-blink-features=AutomationControlled",
                 "--disable-logging",
                 "--disable-quic",
-                //"--virtual-clipboard",
                 "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream",
+                "--enable-unsafe-swiftshader",
                 "--show-avatar-button=never",
                 "--disable-http2-grease-settings",
                 "--hide-bad-flags",
                 "--hide-crashed-bubble",
-                "--enable-unsafe-swiftshader",
+
+
+                "--virtual-clipboard",
                 "--mouse-as-touch",
                 "--touch-events=enabled",
                 $"--user-agent=\"{config.UserAgent}\"",
-                $"--window-size=\"{config.Sw + 16},{config.Sh + 96}\"",
+                $"--window-size={(int)Math.Ceiling( config.Sw + scaleX)},{(int)Math.Ceiling( config.Sh + scaleY)}",
                 "--window-position=0,0",
-                $"--device-pixel-ratio={config.DeviceScale}",
-                $"--screen-size=\"{config.Sw},{config.Sh}\"",
-               // $"--screen-avail-size=\"{config.Sw},{config.Sh}\"",
+                //$"--device-pixel-ratio={config.DeviceScale}",
+                //$"--screen-size={config.Sw * scaleX},{config.Sh * scaleY}",
+               // $"--screen-avail-size={config.Sw},{config.Sh}",
             };
 
             if (config.Os == 1 || config.Os == 2)
@@ -1680,9 +1696,10 @@ namespace QTP.Plugins
                 if (!string.IsNullOrWhiteSpace(protocol) && protocol.Equals("socks5"))
                 {
                     args.Add($"--proxy-server=\"socks5://{proxyServer}\"");
-                    //--proxy-server="socks5://127.0.0.1:1080" ^
-                    //--disable-features=DnsOverHttps ^
-                    //--host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"
+                    var proxyServerIp = proxyServer.Split(':').FirstOrDefault() ?? "";
+                    if (!string.IsNullOrWhiteSpace(proxyServerIp))
+                        args.Add($"--host-resolver-rules=\"MAP * ~NOTFOUND , EXCLUDE {proxyServerIp}\"");
+                    args.Add($"--proxy-bypass-list=<-loopback>");
                 }
                 else
                 {
@@ -1690,6 +1707,8 @@ namespace QTP.Plugins
                 }
 
             }
+
+
 
             if (config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false)
                 args.Add("--headless");
