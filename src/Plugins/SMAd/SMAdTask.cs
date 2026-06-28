@@ -510,6 +510,9 @@ namespace QTP.Plugins
             {
                 result.Add("--platform=\"Android\"");
             }
+            var make = taskArgs.SelectToken("dev.make")?.Value<string>().ToLower();
+
+            result.Add("--fingerprint-config-dir=\"" + System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fingerprint") + "\"");
 
 
             var full_version = taskArgs.SelectToken("dev.full_version").Value<string>();
@@ -521,25 +524,24 @@ namespace QTP.Plugins
             if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand")?.Value<string>()))
             {
                 var brand = taskArgs.SelectToken("dev.brand")?.Value<string>();
+                if (!string.IsNullOrWhiteSpace(make))
+                {
+                    result.Add($"--make-name=\"{make}\"");
 
+                    //   "--make-name="huawei" --fingerprint-config-dir="E:\code\fingerprint""
+                }
                 result.Add($"--brand=\"{brand}\"");
                 result.Add($"--brand-name=\"{brand}\"");
                 if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand_version")?.Value<string>()))
                     result.Add($"--brand-version=\"{taskArgs.SelectToken("dev.brand_version")?.Value<string>()}\"");
 
-                if (fingerprint % 2 == 0)
-                {
-                    result.Add($"--disable-full-version-list");
+                result.Add($"--disable-full-version-list");
+                result.Add($"--disable-brand-version-list");
 
-                    if (fingerprint % 5 == 0)
-                    {
-                        result.Add($"--disable-brand-version-list");
-                    }
-                }
 
                 if (os == 1 || os == 2)
                 {
-                    var make = taskArgs.SelectToken("dev.make")?.Value<string>().ToLower();
+
                     if (!string.IsNullOrWhiteSpace(make))
                     {
                         if (make.Contains("xiaomi"))
@@ -616,66 +618,6 @@ namespace QTP.Plugins
             #region webgl
             result.Add($"--webgl-vendor=\"{vendor}\"");
             result.Add($"--webgl-renderer=\"{gpu}\"");
-
-
-            Random rand = new Random(Math.Abs($"{vendor}{gpu}".ToLower().GetHashCode()));
-
-            var webgl_extensions = new string[] {
-                "EXT_clip_control|WEBGL_stencil_texturing|WEBGL_provoking_vertex|WEBGL_polygon_mode|WEBGL_multi_draw|WEBGL_lose_context|WEBGL_debug_shaders|WEBGL_debug_renderer_info|WEBGL_compressed_texture_s3tc_srgb|WEBGL_compressed_texture_s3tc|WEBGL_clip_cull_distance|WEBGL_blend_func_extended|OVR_multiview2|OES_texture_float_linear|OES_shader_multisample_interpolation|OES_sample_variables|OES_draw_buffers_indexed|NV_shader_noperspective_interpolation|KHR_parallel_shader_compile|EXT_texture_norm16|EXT_texture_mirror_clamp_to_edge|EXT_texture_filter_anisotropic|EXT_texture_compression_rgtc|EXT_texture_compression_bptc|EXT_render_snorm|EXT_polygon_offset_clamp|EXT_float_blend|EXT_disjoint_timer_query_webgl2|EXT_depth_clamp|EXT_conservative_depth|EXT_color_buffer_half_float|EXT_color_buffer_float",
-                "EXT_clip_control|WEBGL_stencil_texturing|WEBGL_polygon_mode|WEBGL_multi_draw|WEBGL_lose_context|WEBGL_debug_shaders|WEBGL_debug_renderer_info|WEBGL_compressed_texture_s3tc_srgb|WEBGL_compressed_texture_s3tc|WEBGL_compressed_texture_etc1|WEBGL_compressed_texture_etc|WEBGL_compressed_texture_astc|WEBGL_clip_cull_distance|OVR_multiview2|OES_texture_float_linear|OES_shader_multisample_interpolation|OES_sample_variables|OES_draw_buffers_indexed|NV_shader_noperspective_interpolation|EXT_texture_mirror_clamp_to_edge|EXT_texture_filter_anisotropic|EXT_texture_compression_rgtc|EXT_texture_compression_bptc|EXT_polygon_offset_clamp|EXT_float_blend|EXT_depth_clamp|EXT_conservative_depth|EXT_color_buffer_half_float|EXT_color_buffer_float",
-                "EXT_color_buffer_float|WEBGL_multi_draw|WEBGL_lose_context|WEBGL_debug_shaders|WEBGL_debug_renderer_info|WEBGL_compressed_texture_s3tc_srgb|WEBGL_compressed_texture_s3tc|WEBGL_compressed_texture_etc1|WEBGL_compressed_texture_etc|WEBGL_compressed_texture_astc|OES_texture_float_linear|EXT_texture_norm16|EXT_texture_filter_anisotropic|EXT_texture_compression_rgtc|EXT_texture_compression_bptc|EXT_float_blend|EXT_color_buffer_half_float",
-            };
-            var webgl_extension_text = string.Join("|", webgl_extensions[rand.Next(0, 3)].Split(new string[] { "|" }, StringSplitOptions.RemoveEmptyEntries).OrderBy(o => Guid.NewGuid()));
-            result.Add($"--webgl-extensions=\"{webgl_extension_text}\"");
-            var webgl_vertex_shaders = new string[] {
-                "32,256,16,31,1024,14,128,124,128,4,4,1-8,1-1023",
-                "32,512,16,31,2048,36,128,124,64,4,4,1-4095.9375,1-1024",
-                "32,1024,16,31,4096,48,128,124,64,4,4,1-16.7456,1-1024",
-                "32,2048,16,31,8192,36,128,124,64,4,4,1-32.1247,1-1024",
-                "32,4096,16,31,16384,48,128,124,64,4,4,1-1024.6631,1-1024",
-                "32,8192,16,31,1024,36,128,124,64,4,4,1-2048.4475,1-1024",
-            };
-
-            result.Add($"--webgl-vertex-shader=\"{webgl_vertex_shaders[rand.Next(0, 6)]}\"");
-            var webgl_fragment_shaders = new string[] {
-                "256,16,1024,14,128,-8,7",
-                "512,16,2048,36,124,-8,7",
-                "1024,16,4096,36,124,-8,7",
-                "2048,16,16384,36,124,-8,7",
-                "4096,16,8192,36,124,-8,7",
-                "8192,16,16384,36,124,-8,7",
-            };
-
-            result.Add($"--webgl-fragment-shader=\"{webgl_fragment_shaders[rand.Next(0, 6)]}\"");
-            var webgl_frame_buffers = new string[] {
-                "8,8,4,,16384,16384-16384,8,8,8,8,24,0",
-                "8,8,4,,16383,16383-16383,8,8,8,8,24,0",
-                "8,8,4,,65535,65535-65535,8,8,8,8,24,0"
-            };
-            result.Add($"--webgl-frame-buffer=\"{webgl_frame_buffers[rand.Next(0, 3)]}\"");
-
-
-            var webgl_textures = new string[] {
-                "4096,4096,96,16,2048,2048,16",
-                "4096,4096,96,16,16383,4096,256",
-                "4096,4096,96,16,8192,4096,128",
-                "4096,4096,96,16,4096,4096,64",
-                "4096,4096,96,16,16383,4096,128",
-                "4096,4096,96,16,2048,4096,128",
-                "4096,4096,96,16,2048,4096,256",
-            };
-
-            result.Add($"--webgl-textures=\"{webgl_textures[rand.Next(0, 7)]}\"");
-            var webgl_uniform_buffers = new string[] {
-                "84,65536,32,84,230400,230400",
-                "24,65536,256,24,212988,200704",
-                "48,65536,256,24,212988,200704",
-                "96,65536,256,24,212988,200704",
-                "192,65536,256,24,212988,200704",
-                "216,65536,16,216,606208,626028",
-                "512,65536,16,216,606208,626028",
-            };
-            result.Add($"--webgl-uniform-buffer=\"{webgl_uniform_buffers[rand.Next(0, 7)]}\"");
             #endregion
 
             result.Add($"--hardware-concurrency={(taskArgs.SelectToken("dev.cpu")?.Value<int>() ?? 8)}");
@@ -707,7 +649,7 @@ namespace QTP.Plugins
             result.Add("--enable-canvas-noise");
             result.Add("--enable-image-noise");
             result.Add("--enable-text-noise");
-            result.Add("--enable-font-noise");
+            //result.Add("--enable-font-noise");
             result.Add("--enable-audio-noise");
 
             if (dev_hash % 2 == 0)
@@ -718,31 +660,6 @@ namespace QTP.Plugins
 
             if (os == 1 || os == 2)
             {
-
-                {
-                    var touch_ix = CommonHelper.NextInt(0, 2);
-                    var touch_iy = CommonHelper.NextInt(80, 100);
-                    if (new bool[] { true, true, false, true, true, false, true, true, false, true }[CommonHelper.RandomRange(0, 10)])
-                    {
-                        string combined_x = $"{fingerprint}_touch_offset_x";
-                        string combined_y = $"{fingerprint}_touch_offset_y";
-                        uint hash_val_x = GetStableHash(combined_x);
-                        uint hash_val_y = GetStableHash(combined_y);
-                        double norm_x = (hash_val_x / 4294967295.0) - 0.5;
-                        double norm_y = (hash_val_y / 4294967295.0) - 0.5;
-                        double noise_factor_x_ = norm_x * 0.2;
-                        double noise_factor_y_ = norm_y * 0.2;
-                        var touch_dx = touch_ix * (1 + noise_factor_x_);
-                        var touch_dy = touch_iy * (1 + noise_factor_y_);
-                        result.Add($"--touch-emulator-point=\"{touch_dx},{touch_dy}\"");
-                    }
-                    else
-                    {
-                        result.Add($"--touch-emulator-point=\"{touch_ix},{touch_iy}\"");
-                    }
-                }
-
-
                 int level = CommonHelper.RandomRange(10, 101);
                 if (new bool[] { false, false, true, false, false, true, false, false, true, false }[CommonHelper.RandomRange(0, 10)])
                 {
@@ -1306,7 +1223,7 @@ namespace QTP.Plugins
 
                 if (ctx.Config.IsTest)
                 {
-                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=塑料";
+                    entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=塑料";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/KtpmHjYN5sC8vyEfvBSesVjwn9Z/index.html?babelChannel=ttt12";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/27cGVLCp2Rk5UAemjMvigeJXok9/index.html?babelChannel=ttt1&hy_entry=UC_SearchSkin";
                     //entry.FirstPageUrl = "https://m.1688.com/zw/hamlet.html?scene=8&q=%E7%AF%AE%E7%90%83%E8%B6%B3%E7%90%83&imgurl=img/ibank/O1CN014k1XW01LMa13eBYoI_!!2207873421285-0-cib.jpg&cosite=smjj&keywordid=74320369958&trackid={}&format=shandian&bd_vid=11084568593119754510&outerId=618324461983&creative=50000002313693958&trackid=88585857717827007619670&clickid=11084568593119754510&uctrackid=czoxMTY5NjMwNTUyNjMzNDM1MDE2MTtjOjUwMDAwMDAyMzEzNjkzOTU4O2Q6ZG1wXy01NjI5MzQyMTI1NDM3MjIyOTQ4O3A6d2w=&flowfrom=shenma";
@@ -1329,7 +1246,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
+                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r2/";
 
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1401,11 +1318,21 @@ namespace QTP.Plugins
                     LogWriteLine($"{this.Title}:ExecuteWorker: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}");
                     var delay_ms = CommonHelper.RandomRange(5000, 8000);
                     await Task.Delay(delay_ms, token);
-                    await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
-                    ctx.Page!,
-                    ctx.CdpSession!,
-                    duration: TimeSpan.FromMilliseconds(Math.Abs(ctx.Config.PageLoadedDelayMs - delay_ms)),
-                    cancellationToken: token);
+                    var rest_ms = Math.Abs(ctx.Config.PageLoadedDelayMs - delay_ms);
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    await HumanSwipeOperator.RandomUpUntilStopAsync(ctx.Page!, ctx.CdpSession!,cancellationToken: token);
+                    //await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
+                    //ctx.Page!,
+                    //ctx.CdpSession!,
+                    //duration: TimeSpan.FromMilliseconds(Math.Abs(ctx.Config.PageLoadedDelayMs - delay_ms)),
+                    //cancellationToken: token);
+                    sw.Stop();
+
+                    var remaining = rest_ms - sw.ElapsedMilliseconds;
+                    if (remaining > 0)
+                    {
+                        await Task.Delay((int)remaining, token);
+                    }
                 }
 
 
@@ -1668,8 +1595,7 @@ namespace QTP.Plugins
                 "--disable-http2-grease-settings",
                 "--hide-bad-flags",
                 "--hide-crashed-bubble",
-
-
+                "--force-prefers-no-reduced-motion",
                 "--virtual-clipboard",
                 "--mouse-as-touch",
                 "--touch-events=enabled",

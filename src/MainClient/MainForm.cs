@@ -972,19 +972,19 @@ namespace MainClient
             //_appSettings.NoTrigger1688Shop = true;
             //_appSettings.Protocol = "http";
 
-            var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win");
-            if (Directory.Exists(chromePath))
-            {
-                try
-                {
-                    System.IO.Directory.Delete(chromePath, true);
-                }
-                catch (Exception)
-                {
+            //var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win");
+            //if (Directory.Exists(chromePath))
+            //{
+            //    try
+            //    {
+            //        System.IO.Directory.Delete(chromePath, true);
+            //    }
+            //    catch (Exception)
+            //    {
 
-                }
+            //    }
 
-            }
+            //}
 
 
 
