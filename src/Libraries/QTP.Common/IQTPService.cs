@@ -13,7 +13,6 @@ namespace QTP.Common
 
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
-        public event EventHandler<TaskAdWordEventArgs>? OnTaskAdWordEventHandler;
         void LogWriteLine(string value, LogLevel level = LogLevel.Information);
         void LogError(string message);
         void QTPExecute(StateType type, int id, int count = 1, string? data = null);

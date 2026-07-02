@@ -24,10 +24,8 @@ namespace MainClient
                 appSettings.Multiple = 1;
                 appSettings.PVOverride = "1";
                 appSettings.UVOverride = "1";
-                appSettings.UVsTriggerOne = true;
-                appSettings.PVsTriggerOne = true;
                 appSettings.IpTtl = 180;
-                appSettings.DevApiUrl = "http://117.21.200.18:9000/api/fingerprint.php";
+                appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
                 appSettings.TaskApiUrl = "http://117.21.200.221/client-v5.php";
                 appSettings.IsHiddenMode = true;
                 appSettings.IsProxyMode = true;

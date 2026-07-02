@@ -16,7 +16,6 @@ namespace QTP.Common
         public readonly AppSettings _appSettings;
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;
-        public event EventHandler<TaskAdWordEventArgs>? OnTaskAdWordEventHandler;
 
         public QTPServiceBase(AppSettings appSettings)
         {
@@ -89,16 +88,10 @@ namespace QTP.Common
             OnStateChangedEventHandler?.Invoke(this, new TaskStateChangedEventArgs(StateType.X5Sec, id, count, data));
         }
 
-        public virtual void QTPUploadAdWord(string type, string word)
-        {
-            OnTaskAdWordEventHandler?.Invoke(this, new TaskAdWordEventArgs(type, word));
-        }
-
         public virtual ValueTask DisposeAsync()
         {
             OnLogEventHandler = null;
             OnStateChangedEventHandler = null;
-            OnTaskAdWordEventHandler = null;
             return ValueTask.CompletedTask;
         }
     }

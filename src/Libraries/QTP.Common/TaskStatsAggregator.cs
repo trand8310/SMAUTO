@@ -278,44 +278,14 @@ namespace QTP
 
         private readonly Channel<TaskEvent> _queue;
         private readonly Channel<ProxyIpStatEvent> _proxyIpQueue;
-        /// <summary>
-        /// 广告词+类别
-        /// </summary>
-        private readonly Channel<AdWord> _adWordQueue;
-        /// <summary>
-        /// 广告词提取/命中统计
-        /// </summary>
-        private readonly Channel<AdWordStatEvent> _adWordStatQueue;
-        /// <summary>
-        /// 广告词+域名列表
-        /// </summary> 
-        private readonly Channel<AdKeywordDomain> _adKeywordDomainQueue;
-        private readonly object _adKeywordDomainLock = new();
-        // keyword → domains set + brands set
-        private readonly Dictionary<string, AdKeywordDomainAccumulator>
-          _adKeywordDomainBuffer = new(StringComparer.OrdinalIgnoreCase);
-
-
-
         private readonly ConcurrentDictionary<int, TaskStats> _tasks = new();
         private readonly ConcurrentDictionary<int, ProxyIpStat> _taskProxyIpStats = new();
-
-        private readonly object _adWordLock = new();
-        private List<AdWord> _adWordBuffer = new();
-        private readonly object _adWordStatLock = new();
-        private readonly Dictionary<string, AdWordUsageAccumulator> _adWordStatBuffer = new(StringComparer.OrdinalIgnoreCase);
-
         private readonly TaskStats _totalStats = new();
-
         public readonly record struct TaskHourKey(int TaskId, string HourKey);
         private static TaskHourKey GetClickHourKey(int taskId)
         {
             return new TaskHourKey(taskId, GetHourKey());
         }
-
-        //private readonly ConcurrentDictionary<int, TaskStats> _taskGlobalBaseline = new();
-        //private readonly ConcurrentDictionary<int, double> _taskClickRates = new();
-        //private readonly ConcurrentDictionary<int, SemaphoreSlim> _baselineInitLocks = new();
 
         private readonly ConcurrentDictionary<TaskHourKey, TaskStats> _taskGlobalBaseline = new();
         private readonly ConcurrentDictionary<TaskHourKey, double> _taskClickRates = new();
@@ -334,9 +304,6 @@ namespace QTP
 
         private Task? _processQueueTask;
         private Task? _processProxyIpQueueTask;
-        private Task? _processAdWordQueueTask;
-        private Task? _processAdWordStatQueueTask;
-        private Task? _processAdKeywordDomainQueueTask;
         private Task? _flushLoopTask;
 
         // 0 = new, 1 = running, 2 = stopping, 3 = stopped, 4 = disposed
@@ -388,18 +355,7 @@ namespace QTP
 
             _queue = Channel.CreateUnbounded<TaskEvent>(taskEventOptions);
             _proxyIpQueue = Channel.CreateUnbounded<ProxyIpStatEvent>(proxyEventOptions);
-            _adWordQueue = Channel.CreateUnbounded<AdWord>(adWordOptions);
-            _adWordStatQueue = Channel.CreateUnbounded<AdWordStatEvent>(adWordStatOptions);
-
-            var adKeywordDomainOptions = new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false,
-                AllowSynchronousContinuations = false
-            };
-
-            _adKeywordDomainQueue =Channel.CreateUnbounded<AdKeywordDomain>(adKeywordDomainOptions);
-
+         
             _state = 0;
         }
 
@@ -430,10 +386,7 @@ namespace QTP
 
                 _processQueueTask = Task.Run(() => ProcessQueueAsync(_runCts.Token));
                 _processProxyIpQueueTask = Task.Run(() => ProcessProxyIpQueueAsync(_runCts.Token));
-                _processAdWordQueueTask = Task.Run(() => ProcessAdWordQueueAsync(_runCts.Token));
-                _processAdWordStatQueueTask = Task.Run(() => ProcessAdWordStatQueueAsync(_runCts.Token));
                 _flushLoopTask = Task.Run(() => FlushLoopAsync(_runCts.Token));
-                _processAdKeywordDomainQueueTask =Task.Run(() => ProcessAdKeywordDomainQueueAsync(_runCts.Token));
 
                 Volatile.Write(ref _state, 1);
             }
@@ -466,9 +419,6 @@ namespace QTP
 
                 _queue.Writer.TryComplete();
                 _proxyIpQueue.Writer.TryComplete();
-                _adWordQueue.Writer.TryComplete();
-                _adWordStatQueue.Writer.TryComplete();
-                _adKeywordDomainQueue.Writer.TryComplete();
             }
             finally
             {
@@ -530,66 +480,10 @@ namespace QTP
             _proxyIpQueue.Writer.TryWrite(new ProxyIpStatEvent(taskId, ProxyIpState.Consumed, ip, count));
         }
 
-        public void EnqueueAdWord(string category, string word)
-        {
-            if (!IsStarted)
-                return;
-
-            if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(word))
-                return;
-
-            _adWordQueue.Writer.TryWrite(new AdWord(category, word));
-        }
-
-        public void EnqueueAdWordExtracted(string word, int count = 1)
-        {
-            EnqueueAdWordStat(word, AdWordStatState.Extracted, count);
-        }
-
-        public void EnqueueAdWordHit(string word, int count = 1)
-        {
-            EnqueueAdWordStat(word, AdWordStatState.Hit, count);
-        }
-
-        private void EnqueueAdWordStat(string word, AdWordStatState state, int count)
-        {
-            if (!IsStarted)
-                return;
-
-            if (string.IsNullOrWhiteSpace(word) || count <= 0)
-                return;
-
-            _adWordStatQueue.Writer.TryWrite(new AdWordStatEvent(word, state, count));
-        }
-        public void EnqueueAdKeywordDomain(AdKeywordDomain item)
-        {
-            if (!IsStarted)
-                return;
-
-            if (item == null ||
-                string.IsNullOrWhiteSpace(item.Keyword) ||
-                item.Domains == null ||
-                item.Domains.Count == 0)
-                return;
-
-            _adKeywordDomainQueue.Writer.TryWrite(item);
-        }
-
-
         public TaskStats? GetTaskStats(int taskId)
             => _tasks.TryGetValue(taskId, out var stats) ? stats : null;
 
         public TaskStats GetTotalStats() => _totalStats;
-
-        public bool CanHomepageTrigger(int taskId)
-        {
-            if (_appSettings.HompageTrigger == 0)
-                return false;
-
-            var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
-            return stats.HomepageTriggerRatio < _appSettings.HompageTrigger;
-        }
-
 
         public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)
         {
@@ -705,90 +599,6 @@ namespace QTP
             }
         }
 
-        private async Task ProcessAdWordQueueAsync(CancellationToken token)
-        {
-            try
-            {
-                while (await _adWordQueue.Reader.WaitToReadAsync(token).ConfigureAwait(false))
-                {
-                    while (_adWordQueue.Reader.TryRead(out var adWord))
-                    {
-                        lock (_adWordLock)
-                        {
-                            _adWordBuffer.Add(adWord);
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ProcessAdWordQueueAsync crashed.");
-            }
-        }
-        private async Task ProcessAdKeywordDomainQueueAsync(CancellationToken token)
-        {
-            try
-            {
-                while (await _adKeywordDomainQueue.Reader.WaitToReadAsync(token))
-                {
-                    while (_adKeywordDomainQueue.Reader.TryRead(out var item))
-                    {
-                        lock (_adKeywordDomainLock)
-                        {
-                            if (!_adKeywordDomainBuffer.TryGetValue(item.Keyword, out var acc))
-                            {
-                                acc = new AdKeywordDomainAccumulator();
-                                _adKeywordDomainBuffer[item.Keyword] = acc;
-                            }
-
-                            foreach (var d in item.Domains)
-                                acc.Domains.Add(d);
-
-                            foreach (var b in item.Brands)
-                                acc.Brands.Add(b);
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ProcessAdKeywordDomainQueueAsync crashed.");
-            }
-        }
-        private async Task ProcessAdWordStatQueueAsync(CancellationToken token)
-        {
-            try
-            {
-                while (await _adWordStatQueue.Reader.WaitToReadAsync(token).ConfigureAwait(false))
-                {
-                    while (_adWordStatQueue.Reader.TryRead(out var item))
-                    {
-                        lock (_adWordStatLock)
-                        {
-                            if (!_adWordStatBuffer.TryGetValue(item.Word, out var acc))
-                            {
-                                acc = new AdWordUsageAccumulator();
-                                _adWordStatBuffer[item.Word] = acc;
-                            }
-
-                            if (item.State == AdWordStatState.Extracted)
-                                acc.Extract += item.Count;
-                            else
-                                acc.Hit += item.Count;
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ProcessAdWordStatQueueAsync crashed.");
-            }
-        }
-
-
         #endregion
 
         #region Flush
@@ -861,71 +671,11 @@ namespace QTP
                 }
             }
 
-            {
-                List<AdWord>? snapshot = null;
-                lock (_adWordLock)
-                {
-                    if (_adWordBuffer.Count > 0)
-                        snapshot = new List<AdWord>(_adWordBuffer);
-                }
+            
 
-                if (snapshot != null && snapshot.Count > 0)
-                {
-                    flushTasks.Add(FlushAdWordsAsync(snapshot, token));
-                }
-            }
+ 
 
-            {
-                List<AdWordUsageStat>? snapshot = null;
-                lock (_adWordStatLock)
-                {
-                    if (_adWordStatBuffer.Count > 0)
-                    {
-                        snapshot = new List<AdWordUsageStat>(_adWordStatBuffer.Count);
-                        foreach (var kv in _adWordStatBuffer)
-                        {
-                            snapshot.Add(new AdWordUsageStat
-                            {
-                                Word = kv.Key,
-                                Extract = kv.Value.Extract,
-                                Hit = kv.Value.Hit
-                            });
-                        }
-                    }
-                }
-
-                if (snapshot != null && snapshot.Count > 0)
-                {
-                    flushTasks.Add(FlushAdWordStatsAsync(snapshot, token));
-                }
-            }
-
-
-            {
-                List<AdKeywordDomain>? snapshot = null;
-
-                lock (_adKeywordDomainLock)
-                {
-                    if (_adKeywordDomainBuffer.Count > 0)
-                    {
-                        snapshot = new List<AdKeywordDomain>(_adKeywordDomainBuffer.Count);
-                        foreach (var kv in _adKeywordDomainBuffer)
-                        {
-                            snapshot.Add(new AdKeywordDomain
-                            {
-                                Keyword = kv.Key,
-                                Domains = kv.Value.Domains.ToList(),
-                                Brands = kv.Value.Brands.ToList()
-                            });
-                        }
-                    }
-                }
-
-                if (snapshot != null && snapshot.Count > 0)
-                {
-                    flushTasks.Add(FlushAdKeywordDomainsAsync(snapshot, token));
-                }
-            }
+ 
 
             if (flushTasks.Count > 0)
                 await Task.WhenAll(flushTasks).ConfigureAwait(false);
@@ -1014,97 +764,7 @@ namespace QTP
             }
         }
 
-        private async Task FlushAdWordsAsync(List<AdWord> snapshot, CancellationToken token)
-        {
-            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
-            try
-            {
-                await RetryAsync(
-                    () => _adeHelper.UpdateAdWordsAsync(snapshot, token),
-                    _retryCount,
-                    token).ConfigureAwait(false);
-
-                lock (_adWordLock)
-                {
-                    int removeCount = Math.Min(snapshot.Count, _adWordBuffer.Count);
-                    if (removeCount > 0)
-                        _adWordBuffer.RemoveRange(0, removeCount);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FlushAdWordsAsync failed.");
-            }
-            finally
-            {
-                _flushSemaphore.Release();
-            }
-        }
-        private async Task FlushAdWordStatsAsync(List<AdWordUsageStat> snapshot, CancellationToken token)
-        {
-            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
-            try
-            {
-                await RetryAsync(
-                    () => _adeHelper.UpdateAdWordStatsAsync(snapshot, token),
-                    _retryCount,
-                    token).ConfigureAwait(false);
-
-                lock (_adWordStatLock)
-                {
-                    foreach (var item in snapshot)
-                    {
-                        if (!_adWordStatBuffer.TryGetValue(item.Word, out var acc))
-                            continue;
-
-                        if (item.Extract > 0)
-                            acc.Extract = Math.Max(0, acc.Extract - item.Extract);
-
-                        if (item.Hit > 0)
-                            acc.Hit = Math.Max(0, acc.Hit - item.Hit);
-
-                        if (acc.Extract == 0 && acc.Hit == 0)
-                            _adWordStatBuffer.Remove(item.Word);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FlushAdWordStatsAsync failed.");
-            }
-            finally
-            {
-                _flushSemaphore.Release();
-            }
-        }
-
-
-        private async Task FlushAdKeywordDomainsAsync(
-        List<AdKeywordDomain> snapshot,
-        CancellationToken token)
-        {
-            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
-            try
-            {
-                await RetryAsync(
-                    () => _adeHelper.AddKeywordDomainsAsync(snapshot, token),
-                    _retryCount,
-                    token).ConfigureAwait(false);
-
-                lock (_adKeywordDomainLock)
-                {
-                    _adKeywordDomainBuffer.Clear();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FlushAdKeywordDomainsAsync failed.");
-            }
-            finally
-            {
-                _flushSemaphore.Release();
-            }
-        }
+   
         #endregion
 
         #region Retry / Stop Helpers
@@ -1146,9 +806,6 @@ namespace QTP
 
             if (_processQueueTask != null) tasks.Add(_processQueueTask);
             if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
-            if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
-            if (_processAdWordStatQueueTask != null) tasks.Add(_processAdWordStatQueueTask);
-            if (_processAdKeywordDomainQueueTask != null) tasks.Add(_processAdKeywordDomainQueueTask);
 
             if (tasks.Count > 0)
                 await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -1160,9 +817,6 @@ namespace QTP
 
             if (_processQueueTask != null) tasks.Add(_processQueueTask);
             if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
-            if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
-            if (_processAdWordStatQueueTask != null) tasks.Add(_processAdWordStatQueueTask);
-            if (_processAdKeywordDomainQueueTask != null) tasks.Add(_processAdKeywordDomainQueueTask);
             if (_flushLoopTask != null) tasks.Add(_flushLoopTask);
 
             if (tasks.Count == 0)

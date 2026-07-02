@@ -19,10 +19,6 @@ namespace SMAd.Models
         public bool IsLocalAdWord { get; set; }
         public int PageLoadingTimeoutMs { get; set; }
         public int PageLoadedDelayMs { get; set; }
-
-        public int HomepageTrigger { get; set; }
-        public bool PriorityNon1688 { get; set; }
-
         public string UserAgent { get; set; } = "";
         public int Os { get; set; }
         public int? DevSw { get; set; }
@@ -30,14 +26,9 @@ namespace SMAd.Models
         public int Sw { get; set; }
         public int Sh { get; set; }
 
-        public string WordName { get; set; } = "";
-        public bool NoTrigger1688 { get; set; }
-        public bool CleaningWords { get; set; }
-        public bool NotTriggerDownload { get; set; }
-        public bool PvsTriggerOne { get; set; }
         public int CurrentUV { get; set; }
 
-        public string KernelVersion { get; set; } = "132";
+        public string KernelVersion { get; set; } = "135";
         public int MaxTouchPoints { get; set; }
         public int ProcessIndex { get; set; }
 
