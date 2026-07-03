@@ -299,7 +299,7 @@ namespace QTP.Plugins
 
         private static List<string> InitFPArgs(JToken taskArgs, int maxTouchPoints)
         {
-           
+
             var result = new List<string>();
             uint fingerprint = 0;
             if (taskArgs.SelectToken("dev.fingerprint") != null)
@@ -1326,7 +1326,9 @@ namespace QTP.Plugins
             using var swipeStyleScope = HumanSwipeEmulator.BeginStyleScope(ctx.SwipeStyleProfile);
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
             {
+
                 token.ThrowIfCancellationRequested();
+                await Task.Delay(2000, token);
                 LogWriteLine($"{this.Title}:pv：{ctx.Config.TotalPV}/{ctx.PvIndex}");
                 await EnsureSinglePageAsync(ctx, token);
 
@@ -1377,7 +1379,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://www.browserscan.net/zh";
-                    entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
+
+                    entry.FirstPageUrl = "http://106.53.161.213:6616/aaa123.html";
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
@@ -1429,6 +1432,8 @@ namespace QTP.Plugins
                     LogWriteLine($"{this.Title}:RunMainFlow: 导航后 Page为空或已关闭");
                     continue;
                 }
+                await Task.Delay(CommonHelper.RandomRange(1200, 2500), token);
+
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
@@ -1641,10 +1646,9 @@ namespace QTP.Plugins
                 args.Add("--blink-settings=imagesEnabled=false");
             }
 
-
-
-
-
+            //args.Add("--auto-open-devtools-for-tabs");
+            //args.Add("--disable-features=DnsOverHttps");
+            //args.Add("--host-resolver-rules=\"MAP * ~NOTFOUND, EXCLUDE 127.0.0.1\"");
             args.AddRange(InitFPArgs(config.TaskArgs, config.MaxTouchPoints));
             return args;
         }
@@ -1667,6 +1671,7 @@ namespace QTP.Plugins
             }
 
             ctx.Page = await ctx.Context.NewPageAsync();
+            await ctx.Page.GotoAsync("about:blank");
             //await InitPageAsync(ctx, ctx.Page, token);
         }
 
