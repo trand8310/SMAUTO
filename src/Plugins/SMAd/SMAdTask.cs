@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Options;
-using Microsoft.Playwright;
+﻿using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
 using PlaywrightHumanInput;
 using QTP.Common;
@@ -9,11 +8,7 @@ using QTP.Common.Win32;
 using SMAd;
 using SMAd.LandingPolicy;
 using SMAd.Models;
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-
-
-
 
 namespace QTP.Plugins
 {
@@ -81,11 +76,11 @@ namespace QTP.Plugins
         {
             return page.EvaluateAsync<bool>("window.pageYOffset == 0;");
         }
-
         public static Task<bool> IsPageEnd(IPage page)
         {
             return page.EvaluateAsync<bool>("(window.innerHeight + window.pageYOffset) >= document.body.offsetHeight || Math.abs((window.innerHeight + window.pageYOffset) - document.body.offsetHeight) < 10;");
         }
+
         public static async Task<bool> IsElementInViewportAsync(ILocator locator)
         {
             if (!await locator.IsVisibleAsync())
@@ -160,11 +155,6 @@ namespace QTP.Plugins
             }
         }
 
-
-
-
-
-
         private async Task SynthesizeScrollGestureAsync(
         IPage page,
         ICDPSession client,
@@ -235,7 +225,6 @@ namespace QTP.Plugins
             }
         }
 
-
         private async Task GestureScrollUp(IPage page, ICDPSession client)
         {
             if (page == null || page.IsClosed || client == null)
@@ -302,10 +291,6 @@ namespace QTP.Plugins
                      });
             }
         }
-
-
-
-
 
         /// <summary>
         /// 处理页面元素
@@ -380,8 +365,6 @@ namespace QTP.Plugins
             }, token);
         }
 
-
-
         /// <summary>
         /// 清除1688APP下载
         /// </summary>
@@ -434,9 +417,6 @@ namespace QTP.Plugins
 
             }
         }
-
-
-
 
         private static List<string> InitFPArgs(JToken taskArgs, int maxTouchPoints)
         {
@@ -514,6 +494,7 @@ namespace QTP.Plugins
 
             result.Add("--fingerprint-config-dir=\"" + System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fingerprint") + "\"");
 
+ 
 
             var full_version = taskArgs.SelectToken("dev.full_version").Value<string>();
             var full_version_values = full_version.Split(new string[] { "." }, StringSplitOptions.RemoveEmptyEntries);
@@ -740,9 +721,6 @@ namespace QTP.Plugins
                 return false;
             }
         }
-
-
-
         private sealed class PageScrollState
         {
             public double ScrollY { get; set; }
@@ -792,10 +770,6 @@ namespace QTP.Plugins
             }
         }
 
-
-
-
-
         private void ResetCdpFinalFailureTracker(string traceTag)
         {
             lock (CdpFinalFailureLock)
@@ -840,7 +814,6 @@ namespace QTP.Plugins
             LogWriteLine($"{traceTag} CDP连接最终失败全局次数超过{CdpFinalFailureRestartThreshold}次，准备重启计算机。LastError={lastException}");
             SafeRestartHelper.ForceRestart(1);
         }
-
 
         private async Task<IBrowser?> ConnectOverCDPWithRetryAsync(
         IPlaywright playwright,
@@ -942,12 +915,6 @@ namespace QTP.Plugins
 
             return null;
         }
-
-
-
-
-
-
 
         private static int ParseSleepMilliseconds(JToken taskArgs, int defaultMinMs = 8000, int defaultMaxMs = 15000)
         {
@@ -1193,6 +1160,34 @@ namespace QTP.Plugins
         {
             using var swipeStyleScope = HumanSwipeEmulator.BeginStyleScope(ctx.SwipeStyleProfile);
 
+            int secondJumpRate = 0;
+            if (!string.IsNullOrWhiteSpace(_appSettings.SecondJumpRate))
+            {
+                if (_appSettings.SecondJumpRate.Contains("-"))
+                {
+                    var values = _appSettings.SecondJumpRate.Split('-');
+                    if (values.Length == 2)
+                        secondJumpRate = CommonHelper.RandomRange(Int32.Parse(values[0]), Int32.Parse(values[1]));
+                }
+                else
+                {
+                    secondJumpRate = Int32.Parse(_appSettings.SecondJumpRate);
+                }
+            }
+            else
+            {
+                secondJumpRate = CommonHelper.RandomRange(45, 75);
+            }
+
+            if (secondJumpRate > 0)
+            {
+                if (_aggregator.GetLocalMetric(ctx.Config.TaskId, "dsp_second_jump_rate") == 0)
+                {
+                    _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump_rate", secondJumpRate);
+                }
+            }
+
+
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
             {
                 token.ThrowIfCancellationRequested();
@@ -1223,7 +1218,7 @@ namespace QTP.Plugins
 
                 if (ctx.Config.IsTest)
                 {
-                    entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=塑料";
+                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=塑料";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/KtpmHjYN5sC8vyEfvBSesVjwn9Z/index.html?babelChannel=ttt12";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/27cGVLCp2Rk5UAemjMvigeJXok9/index.html?babelChannel=ttt1&hy_entry=UC_SearchSkin";
                     //entry.FirstPageUrl = "https://m.1688.com/zw/hamlet.html?scene=8&q=%E7%AF%AE%E7%90%83%E8%B6%B3%E7%90%83&imgurl=img/ibank/O1CN014k1XW01LMa13eBYoI_!!2207873421285-0-cib.jpg&cosite=smjj&keywordid=74320369958&trackid={}&format=shandian&bd_vid=11084568593119754510&outerId=618324461983&creative=50000002313693958&trackid=88585857717827007619670&clickid=11084568593119754510&uctrackid=czoxMTY5NjMwNTUyNjMzNDM1MDE2MTtjOjUwMDAwMDAyMzEzNjkzOTU4O2Q6ZG1wXy01NjI5MzQyMTI1NDM3MjIyOTQ4O3A6d2w=&flowfrom=shenma";
@@ -1247,8 +1242,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r2/";
-
                 }
+
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
                     LogWriteLine($"{this.Title}:RunMainFlow: FirstPageUrl为空");
@@ -1320,14 +1315,15 @@ namespace QTP.Plugins
                     await Task.Delay(delay_ms, token);
                     var rest_ms = Math.Abs(ctx.Config.PageLoadedDelayMs - delay_ms);
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    await HumanSwipeOperator.RandomUpUntilStopAsync(ctx.Page!, ctx.CdpSession!,cancellationToken: token);
+                    await HumanSwipeOperator.RandomUpUntilStopAsync(ctx.Page!, ctx.CdpSession!, cancellationToken: token);
+
                     //await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
                     //ctx.Page!,
                     //ctx.CdpSession!,
                     //duration: TimeSpan.FromMilliseconds(Math.Abs(ctx.Config.PageLoadedDelayMs - delay_ms)),
                     //cancellationToken: token);
-                    sw.Stop();
 
+                    sw.Stop();
                     var remaining = rest_ms - sw.ElapsedMilliseconds;
                     if (remaining > 0)
                     {
@@ -1520,8 +1516,6 @@ namespace QTP.Plugins
         }
 
         #endregion
-
-
 
         #region Browser Boot / Events
 
@@ -1929,6 +1923,7 @@ namespace QTP.Plugins
             }
 
             ctx.Page = ctx.Context.Pages[0];
+            await ctx.Page.GotoAsync("about:blank");
             ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
         }
 
@@ -2306,7 +2301,11 @@ namespace QTP.Plugins
                 return FlowControl.Continue;
             }
 
+            await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
+
             var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
+
+
 
             foreach (var sponsored in candidates)
             {
@@ -2487,9 +2486,31 @@ namespace QTP.Plugins
         private async Task<FlowControl> HandleLandingPageAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-
             if (ctx.LandingDispatcher == null)
                 return FlowControl.Continue;
+
+
+
+            var metrics = _aggregator.GetLocalMetrics(ctx.Config.TaskId, "dsp_second_jump_rate", "dsp_second_jump", "dsp_second_jump_click");
+            if (metrics["dsp_second_jump_rate"] > 0)
+            {
+                _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump");
+
+                if (metrics["dsp_second_jump_click"] > 0 && metrics["dsp_second_jump"] > 0)
+                {
+                    LogWriteLine($"[{ctx.Config.TaskId}] 二跳比率:{(metrics["dsp_second_jump_click"] / (double)metrics["dsp_second_jump"] * 100):N2}%");
+                }
+
+                bool canSeondJump = metrics["dsp_second_jump_rate"] == 100
+                    || metrics["dsp_second_jump_click"] == 0
+                    || ((metrics["dsp_second_jump_click"] / (double)metrics["dsp_second_jump"]) * 100 < metrics["dsp_second_jump_rate"]);
+
+                if (!canSeondJump)
+                    return FlowControl.Continue;
+
+
+                _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump_click");
+            }
 
             return await ctx.LandingDispatcher.DispatchAsync(ctx, token);
         }
@@ -2503,8 +2524,6 @@ namespace QTP.Plugins
 
 
         #endregion
-
-
 
         #region Generic Landing Helpers
 
@@ -3097,7 +3116,6 @@ namespace QTP.Plugins
         }
 
         #endregion
-
 
         #region Task Sleep Phase
 
@@ -3902,9 +3920,6 @@ namespace QTP.Plugins
 
         #endregion
 
-
-
-
         #region Test Branch
 
         /// <summary>
@@ -4248,8 +4263,6 @@ namespace QTP.Plugins
             return elements;
         }
         #endregion
-
-
 
     }
 }

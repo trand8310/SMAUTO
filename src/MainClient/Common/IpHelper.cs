@@ -152,15 +152,29 @@ namespace MainClient.Common
                             }
                             else if (url.Contains("api.xingyuip.com"))
                             {
-                                foreach (var data in json.SelectToken("list").Children())
+                                if (json.SelectToken("list") != null)
                                 {
-                                    var item = (JObject)data.DeepClone();
-                                    item["rip"] = data["exit_ip"]?.Value<string>();
-                                    item.Remove("exit_ip");
-
-
-
-                                    ipQueues.Enqueue(new IpEntity() { format = iPFormat, json = (JToken)item });
+                                    foreach (var data in json.SelectToken("list").Children())
+                                    {
+                                        var item = (JObject)data.DeepClone();
+                                        item["rip"] = data["exit_ip"]?.Value<string>();
+                                        item.Remove("exit_ip");
+                                        ipQueues.Enqueue(new IpEntity() { format = iPFormat, json = (JToken)item });
+                                    }
+                                }
+                                else if (json.SelectToken("data") != null)
+                                {
+                                    foreach (var data in json.SelectToken("data").Children())
+                                    {
+                                        var item = (JObject)data.DeepClone();
+                                        item["ip"] = data["proxy_ip"]?.Value<string>();
+                                        item["port"] = data["proxy_port"]?.Value<string>();
+                                        item["rip"] = data["real_ip"]?.Value<string>();
+                                        item.Remove("proxy_ip");
+                                        item.Remove("proxy_port");
+                                        item.Remove("real_ip");
+                                        ipQueues.Enqueue(new IpEntity() { format = iPFormat, json = (JToken)item });
+                                    }
                                 }
                             }
                             else
@@ -310,7 +324,7 @@ namespace MainClient.Common
                     }
                     #endregion
                 }
-    
+
                 else if (url.Contains("service.ipzan.com"))
                 {
                     #region service.ipzan.com
@@ -394,7 +408,7 @@ namespace MainClient.Common
                     #endregion
 
                 }
-                else if(url.Contains("api.xingyuip.com"))
+                else if (url.Contains("api.xingyuip.com"))
                 {
                     #region service.ipzan.com
                     //http://api.xingyuip.com:13000/extract?channel_id=228&auth_mode=whitelist&channel_secret=w044cm&quantity=1&data_type=2&line_separator=0&dedup_mode=1
@@ -407,7 +421,7 @@ namespace MainClient.Common
                             url = Regex.Replace(url, @"data_type=\d+", $"data_type=2");
                         else
                             url = url += $"&data_type=2";
- 
+
                     }
                     else
                     {

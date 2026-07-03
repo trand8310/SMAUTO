@@ -76,8 +76,6 @@ namespace MainClient
 
         #endregion
 
-
-
         #region LogWrite
 
         private readonly ConcurrentQueue<UiLogItem> _uiLogBuffer = new();
@@ -216,12 +214,6 @@ namespace MainClient
 
         #endregion
 
-
-
-
-
-
-
         private Dictionary<string, QTPPlugin> allPlugins = new Dictionary<string, QTPPlugin>();
         private void LoadQTPPlugins()
         {
@@ -283,8 +275,6 @@ namespace MainClient
                 _logger.LogError(ex, "ReloadWordNames failed");
             }
         }
-
-
         public async Task<List<FileVersionInfo>> GetLatestFileWithVersionAsync()
         {
             List<FileVersionInfo> result = new List<FileVersionInfo>();
@@ -342,8 +332,6 @@ namespace MainClient
                 _logger.LogError($"InitBrowserVersionListAsync failed: {ex.Message}");
             }
         }
-
-
         public void InitKernelVersion()
         {
             try
@@ -380,7 +368,6 @@ namespace MainClient
                 _logger.LogError($"InitKernelVersion failed: {ex.Message}");
             }
         }
-
 
         private void InitWsClient()
         {
@@ -1057,7 +1044,7 @@ namespace MainClient
             numericUpDown_MinFrequency.Value = _appSettings.MinFrequency;
             comboBox_Protocol.Text = _appSettings.Protocol ?? "http";
             checkBox_NoTrigger1688Shop.Checked = _appSettings.NoTrigger1688Shop;
-
+            textBox_SecondJumpRate.Text = _appSettings.SecondJumpRate;
         }
         private static object lock_config = new object();
         private void UpdateAppSetting()
@@ -1116,6 +1103,7 @@ namespace MainClient
 
                 _appSettings.Protocol = comboBox_Protocol.Text;
                 _appSettings.NoTrigger1688Shop = checkBox_NoTrigger1688Shop.Checked;
+                _appSettings.SecondJumpRate = textBox_SecondJumpRate.Text;
 
                 UserConfigService.Save("AppSettings", _appSettings);
             }

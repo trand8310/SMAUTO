@@ -71,6 +71,9 @@
             label25 = new Label();
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
+            label20 = new Label();
+            textBox_SecondJumpRate = new TextBox();
+            label19 = new Label();
             label17 = new Label();
             comboBox_Protocol = new ComboBox();
             checkBox_NoTrigger1688Shop = new CheckBox();
@@ -488,11 +491,11 @@
             // groupBox33
             // 
             groupBox33.Dock = DockStyle.Fill;
-            groupBox33.Location = new Point(0, 544);
+            groupBox33.Location = new Point(0, 541);
             groupBox33.Margin = new Padding(6, 5, 6, 5);
             groupBox33.Name = "groupBox33";
             groupBox33.Padding = new Padding(6, 5, 6, 5);
-            groupBox33.Size = new Size(1099, 288);
+            groupBox33.Size = new Size(1099, 291);
             groupBox33.TabIndex = 4;
             groupBox33.TabStop = false;
             groupBox33.Text = "日志";
@@ -562,11 +565,14 @@
             tabControl1.Margin = new Padding(4, 2, 4, 2);
             tabControl1.Name = "tabControl1";
             tabControl1.SelectedIndex = 0;
-            tabControl1.Size = new Size(1099, 544);
+            tabControl1.Size = new Size(1099, 541);
             tabControl1.TabIndex = 8;
             // 
             // tabPage1
             // 
+            tabPage1.Controls.Add(label20);
+            tabPage1.Controls.Add(textBox_SecondJumpRate);
+            tabPage1.Controls.Add(label19);
             tabPage1.Controls.Add(label17);
             tabPage1.Controls.Add(comboBox_Protocol);
             tabPage1.Controls.Add(checkBox_NoTrigger1688Shop);
@@ -650,10 +656,38 @@
             tabPage1.Margin = new Padding(4, 2, 4, 2);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(4, 2, 4, 2);
-            tabPage1.Size = new Size(1091, 511);
+            tabPage1.Size = new Size(1091, 508);
             tabPage1.TabIndex = 0;
             tabPage1.Text = "信息";
             tabPage1.UseVisualStyleBackColor = true;
+            // 
+            // label20
+            // 
+            label20.AutoSize = true;
+            label20.Location = new Point(453, 231);
+            label20.Margin = new Padding(6, 0, 6, 0);
+            label20.Name = "label20";
+            label20.Size = new Size(22, 20);
+            label20.TabIndex = 205;
+            label20.Text = "%";
+            // 
+            // textBox_SecondJumpRate
+            // 
+            textBox_SecondJumpRate.Location = new Point(345, 228);
+            textBox_SecondJumpRate.Margin = new Padding(6, 5, 6, 5);
+            textBox_SecondJumpRate.Name = "textBox_SecondJumpRate";
+            textBox_SecondJumpRate.Size = new Size(108, 27);
+            textBox_SecondJumpRate.TabIndex = 204;
+            // 
+            // label19
+            // 
+            label19.AutoSize = true;
+            label19.Location = new Point(268, 231);
+            label19.Margin = new Padding(6, 0, 6, 0);
+            label19.Name = "label19";
+            label19.Size = new Size(73, 20);
+            label19.TabIndex = 203;
+            label19.Text = "二跳比率:";
             // 
             // label17
             // 
@@ -1519,6 +1553,9 @@
         private CheckBox checkBox_NoTrigger1688Shop;
         private Label label17;
         private ComboBox comboBox_Protocol;
+        private Label label20;
+        private TextBox textBox_SecondJumpRate;
+        private Label label19;
     }
 }
 
