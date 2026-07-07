@@ -957,31 +957,6 @@ namespace MainClient
             if (File.Exists(patchFile))
                 return;
 
-
-            //_appSettings.Rfq1688 = false;
-            //_appSettings.Rfq1688Rate = 0;
-
-            //_appSettings.p4psearch = false;
-            //_appSettings.p4psearchRate = 0;
-
-            //_appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
-            //_appSettings.NoTrigger1688Shop = true;
-            //_appSettings.Protocol = "http";
-
-            //var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win", "130.0.6723.139");
-            //if(Directory.Exists(chromePath))
-            //{
-            //    try
-            //    {
-            //        System.IO.Directory.Delete(chromePath, true);
-            //    }
-            //    catch (Exception)
-            //    {
-
-            //    }
-
-            //}
-
             UserConfigService.Save("AppSettings", _appSettings);
             // 创建标记文件
             File.WriteAllText(
@@ -1025,19 +1000,15 @@ namespace MainClient
             textBox_UVOverride.Text = _appSettings.UVOverride;
             textBox_PVOverride.Text = _appSettings.PVOverride;
             numericUpDown_IpTtl.Value = _appSettings.IpTtl;
-            numericUpDown_HompageTrigger.Value = _appSettings.HompageTrigger;
             comboBox_WordName.Text = _appSettings.WordName;
-            checkBox_PriorityNon1688.Checked = _appSettings.PriorityNon1688;
             checkBox_UVsTriggerOne.Checked = _appSettings.UVsTriggerOne;
             checkBox_PVsTriggerOne.Checked = _appSettings.PVsTriggerOne;
             comboBox_KernelVersion.Text = _appSettings.KernelVersion;
             checkBox_Incognito.Checked = _appSettings.Incognito;
-            checkBox_NoTrigger1688.Checked = _appSettings.NoTrigger1688;
             checkBox_CleaningWords.Checked = _appSettings.CleaningWords;
             checkBox_UseDynamicWord.Checked = _appSettings.UseDynamicWord;
             comboBox_WordType.Text = _appSettings.WordType;
             numericUpDown_FetchRecently.Value = _appSettings.FetchRecently;
-            checkBox_NotTriggerDownload.Checked = _appSettings.NotTriggerDownload;
             comboBox_DynamicWordName.Text = _appSettings.DynamicWordName;
             checkBox_DistinctByHour.Checked = _appSettings.DistinctByHour;
             textBox_ExcludeWords.Text = _appSettings.ExcludeWords;
@@ -1049,7 +1020,6 @@ namespace MainClient
             checkBox_AutoUpdate.Checked = _appSettings.AutoUpdate;
             numericUpDown_MinFrequency.Value = _appSettings.MinFrequency;
             comboBox_Protocol.Text = _appSettings.Protocol ?? "http";
-            checkBox_NoTrigger1688Shop.Checked = _appSettings.NoTrigger1688Shop;
             checkBox_BlockImage.Checked = _appSettings.BlockImage;
             checkBox_BlockMedia.Checked = _appSettings.BlockMedia;
         }
@@ -1082,35 +1052,26 @@ namespace MainClient
                 _appSettings.UVOverride = textBox_UVOverride.Text;
                 _appSettings.PVOverride = textBox_PVOverride.Text;
                 _appSettings.IpTtl = (int)numericUpDown_IpTtl.Value;
-                _appSettings.HompageTrigger = (int)numericUpDown_HompageTrigger.Value;
                 _appSettings.WordName = comboBox_WordName.Text;
-                _appSettings.PriorityNon1688 = checkBox_PriorityNon1688.Checked;
                 _appSettings.UVsTriggerOne = checkBox_UVsTriggerOne.Checked;
                 _appSettings.PVsTriggerOne = checkBox_PVsTriggerOne.Checked;
                 _appSettings.KernelVersion = comboBox_KernelVersion.Text;
                 _appSettings.Incognito = checkBox_Incognito.Checked;
-                _appSettings.NoTrigger1688 = checkBox_NoTrigger1688.Checked;
                 _appSettings.CleaningWords = checkBox_CleaningWords.Checked;
                 _appSettings.UseDynamicWord = checkBox_UseDynamicWord.Checked;
                 _appSettings.WordType = comboBox_WordType.Text;
                 _appSettings.FetchRecently = (int)numericUpDown_FetchRecently.Value;
-                _appSettings.NotTriggerDownload = checkBox_NotTriggerDownload.Checked;
                 _appSettings.DynamicWordName = comboBox_DynamicWordName.Text;
                 _appSettings.DistinctByHour = checkBox_DistinctByHour.Checked;
                 _appSettings.ExcludeWords = textBox_ExcludeWords.Text;
                 _appSettings.IsTest = checkBox_IsTest.Checked;
-
                 _appSettings.Rfq1688 = checkBox_Rfq1688.Checked;
                 _appSettings.Rfq1688Rate = (int)numericUpDown_Rfq1688Rate.Value;
                 _appSettings.p4psearch = checkBox_p4psearch.Checked;
                 _appSettings.p4psearchRate = (int)numericUpDown_p4psearchRate.Value;
-
                 _appSettings.AutoUpdate = checkBox_AutoUpdate.Checked;
                 _appSettings.MinFrequency = (int)numericUpDown_MinFrequency.Value;
-
                 _appSettings.Protocol = comboBox_Protocol.Text;
-                _appSettings.NoTrigger1688Shop = checkBox_NoTrigger1688Shop.Checked;
-
                 _appSettings.BlockImage = checkBox_BlockImage.Checked;
                 _appSettings.BlockMedia = checkBox_BlockMedia.Checked;
 
@@ -1688,7 +1649,7 @@ namespace MainClient
         {
 
             var proxy_server = ctx.ProxyServer;
-            if(protocol.Equals("socks5"))
+            if (protocol.Equals("socks5"))
             {
                 proxy_server = $"socks5://{proxy_server}";
             }
@@ -1803,8 +1764,26 @@ namespace MainClient
             }
             else if (os == OSType.PC)
             {
+
                 dev["gpu"] = dev["renderer"];
                 dev["vendor"] = dev["vender"];
+                var m2 = Regex.Match(ua, @"Chrome/([\d.]+)");
+                dev["full_version"] = m2.Success && m2.Groups.Count == 2
+                    ? m2.Groups[1].Value.Trim()
+                    : _appSettings.KernelVersion;
+
+                var main_version = dev["full_version"].Value<string>().Split('.')[0];
+                if (int.Parse(main_version) > 100)
+                {
+                    var full_version = dev["full_version"].Value<string>().Split('.')[0] + ".0.0.0";
+                    ua = Regex.Replace(ua, @"Chrome/([\d.]+)", @$"Chrome/{full_version}");
+                    dev["ua"] = ua;
+                }
+
+
+
+
+
 
             }
         }
