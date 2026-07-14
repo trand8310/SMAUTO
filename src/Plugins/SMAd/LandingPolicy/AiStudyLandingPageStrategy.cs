@@ -60,12 +60,13 @@ namespace SMAd.LandingPolicy
             if (count > 0)
             {
                 var item = recommend.Nth(CommonHelper.RandomRange(0, count));
-
+                var humanSwipeOptions = _owner.GetHumanSwipeOptions(ctx);
                 await HumanSwipeOperator.MoveToElementVisibleAsync(
                   ctx.Page!,
                   ctx.CdpSession!,
                   item,
                   maxSwipes: 10,
+                  options: humanSwipeOptions,
                   cancellationToken: token);
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
                 await _owner.ClickAndDetectNavigationAsync(ctx, item, token);

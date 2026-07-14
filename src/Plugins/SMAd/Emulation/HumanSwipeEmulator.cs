@@ -1,8 +1,4 @@
 using Microsoft.Playwright;
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace PlaywrightHumanInput
 {
@@ -147,6 +143,17 @@ namespace PlaywrightHumanInput
         /// </summary>
         public bool VerifyScrollChanged { get; set; } = true;
 
+        /// <summary>
+        /// true 时，允许在手势失败后使用 Playwright 原生 ScrollIntoViewIfNeededAsync 兜底。
+        /// 如果你要求全链路都由触摸轨迹驱动，建议保持 false。
+        /// </summary>
+        public bool AllowNativeScrollFallback { get; set; } = false;
+
+        /// <summary>
+        /// true 时，CDP Input.dispatchTouchEvent 显式携带 timestamp，避免事件时间完全依赖底层默认值。
+        /// </summary>
+        public bool UseEventTimestamp { get; set; } = true;
+
         public double ScrollChangedMinDelta { get; set; } = 8;
 
         public int MaxPathTry { get; set; } = 10;
@@ -200,6 +207,115 @@ namespace PlaywrightHumanInput
                 StartHoldBias = n(0.75, 1.35),
                 EndHoldBias = n(0.75, 1.35)
             };
+        }
+    }
+
+    public sealed class HumanBrowseSessionState
+    {
+        public HumanSwipeStyleProfile StyleProfile { get; init; } = HumanSwipeStyleProfile.CreateRandom();
+
+        public int SwipeCount { get; set; }
+        public int ConsecutiveUpCount { get; set; }
+        public int ConsecutiveDownCount { get; set; }
+        public double Fatigue { get; set; }
+        public HumanSwipeMode LastMode { get; set; } = HumanSwipeMode.Preview;
+        public HumanSwipeDirection LastDirection { get; set; } = HumanSwipeDirection.Up;
+        public DateTime LastActionTime { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// 基于连续浏览状态，生成下一次较自然的方向/模式/速度/停顿。
+        /// 会保留 baseOptions 中显式设置的距离、起止点、验证开关等。
+        /// </summary>
+        public HumanSwipeOptions BuildNextOptions(HumanSwipeOptions? baseOptions = null)
+        {
+            var source = baseOptions ?? new HumanSwipeOptions();
+            var options = HumanSwipeEmulator.CloneOptions(source);
+
+            options.StyleProfile ??= StyleProfile;
+
+            var rnd = new Random(unchecked(StyleProfile.Seed + SwipeCount * 397 + Environment.TickCount));
+            double r() => rnd.NextDouble();
+
+            // 连续上滑很多次后，人会更容易慢读、微调或回看。
+            double fatigueBias = Math.Clamp(Fatigue, 0.0, 1.0);
+            double roll = r();
+
+            if (source.Direction == HumanSwipeDirection.RandomVertical || source.Direction == HumanSwipeDirection.RandomAny)
+            {
+                options.Direction = ConsecutiveUpCount >= 5 && roll < 0.10 + fatigueBias * 0.08
+                    ? HumanSwipeDirection.Down
+                    : HumanSwipeDirection.Up;
+            }
+
+            if (baseOptions == null || source.Mode == HumanSwipeMode.Preview)
+            {
+                double modeRoll = r();
+
+                if (modeRoll < 0.08 + fatigueBias * 0.10)
+                    options.Mode = HumanSwipeMode.Reading;
+                else if (modeRoll < 0.15 + fatigueBias * 0.12)
+                    options.Mode = HumanSwipeMode.Micro;
+                else if (modeRoll > 0.95 && fatigueBias < 0.55)
+                    options.Mode = HumanSwipeMode.Fling;
+                else
+                    options.Mode = HumanSwipeMode.Preview;
+            }
+
+            options.SpeedFactor = Math.Clamp(
+                options.SpeedFactor * (1.0 - fatigueBias * 0.18) * (0.92 + r() * 0.16),
+                0.35,
+                2.6);
+
+            options.HesitationChance ??= options.Mode switch
+            {
+                HumanSwipeMode.Reading => 0.06 + fatigueBias * 0.04,
+                HumanSwipeMode.Micro => 0.05 + fatigueBias * 0.03,
+                HumanSwipeMode.Preview => 0.018 + fatigueBias * 0.02,
+                _ => 0.008
+            };
+
+            options.EndPullBackChance ??= options.Mode switch
+            {
+                HumanSwipeMode.Micro => 0.35,
+                HumanSwipeMode.Reading => 0.24,
+                HumanSwipeMode.Preview => 0.08 + fatigueBias * 0.04,
+                _ => 0.02
+            };
+
+            return options;
+        }
+
+        public void RecordSwipe(HumanSwipeTrace? trace)
+        {
+            LastActionTime = DateTime.UtcNow;
+
+            if (trace == null)
+            {
+                Fatigue = Math.Clamp(Fatigue + 0.03, 0.0, 1.0);
+                return;
+            }
+
+            SwipeCount++;
+            LastMode = trace.Mode;
+            LastDirection = trace.Direction;
+
+            if (trace.Direction == HumanSwipeDirection.Up)
+            {
+                ConsecutiveUpCount++;
+                ConsecutiveDownCount = 0;
+            }
+            else if (trace.Direction == HumanSwipeDirection.Down)
+            {
+                ConsecutiveDownCount++;
+                ConsecutiveUpCount = 0;
+            }
+            else
+            {
+                ConsecutiveUpCount = 0;
+                ConsecutiveDownCount = 0;
+            }
+
+            Fatigue = Math.Clamp(Fatigue + 0.015 - (trace.Mode == HumanSwipeMode.Reading ? 0.006 : 0.0), 0.0, 1.0);
         }
     }
 
@@ -315,6 +431,10 @@ namespace PlaywrightHumanInput
         public double ForceNoise { get; set; }
         public double RadiusNoiseX { get; set; }
         public double RadiusNoiseY { get; set; }
+        public double BaseRadiusX { get; init; }
+        public double BaseRadiusY { get; init; }
+        public double BaseRotationAngle { get; init; }
+        public double RotationNoise { get; set; }
     }
 
     /// <summary>
@@ -328,12 +448,34 @@ namespace PlaywrightHumanInput
         private static readonly ThreadLocal<Random> RandomLocal =
             new(() => new Random(Guid.NewGuid().GetHashCode()));
         private static readonly AsyncLocal<HumanSwipeStyleProfile?> StyleScope = new();
+        private static readonly AsyncLocal<HumanBrowseSessionState?> SessionScope = new();
+
+        /// <summary>
+        /// SwipeToElement* 找元素失败时是否允许原生 scrollIntoView 兜底。默认 false，避免出现没有触摸轨迹的瞬移滚动。
+        /// </summary>
+        public static bool AllowNativeScrollFallbackByDefault { get; set; } = false;
 
         public static IDisposable BeginStyleScope(HumanSwipeStyleProfile? styleProfile)
         {
             var previous = StyleScope.Value;
             StyleScope.Value = styleProfile;
             return new Scope(() => StyleScope.Value = previous);
+        }
+
+        public static IDisposable BeginBrowseSessionScope(HumanBrowseSessionState? session)
+        {
+            var previousSession = SessionScope.Value;
+            var previousStyle = StyleScope.Value;
+
+            SessionScope.Value = session;
+            if (session?.StyleProfile != null)
+                StyleScope.Value = session.StyleProfile;
+
+            return new Scope(() =>
+            {
+                SessionScope.Value = previousSession;
+                StyleScope.Value = previousStyle;
+            });
         }
 
         #region 对外入口
@@ -372,6 +514,30 @@ namespace PlaywrightHumanInput
             }
             catch
             {
+            }
+        }
+
+        /// <summary>
+        /// 连续浏览式滑动：会根据 session 记忆方向、模式、疲劳、停顿习惯。
+        /// 适合“滑一下、看一下、再滑一下”的长时间页面浏览。
+        /// </summary>
+        public static async Task<HumanSwipeTrace?> BrowseSwipeAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanBrowseSessionState session,
+            HumanSwipeOptions? baseOptions = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (session == null)
+                throw new ArgumentNullException(nameof(session));
+
+            var options = session.BuildNextOptions(baseOptions);
+
+            using (BeginBrowseSessionScope(session))
+            {
+                var trace = await SwipeAsync(page, cdp, options, cancellationToken);
+                session.RecordSwipe(trace);
+                return trace;
             }
         }
 
@@ -427,10 +593,12 @@ namespace PlaywrightHumanInput
                 return null;
 
             ScrollTargetState? before = null;
+            ScrollTargetState? docBefore = null;
 
             if (options.VerifyScrollChanged)
             {
                 before = await GetScrollTargetStateAsync(page, path.Value.startX, path.Value.startY);
+                docBefore = await GetDocumentScrollTargetStateAsync(page);
             }
 
             var trace = await RunSwipePathAsync(
@@ -445,13 +613,14 @@ namespace PlaywrightHumanInput
 
             bool moved = true;
 
-            if (options.VerifyScrollChanged && before != null)
+            if (options.VerifyScrollChanged && before != null && docBefore != null)
             {
                 await Task.Delay(RandomRange(80, 180), cancellationToken);
 
                 moved = await DidScrollTargetAsync(
                     page,
                     before,
+                    docBefore,
                     path.Value.startX,
                     path.Value.startY,
                     actualDirection,
@@ -529,6 +698,8 @@ namespace PlaywrightHumanInput
                 Mode = HumanSwipeMode.Preview,
                 SafeMargin = 8
             };
+
+            ApplyStyle(options);
 
             await EnableTouchInputAsync(page, cdp);
 
@@ -910,7 +1081,7 @@ namespace PlaywrightHumanInput
 
                     if (pos == null)
                     {
-                        if (await element.ScrollIntoViewIfNeededAsync(cancellationToken))
+                        if (AllowNativeScrollFallbackByDefault && await element.ScrollIntoViewIfNeededAsync(cancellationToken))
                         {
                             await Task.Delay(RandomRange(260, 560), cancellationToken);
                             continue;
@@ -938,7 +1109,7 @@ namespace PlaywrightHumanInput
 
                     if (trace == null)
                     {
-                        if (await element.ScrollIntoViewIfNeededAsync(cancellationToken))
+                        if (AllowNativeScrollFallbackByDefault && await element.ScrollIntoViewIfNeededAsync(cancellationToken))
                         {
                             await Task.Delay(RandomRange(260, 560), cancellationToken);
                             continue;
@@ -989,7 +1160,7 @@ namespace PlaywrightHumanInput
 
                 if (swipeTrace == null)
                 {
-                    if (await element.ScrollIntoViewIfNeededAsync(cancellationToken))
+                    if (AllowNativeScrollFallbackByDefault && await element.ScrollIntoViewIfNeededAsync(cancellationToken))
                     {
                         await Task.Delay(RandomRange(260, 560), cancellationToken);
                         continue;
@@ -1011,7 +1182,9 @@ namespace PlaywrightHumanInput
                     cancellationToken);
             }
 
-            await element.ScrollIntoViewIfNeededAsync(cancellationToken);
+            if (AllowNativeScrollFallbackByDefault)
+                await element.ScrollIntoViewIfNeededAsync(cancellationToken);
+
             return traces;
         }
 
@@ -1124,7 +1297,7 @@ namespace PlaywrightHumanInput
                     if (trace == null)
                     {
                         // 如果手势滚不动，最后兜底用 Playwright 原生 scrollIntoViewIfNeeded。
-                        if (await element.ScrollIntoViewIfNeededAsync(cancellationToken))
+                        if (AllowNativeScrollFallbackByDefault && await element.ScrollIntoViewIfNeededAsync(cancellationToken))
                         {
                             await Task.Delay(RandomRange(120, 300), cancellationToken);
 
@@ -1156,7 +1329,7 @@ namespace PlaywrightHumanInput
 
                 if (pos == null)
                 {
-                    if (await element.ScrollIntoViewIfNeededAsync(cancellationToken))
+                    if (AllowNativeScrollFallbackByDefault && await element.ScrollIntoViewIfNeededAsync(cancellationToken))
                     {
                         await Task.Delay(RandomRange(150, 360), cancellationToken);
 
@@ -1197,7 +1370,7 @@ namespace PlaywrightHumanInput
 
                 if (fallbackTrace == null)
                 {
-                    if (await element.ScrollIntoViewIfNeededAsync(cancellationToken))
+                    if (AllowNativeScrollFallbackByDefault && await element.ScrollIntoViewIfNeededAsync(cancellationToken))
                     {
                         await Task.Delay(RandomRange(150, 360), cancellationToken);
                         continue;
@@ -1470,18 +1643,19 @@ namespace PlaywrightHumanInput
         private static async Task<bool> DidScrollTargetAsync(
             IPage page,
             ScrollTargetState before,
+            ScrollTargetState docBefore,
             double hitX,
             double hitY,
             HumanSwipeDirection direction,
             double minDelta)
         {
-            if (page == null || page.IsClosed || before == null)
+            if (page == null || page.IsClosed || before == null || docBefore == null)
                 return false;
 
             try
             {
                 // 不再用 data-smad-swipe-id 绑定元素，避免污染 DOM。
-                // 这里重新从相同触点位置获取可滚动容器；如果页面布局变化导致命中不同容器，则回退到 document。
+                // 先比较命中滚动容器；如果命中元素变了，再用独立采集的 document 前后状态比较，避免拿内部容器 before 去比 document after。
                 var after = await GetScrollTargetStateAsync(page, hitX, hitY);
 
                 double delta = IsHorizontalDirection(direction)
@@ -1493,8 +1667,8 @@ namespace PlaywrightHumanInput
 
                 var docAfter = await GetDocumentScrollTargetStateAsync(page);
                 double docDelta = IsHorizontalDirection(direction)
-                    ? Math.Abs(docAfter.ScrollLeft - before.ScrollLeft)
-                    : Math.Abs(docAfter.ScrollTop - before.ScrollTop);
+                    ? Math.Abs(docAfter.ScrollLeft - docBefore.ScrollLeft)
+                    : Math.Abs(docAfter.ScrollTop - docBefore.ScrollTop);
 
                 return docDelta >= minDelta;
             }
@@ -1525,16 +1699,31 @@ namespace PlaywrightHumanInput
                 _ => RandomRangeDouble(0.34, 0.52)
             };
 
-            int centerX = RandomRange(
-                (int)(viewportWidth * 0.40),
-                (int)(viewportWidth * 0.60));
+            double distanceBias = ProfileValue(options, p => p.DistanceBias, 1.0);
 
-            int centerY = RandomRange(
-                (int)(viewportHeight * 0.36),
-                (int)(viewportHeight * 0.64));
+            double centerXRatio = IsHorizontalDirection(direction)
+                ? RandomRangeDouble(0.42, 0.58)
+                : ProfileValue(options, p => p.VerticalCenterXRatio, RandomRangeDouble(0.42, 0.60));
 
-            int verticalDistance = options.DistancePx ?? (int)(viewportHeight * distanceRate);
-            int horizontalDistance = options.DistancePx ?? (int)(viewportWidth * distanceRate);
+            double centerYRatio = IsHorizontalDirection(direction)
+                ? ProfileValue(options, p => p.HorizontalCenterYRatio, RandomRangeDouble(0.42, 0.62))
+                : RandomRangeDouble(0.36, 0.64);
+
+            int centerX = Clamp(
+                (int)Math.Round(viewportWidth * (centerXRatio + RandomRangeDouble(-0.025, 0.025))),
+                safe,
+                viewportWidth - safe);
+
+            int centerY = Clamp(
+                (int)Math.Round(viewportHeight * (centerYRatio + RandomRangeDouble(-0.025, 0.025))),
+                safe,
+                viewportHeight - safe);
+
+            int verticalDistance = options.DistancePx
+                ?? Math.Max(8, (int)Math.Round(viewportHeight * distanceRate * distanceBias));
+
+            int horizontalDistance = options.DistancePx
+                ?? Math.Max(8, (int)Math.Round(viewportWidth * distanceRate * distanceBias));
 
             int startX;
             int startY;
@@ -1730,12 +1919,12 @@ namespace PlaywrightHumanInput
 
             try
             {
-                await DispatchTouchAsync(cdp, "touchStart", samples[0]);
+                await DispatchTouchAsync(cdp, "touchStart", samples[0], options);
                 touchStarted = true;
 
                 if (options.HoldBeforeMove)
                 {
-                    int startHold = GetStartHoldDelay(options.Mode, speed);
+                    int startHold = GetStartHoldDelay(options, speed);
                     await Task.Delay(startHold, cancellationToken);
                     totalDelay += startHold;
                 }
@@ -1769,7 +1958,7 @@ namespace PlaywrightHumanInput
                         RotationAngle = samples[i].RotationAngle
                     };
 
-                    await DispatchTouchAsync(cdp, "touchMove", sample);
+                    await DispatchTouchAsync(cdp, "touchMove", sample, options);
                     lastDispatched = sample;
 
                     int delay = ScaleDelay(sample.DelayMs, speed);
@@ -1785,7 +1974,7 @@ namespace PlaywrightHumanInput
                 {
                     var endSample = BuildTerminalSample(new PointD(endX, endY), 1.0, options, dynamics);
 
-                    await DispatchTouchAsync(cdp, "touchMove", endSample);
+                    await DispatchTouchAsync(cdp, "touchMove", endSample, options);
                     lastDispatched = endSample;
 
                     tracePoints.Add(new HumanSwipeTracePoint
@@ -1809,7 +1998,7 @@ namespace PlaywrightHumanInput
                     var pullBackPoint = BuildPullBackPoint(lastDispatched.Point, direction, pullBackPx);
                     var pullBackSample = BuildTerminalSample(pullBackPoint, 0.96, options, dynamics);
 
-                    await DispatchTouchAsync(cdp, "touchMove", pullBackSample);
+                    await DispatchTouchAsync(cdp, "touchMove", pullBackSample, options);
 
                     int pullDelay = ScaleDelay(RandomRange(18, 55), speed);
                     await Task.Delay(pullDelay, cancellationToken);
@@ -1829,7 +2018,7 @@ namespace PlaywrightHumanInput
 
                 if (holdBeforeEnd)
                 {
-                    int endHold = GetEndHoldDelay(options.Mode, speed);
+                    int endHold = GetEndHoldDelay(options, speed);
                     await Task.Delay(endHold, cancellationToken);
                     totalDelay += endHold;
                 }
@@ -1844,12 +2033,7 @@ namespace PlaywrightHumanInput
                 {
                     try
                     {
-                        await cdp.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
-                        {
-                            ["type"] = "touchEnd",
-                            ["touchPoints"] = Array.Empty<object>(),
-                            ["modifiers"] = 0
-                        });
+                        await DispatchTouchEndAsync(cdp, options);
                     }
                     catch
                     {
@@ -1932,7 +2116,7 @@ namespace PlaywrightHumanInput
                     radius.Item1,
                     radius.Item2,
                     force,
-                    GetRotationAngle(progress, direction, options.Mode)));
+                    GetRotationAngleCurve(progress, options.Mode, dynamics)));
             }
 
             return samples;
@@ -1960,6 +2144,15 @@ namespace PlaywrightHumanInput
                 _ => Math.Min(8.0, distance * 0.024)
             };
 
+            double baseRadius = options.Mode switch
+            {
+                HumanSwipeMode.Micro => RandomRangeDouble(2.7, 3.6),
+                HumanSwipeMode.Reading => RandomRangeDouble(3.1, 4.2),
+                HumanSwipeMode.Preview => RandomRangeDouble(3.0, 4.6),
+                HumanSwipeMode.Fling => RandomRangeDouble(2.8, 4.4),
+                _ => RandomRangeDouble(3.0, 4.4)
+            };
+
             return new GestureDynamics
             {
                 DriftPeak = Math.Max(0, options.MaxCrossAxisDriftPx ?? autoDrift),
@@ -1969,7 +2162,13 @@ namespace PlaywrightHumanInput
                 SmoothJitterY = 0,
                 ForceNoise = RandomRangeDouble(-0.025, 0.025),
                 RadiusNoiseX = RandomRangeDouble(-0.12, 0.12),
-                RadiusNoiseY = RandomRangeDouble(-0.12, 0.12)
+                RadiusNoiseY = RandomRangeDouble(-0.12, 0.12),
+                BaseRadiusX = baseRadius * RandomRangeDouble(0.92, 1.08),
+                BaseRadiusY = baseRadius * RandomRangeDouble(0.92, 1.12),
+                BaseRotationAngle = IsHorizontalDirection(direction)
+                    ? RandomRangeDouble(8, 38)
+                    : RandomRangeDouble(18, 68),
+                RotationNoise = RandomRangeDouble(-2, 2)
             };
         }
 
@@ -2080,24 +2279,16 @@ namespace PlaywrightHumanInput
         {
             progress = Clamp01(progress);
 
-            double baseRadius = mode switch
-            {
-                HumanSwipeMode.Micro => RandomRangeDouble(2.7, 3.6),
-                HumanSwipeMode.Reading => RandomRangeDouble(3.1, 4.2),
-                HumanSwipeMode.Preview => RandomRangeDouble(3.0, 4.6),
-                HumanSwipeMode.Fling => RandomRangeDouble(2.8, 4.4),
-                _ => RandomRangeDouble(3.0, 4.4)
-            };
-
             // 面积与压力轻微相关：压力越大，半径略大；抬手前自然缩小。
+            // BaseRadiusX/Y 在一次手势开始时生成，避免每个采样点重新随机导致触点面积跳变。
             double forceEffect = (force - 0.65) * 1.15;
             double liftShrink = 1.0 - 0.22 * SmoothStep(0.78, 1.0, progress);
 
             dynamics.RadiusNoiseX = dynamics.RadiusNoiseX * 0.78 + RandomRangeDouble(-0.10, 0.10) * 0.22;
             dynamics.RadiusNoiseY = dynamics.RadiusNoiseY * 0.78 + RandomRangeDouble(-0.10, 0.10) * 0.22;
 
-            double rx = (baseRadius + forceEffect + dynamics.RadiusNoiseX) * liftShrink;
-            double ry = (baseRadius + forceEffect + dynamics.RadiusNoiseY) * liftShrink * RandomRangeDouble(0.88, 1.12);
+            double rx = (dynamics.BaseRadiusX + forceEffect + dynamics.RadiusNoiseX) * liftShrink;
+            double ry = (dynamics.BaseRadiusY + forceEffect + dynamics.RadiusNoiseY) * liftShrink;
 
             return (
                 Math.Clamp(rx, 2.2, 6.2),
@@ -2124,7 +2315,7 @@ namespace PlaywrightHumanInput
                 radius.Item1,
                 radius.Item2,
                 force,
-                RandomRangeDouble(0, 90));
+                GetRotationAngleCurve(progress, options.Mode, dynamics));
         }
 
         private static PointD BuildPullBackPoint(
@@ -2174,25 +2365,31 @@ namespace PlaywrightHumanInput
             return RandomChance(chance);
         }
 
-        private static double GetRotationAngle(
+        private static double GetRotationAngleCurve(
             double progress,
-            HumanSwipeDirection direction,
-            HumanSwipeMode mode)
+            HumanSwipeMode mode,
+            GestureDynamics dynamics)
         {
-            double baseAngle = IsHorizontalDirection(direction)
-                ? RandomRangeDouble(8, 38)
-                : RandomRangeDouble(18, 68);
+            progress = Clamp01(progress);
 
-            double modeOffset = mode == HumanSwipeMode.Fling
-                ? RandomRangeDouble(-8, 8)
-                : RandomRangeDouble(-4, 4);
+            double envelope = Math.Sin(Math.PI * progress);
+            double swing = mode == HumanSwipeMode.Fling ? 5.0 : 2.5;
 
-            return Math.Clamp(baseAngle + modeOffset + Math.Sin(progress * Math.PI) * RandomRangeDouble(-3, 3), 0, 90);
+            dynamics.RotationNoise = dynamics.RotationNoise * 0.82 + RandomRangeDouble(-2.5, 2.5) * 0.18;
+
+            return Math.Clamp(
+                dynamics.BaseRotationAngle + dynamics.RotationNoise + envelope * RandomRangeDouble(-swing, swing),
+                0,
+                90);
         }
 
-        private static Task DispatchTouchAsync(ICDPSession cdp, string type, TouchSample sample)
+        private static Task DispatchTouchAsync(
+            ICDPSession cdp,
+            string type,
+            TouchSample sample,
+            HumanSwipeOptions options)
         {
-            return cdp.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
+            var payload = new Dictionary<string, object>
             {
                 ["type"] = type,
                 ["touchPoints"] = new object[]
@@ -2209,7 +2406,27 @@ namespace PlaywrightHumanInput
                     }
                 },
                 ["modifiers"] = 0
-            });
+            };
+
+            if (options.UseEventTimestamp)
+                payload["timestamp"] = CdpNowSeconds();
+
+            return cdp.SendAsync("Input.dispatchTouchEvent", payload);
+        }
+
+        private static Task DispatchTouchEndAsync(ICDPSession cdp, HumanSwipeOptions options)
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["type"] = "touchEnd",
+                ["touchPoints"] = Array.Empty<object>(),
+                ["modifiers"] = 0
+            };
+
+            if (options.UseEventTimestamp)
+                payload["timestamp"] = CdpNowSeconds();
+
+            return cdp.SendAsync("Input.dispatchTouchEvent", payload);
         }
 
         private static (
@@ -2310,9 +2527,9 @@ namespace PlaywrightHumanInput
             return Math.Max(6, baseSteps);
         }
 
-        private static int GetStartHoldDelay(HumanSwipeMode mode, double speedFactor)
+        private static int GetStartHoldDelay(HumanSwipeOptions options, double speedFactor)
         {
-            int delay = mode switch
+            int delay = options.Mode switch
             {
                 HumanSwipeMode.Micro => RandomRange(18, 55),
                 HumanSwipeMode.Reading => RandomRange(55, 120),
@@ -2321,12 +2538,13 @@ namespace PlaywrightHumanInput
                 _ => RandomRange(25, 65)
             };
 
+            delay = (int)Math.Round(delay * ProfileValue(options, p => p.StartHoldBias, 1.0));
             return ScaleDelay(delay, speedFactor);
         }
 
-        private static int GetEndHoldDelay(HumanSwipeMode mode, double speedFactor)
+        private static int GetEndHoldDelay(HumanSwipeOptions options, double speedFactor)
         {
-            int delay = mode switch
+            int delay = options.Mode switch
             {
                 HumanSwipeMode.Micro => RandomRange(8, 35),
                 HumanSwipeMode.Reading => RandomRange(55, 110),
@@ -2335,6 +2553,7 @@ namespace PlaywrightHumanInput
                 _ => RandomRange(8, 25)
             };
 
+            delay = (int)Math.Round(delay * ProfileValue(options, p => p.EndHoldBias, 1.0));
             return ScaleDelay(delay, speedFactor);
         }
 
@@ -2470,6 +2689,93 @@ namespace PlaywrightHumanInput
         #endregion
 
         #region 基础工具
+
+        public static HumanSwipeOptions CloneOptions(HumanSwipeOptions source)
+        {
+            if (source == null)
+                return new HumanSwipeOptions();
+
+            return new HumanSwipeOptions
+            {
+                Direction = source.Direction,
+                Mode = source.Mode,
+                SpeedFactor = source.SpeedFactor,
+                UseBezierCurve = source.UseBezierCurve,
+                UseJitter = source.UseJitter,
+                HoldBeforeMove = source.HoldBeforeMove,
+                HoldBeforeEnd = source.HoldBeforeEnd,
+                StartX = source.StartX,
+                StartY = source.StartY,
+                EndX = source.EndX,
+                EndY = source.EndY,
+                DistancePx = source.DistancePx,
+                Steps = source.Steps,
+                SafeMargin = source.SafeMargin,
+                MaxJitter = source.MaxJitter,
+                CrossAxisJitter = source.CrossAxisJitter,
+                UseSmoothJitter = source.UseSmoothJitter,
+                EnableCrossAxisDrift = source.EnableCrossAxisDrift,
+                MaxCrossAxisDriftPx = source.MaxCrossAxisDriftPx,
+                EnableForceCurve = source.EnableForceCurve,
+                EnableTouchAreaCurve = source.EnableTouchAreaCurve,
+                EnableHesitationPause = source.EnableHesitationPause,
+                HesitationChance = source.HesitationChance,
+                MinHesitationMs = source.MinHesitationMs,
+                MaxHesitationMs = source.MaxHesitationMs,
+                EnableEndPullBack = source.EnableEndPullBack,
+                EndPullBackChance = source.EndPullBackChance,
+                MinPullBackPx = source.MinPullBackPx,
+                MaxPullBackPx = source.MaxPullBackPx,
+                EnableVisualConfirmPause = source.EnableVisualConfirmPause,
+                MinVisualConfirmMs = source.MinVisualConfirmMs,
+                MaxVisualConfirmMs = source.MaxVisualConfirmMs,
+                NearTargetExtraPauseMs = source.NearTargetExtraPauseMs,
+                CheckScrollableBeforeSwipe = source.CheckScrollableBeforeSwipe,
+                VerifyScrollChanged = source.VerifyScrollChanged,
+                AllowNativeScrollFallback = source.AllowNativeScrollFallback,
+                UseEventTimestamp = source.UseEventTimestamp,
+                ScrollChangedMinDelta = source.ScrollChangedMinDelta,
+                MaxPathTry = source.MaxPathTry,
+                Log = source.Log,
+                StyleProfile = source.StyleProfile
+            };
+        }
+
+        public static string ToCsv(HumanSwipeTrace trace)
+        {
+            if (trace == null)
+                return string.Empty;
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("index,x,y,delayMs,radiusX,radiusY,force,rotationAngle");
+
+            for (int i = 0; i < trace.Points.Count; i++)
+            {
+                var p = trace.Points[i];
+                sb.AppendLine($"{i},{p.X:0.###},{p.Y:0.###},{p.DelayMs},{p.RadiusX:0.###},{p.RadiusY:0.###},{p.Force:0.###},{p.RotationAngle:0.###}");
+            }
+
+            return sb.ToString();
+        }
+
+        private static HumanSwipeStyleProfile? CurrentProfile(HumanSwipeOptions? options = null)
+        {
+            return options?.StyleProfile ?? SessionScope.Value?.StyleProfile ?? StyleScope.Value;
+        }
+
+        private static double ProfileValue(
+            HumanSwipeOptions options,
+            Func<HumanSwipeStyleProfile, double> selector,
+            double defaultValue)
+        {
+            var profile = CurrentProfile(options);
+            return profile == null ? defaultValue : selector(profile);
+        }
+
+        private static double CdpNowSeconds()
+        {
+            return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+        }
 
         private static HumanSwipeDirection PickDirection(HumanSwipeDirection direction)
         {
@@ -2641,7 +2947,7 @@ namespace PlaywrightHumanInput
         #endregion
         private static void ApplyStyle(HumanSwipeOptions options)
         {
-            var profile = options.StyleProfile ?? StyleScope.Value;
+            var profile = CurrentProfile(options);
             if (profile == null) return;
 
             var rnd = new Random(unchecked(profile.Seed ^ Environment.TickCount));

@@ -65,16 +65,11 @@ namespace SMAd.LandingPolicy
             }
 
 
-
-
-            await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
-                ctx.Page!,
-                ctx.CdpSession!,
-                duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
-                cancellationToken: token);
+            await _owner.HumanBrowseForAsync(ctx, 5000, 8000, token, maxContinuousNoMove: 3);
 
 
 
+            var humanSwipeOptions = _owner.GetHumanSwipeOptions(ctx);
             var offerItems = ctx.Page.Locator(".ad-card-title,.ad-card-image,.ad-card-conv-btn");
             if (await offerItems.CountAsync() > 0)
             {
@@ -86,6 +81,7 @@ namespace SMAd.LandingPolicy
                     ctx.CdpSession!,
                     offer,
                     maxSwipes: 10,
+                    options: humanSwipeOptions,
                     cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1200), token);

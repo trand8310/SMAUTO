@@ -201,6 +201,7 @@ namespace SMAd
 
                     try
                     {
+
                         await locator.ScrollIntoViewIfNeededAsync();
                     }
                     catch

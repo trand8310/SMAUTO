@@ -24,7 +24,7 @@ namespace SMAd.LandingPolicy
             token.ThrowIfCancellationRequested();
             await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
             var offerItems = await _owner.ResolveOfferItemsAsync(ctx, token);
-
+            var humanSwipeOptions = _owner.GetHumanSwipeOptions(ctx);
             if (!ctx.Page!.Url.StartsWith("https://plogin.m.jd.com/"))
             {
                 if (offerItems != null && await offerItems.CountAsync() > 0)
@@ -33,11 +33,12 @@ namespace SMAd.LandingPolicy
                     var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
                     await HumanSwipeOperator.MoveToElementAsync(
-                      ctx.Page!,
-                      ctx.CdpSession!,
-                      item,
-                      maxSwipes: 10,
-                      cancellationToken: token);
+                        ctx.Page!,
+                        ctx.CdpSession!,
+                        item,
+                        maxSwipes: 10,
+                        options: humanSwipeOptions,
+                        cancellationToken: token);
 
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
 

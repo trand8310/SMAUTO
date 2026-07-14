@@ -43,19 +43,22 @@ namespace SMAd.LandingPolicy
             await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
             var offerItems = await _owner.ResolveOfferItemsAsync(ctx, token);
 
+            var humanSwipeOptions = _owner.GetHumanSwipeOptions(ctx);
+
             if (offerItems != null && await offerItems.CountAsync() > 0)
             {
                 int count = await offerItems.CountAsync();
                 var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
                 await HumanSwipeOperator.MoveToElementAsync(
-                  ctx.Page!,
-                  ctx.CdpSession!,
-                  item,
-                  maxSwipes: 10,
-                  cancellationToken: token);
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    item,
+                    maxSwipes: 10,
+                    options: humanSwipeOptions,
+                    cancellationToken: token);
 
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                await Task.Delay(CommonHelper.RandomRange(800, 1400), token);
 
                 var text = await item.InnerTextAsync();
                 var box = await item.BoundingBoxAsync();
@@ -90,13 +93,9 @@ namespace SMAd.LandingPolicy
 
                     if (ctx.Page.Url.StartsWith("https://re.1688.com/"))
                     {
-                        await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
-                        ctx.Page!,
-                        ctx.CdpSession!,
-                        duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
-                        cancellationToken: token);
+                        await _owner.HumanBrowseForAsync(ctx, 5000, 8000, token, maxContinuousNoMove: 3);
 
- 
+
                         count = await CenterClickableFinder.MarkCandidatesAsync(ctx.Page);
                         if (count > 0)
                         {
@@ -123,7 +122,18 @@ namespace SMAd.LandingPolicy
                             .First;
                             if (await locator.CountAsync() > 0)
                             {
-                                await locator.First.ScrollIntoViewIfNeededAsync();
+                                await HumanSwipeOperator.MoveToElementAsync(
+                                    ctx.Page!,
+                                    ctx.CdpSession!,
+                                    locator.First,
+                                    maxSwipes: 10,
+                                    options: humanSwipeOptions,
+                                    cancellationToken: token);
+
+                                if (!await _owner.IsElementPartiallyVisibleAsync(locator.First))
+                                {
+                                    await locator.First.ScrollIntoViewIfNeededAsync();
+                                }
                                 await _owner.ClickAndDetectNavigationAsync(ctx, locator.First, token);
                             }
                         }

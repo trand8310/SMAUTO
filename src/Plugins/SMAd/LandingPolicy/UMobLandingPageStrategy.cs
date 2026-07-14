@@ -20,11 +20,7 @@ namespace SMAd.LandingPolicy
         {
             token.ThrowIfCancellationRequested();
 
-            await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
-            ctx.Page!,
-            ctx.CdpSession!,
-            duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(5000, 8000)),
-            cancellationToken: token);
+            await _owner.HumanBrowseForAsync(ctx, 5000, 8000, token, maxContinuousNoMove: 3);
 
             var tagItems = ctx.Page!.Locator(".tag-panel .tag-item");
             var count = await tagItems.CountAsync();

@@ -1,6 +1,7 @@
 using Microsoft.Playwright;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -31,7 +32,9 @@ namespace PlaywrightHumanInput
     }
 
     /// <summary>
-    /// HumanSwipeOperator 的概率和停顿配置。
+    /// HumanSwipeOperator 的高层行为配置。
+    ///
+    /// 这个类负责“连续行为”的拟人化；HumanSwipeEmulator 负责“单次轨迹”的拟人化。
     /// </summary>
     public sealed class HumanSwipeOperatorOptions
     {
@@ -60,34 +63,64 @@ namespace PlaywrightHumanInput
         /// 剩余概率自动作为向下回看概率。
         /// 默认：1 - 上面所有概率 = 0.02。
         /// </summary>
-        public double BackReviewChance
-        {
-            get
-            {
-                return Math.Max(
-                    0,
-                    1.0
-                    - ReadingChance
-                    - PreviewChance
-                    - FlingNormalChance
-                    - FlingStrongChance
-                    - FlingVeryStrongChance
-                    - MicroChance);
-            }
-        }
+        public double BackReviewChance => Math.Max(
+            0,
+            1.0
+            - ReadingChance
+            - PreviewChance
+            - FlingNormalChance
+            - FlingStrongChance
+            - FlingVeryStrongChance
+            - MicroChance);
 
         public int DefaultViewportWidth { get; set; } = 390;
         public int DefaultViewportHeight { get; set; } = 800;
-    }
 
+        /// <summary>
+        /// 同一个浏览会话的行为状态。
+        /// 建议一个账号/一个页面浏览任务复用同一个 Session，这样起点、速度、停顿会更像同一个人。
+        /// </summary>
+        public HumanBrowseSessionState? Session { get; set; }
+
+        /// <summary>
+        /// true 时，Operator 会把 Session 的 StyleProfile 写入每次 HumanSwipeOptions，保持同一用户的手势习惯。
+        /// </summary>
+        public bool UseSessionBrowseModel { get; set; } = true;
+
+        /// <summary>
+        /// 动作后停顿倍率。0.5 更快，1.5 更慢。
+        /// </summary>
+        public double DelayFactor { get; set; } = 1.0;
+
+        /// <summary>
+        /// 滑动失败后是否允许 HumanSwipeEmulator 使用原生 ScrollIntoView 兜底。
+        /// 需要全链路触摸拟人时保持 false。
+        /// </summary>
+        public bool AllowNativeScrollFallback { get; set; } = false;
+
+        /// <summary>
+        /// 连续浏览时，随着 Fatigue 上升，是否自动放慢动作并增加停顿。
+        /// </summary>
+        public bool EnableFatigueDelay { get; set; } = true;
+
+        /// <summary>
+        /// 是否在随机浏览中允许向下回看。
+        /// </summary>
+        public bool AllowBackReview { get; set; } = true;
+
+        /// <summary>
+        /// 长观察停顿概率。
+        /// </summary>
+        public double LongObserveChance { get; set; } = 0.10;
+
+        /// <summary>
+        /// 日志回调。
+        /// </summary>
+        public Action<string>? Log { get; set; }
+    }
 
     /// <summary>
     /// 时间范围配置，支持毫秒、秒、分钟。
-    /// 
-    /// 示例：
-    /// HumanBrowseDurationRange.FromMilliseconds(30000, 90000)
-    /// HumanBrowseDurationRange.FromSeconds(60, 120)
-    /// HumanBrowseDurationRange.FromMinutes(1, 2)
     /// </summary>
     public readonly struct HumanBrowseDurationRange
     {
@@ -152,20 +185,12 @@ namespace PlaywrightHumanInput
     }
 
     /// <summary>
-    /// HumanSwipeEmulator 的静态操作器。
-    /// 
-    /// 特点：
-    /// 1. 不需要 new。
-    /// 2. 不改 HumanSwipeEmulator 主类。
-    /// 3. 统一封装常用滑动行为：阅读、预览、快速甩动、强力甩动、微调、回看、连续随机滑动。
-    /// 4. 页面级滑动调用 HumanSwipeEmulator.SwipeAsync。
-    /// 5. 元素相关调用 HumanSwipeEmulator.SwipeToElementAsync / SwipeInsideElementAsync。
-    /// 
-    /// 示例：
-    /// await HumanSwipeOperator.BrowseOnceAsync(page, cdp);
-    /// await HumanSwipeOperator.BrowseTimesAsync(page, cdp, 3, 7);
-    /// await HumanSwipeOperator.FlingUpAsync(page, cdp, FlingStrength.Strong);
-    /// await HumanSwipeOperator.SwipeElementLeftAsync(page, cdp, locator);
+    /// HumanSwipeEmulator 的高层操作器。
+    ///
+    /// 设计原则：
+    /// 1. HumanSwipeEmulator 负责单次轨迹真实：坐标、速度、触点、滚动验证。
+    /// 2. HumanSwipeOperator 负责连续行为真实：意图、概率、停顿、回看、限时浏览、找目标。
+    /// 3. 通过 HumanBrowseSessionState 让连续动作保持同一个人的习惯。
     /// </summary>
     public static class HumanSwipeOperator
     {
@@ -185,37 +210,12 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
 
-            double r = NextDouble();
+            var action = PickBrowseAction(options);
+            options.Log?.Invoke($"BrowseOnce action={action.Intent}, direction={action.Direction}, strength={action.Strength}");
 
-            double p1 = options.ReadingChance;
-            double p2 = p1 + options.PreviewChance;
-            double p3 = p2 + options.FlingNormalChance;
-            double p4 = p3 + options.FlingStrongChance;
-            double p5 = p4 + options.FlingVeryStrongChance;
-            double p6 = p5 + options.MicroChance;
-
-            if (r < p1)
-                return ReadingUpAsync(page, cdp, cancellationToken);
-
-            if (r < p2)
-                return PreviewUpAsync(page, cdp, cancellationToken);
-
-            if (r < p3)
-                return FlingUpAsync(page, cdp, FlingStrength.Normal, cancellationToken);
-
-            if (r < p4)
-                return FlingUpAsync(page, cdp, FlingStrength.Strong, cancellationToken);
-
-            if (r < p5)
-                return FlingUpAsync(page, cdp, FlingStrength.VeryStrong, cancellationToken);
-
-            if (r < p6)
-                return MicroUpAsync(page, cdp, cancellationToken);
-
-            return PreviewDownAsync(page, cdp, cancellationToken);
+            return RunActionAsync(page, cdp, action, options, cancellationToken);
         }
 
         /// <summary>
@@ -227,31 +227,36 @@ namespace PlaywrightHumanInput
             SwipeIntent intent,
             CancellationToken cancellationToken = default)
         {
+            return SwipeByIntentAsync(page, cdp, intent, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        /// <summary>
+        /// 按指定意图执行一次动作，并使用指定 Operator 配置/Session。
+        /// </summary>
+        public static Task<HumanSwipeTrace?> SwipeByIntentAsync(
+            IPage page,
+            ICDPSession cdp,
+            SwipeIntent intent,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            if (options == null)
+                throw new ArgumentNullException(nameof(options));
+
             ValidatePageAndCdp(page, cdp);
 
-            return intent switch
+            var action = intent switch
             {
-                SwipeIntent.Reading =>
-                    ReadingUpAsync(page, cdp, cancellationToken),
-
-                SwipeIntent.Preview =>
-                    PreviewUpAsync(page, cdp, cancellationToken),
-
-                SwipeIntent.Fling =>
-                    FlingUpAsync(page, cdp, PickRandomFlingStrength(), cancellationToken),
-
-                SwipeIntent.MicroAdjust =>
-                    MicroUpAsync(page, cdp, cancellationToken),
-
-                SwipeIntent.BackReview =>
-                    PreviewDownAsync(page, cdp, cancellationToken),
-
-                SwipeIntent.FastScan =>
-                    FastScanOnceAsync(page, cdp, cancellationToken),
-
-                _ =>
-                    PreviewUpAsync(page, cdp, cancellationToken)
+                SwipeIntent.Reading => new SwipeActionPlan(SwipeIntent.Reading, HumanSwipeDirection.Up, null),
+                SwipeIntent.Preview => new SwipeActionPlan(SwipeIntent.Preview, HumanSwipeDirection.Up, null),
+                SwipeIntent.Fling => new SwipeActionPlan(SwipeIntent.Fling, HumanSwipeDirection.Up, PickRandomFlingStrength()),
+                SwipeIntent.MicroAdjust => new SwipeActionPlan(SwipeIntent.MicroAdjust, HumanSwipeDirection.Up, null),
+                SwipeIntent.BackReview => new SwipeActionPlan(SwipeIntent.BackReview, HumanSwipeDirection.Down, null),
+                SwipeIntent.FastScan => new SwipeActionPlan(SwipeIntent.FastScan, HumanSwipeDirection.Up, null),
+                _ => new SwipeActionPlan(SwipeIntent.Preview, HumanSwipeDirection.Up, null)
             };
+
+            return RunActionAsync(page, cdp, action, options, cancellationToken);
         }
 
         /// <summary>
@@ -263,13 +268,26 @@ namespace PlaywrightHumanInput
             IReadOnlyList<SwipeIntent> intents,
             CancellationToken cancellationToken = default)
         {
+            return RandomFromIntentsAsync(page, cdp, intents, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        /// <summary>
+        /// 从多个意图中随机选择一个执行，并使用指定 Operator 配置/Session。
+        /// </summary>
+        public static Task<HumanSwipeTrace?> RandomFromIntentsAsync(
+            IPage page,
+            ICDPSession cdp,
+            IReadOnlyList<SwipeIntent> intents,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
             ValidatePageAndCdp(page, cdp);
 
             if (intents == null || intents.Count == 0)
-                return BrowseOnceAsync(page, cdp, cancellationToken: cancellationToken);
+                return BrowseOnceAsync(page, cdp, options, cancellationToken);
 
             var intent = intents[NextInt(0, intents.Count - 1)];
-            return SwipeByIntentAsync(page, cdp, intent, cancellationToken);
+            return SwipeByIntentAsync(page, cdp, intent, options, cancellationToken);
         }
 
         #endregion
@@ -278,7 +296,7 @@ namespace PlaywrightHumanInput
 
         /// <summary>
         /// 连续随机浏览多次。
-        /// 每次动作和动作后停顿都会随机。
+        /// 每次动作和动作后停顿都会随机，并复用同一个 Session。
         /// </summary>
         public static async Task<List<HumanSwipeTrace>> BrowseTimesAsync(
             IPage page,
@@ -289,8 +307,8 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
 
             var traces = new List<HumanSwipeTrace>();
             int times = NextInt(minTimes, maxTimes);
@@ -325,8 +343,8 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
 
             var traces = new List<HumanSwipeTrace>();
             int times = NextInt(minTimes, maxTimes);
@@ -342,11 +360,11 @@ namespace PlaywrightHumanInput
                 double r = NextDouble();
 
                 if (r < 0.70)
-                    trace = await ReadingUpAsync(page, cdp, cancellationToken);
+                    trace = await ReadingUpAsync(page, cdp, options, cancellationToken);
                 else if (r < 0.88)
-                    trace = await MicroUpAsync(page, cdp, cancellationToken);
+                    trace = await MicroUpAsync(page, cdp, options, cancellationToken);
                 else
-                    trace = await PreviewUpAsync(page, cdp, cancellationToken);
+                    trace = await PreviewUpAsync(page, cdp, options, cancellationToken);
 
                 if (trace != null)
                     traces.Add(trace);
@@ -369,8 +387,8 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
 
             var traces = new List<HumanSwipeTrace>();
             int times = NextInt(minTimes, maxTimes);
@@ -382,7 +400,7 @@ namespace PlaywrightHumanInput
                 if (page.IsClosed)
                     break;
 
-                var trace = await FastScanOnceAsync(page, cdp, cancellationToken);
+                var trace = await FastScanOnceAsync(page, cdp, options, cancellationToken);
 
                 if (trace != null)
                     traces.Add(trace);
@@ -405,8 +423,8 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
 
             var traces = new List<HumanSwipeTrace>();
             int times = NextInt(minTimes, maxTimes);
@@ -419,8 +437,8 @@ namespace PlaywrightHumanInput
                     break;
 
                 HumanSwipeTrace? trace = NextDouble() < 0.75
-                    ? await PreviewDownAsync(page, cdp, cancellationToken)
-                    : await ReadingDownAsync(page, cdp, cancellationToken);
+                    ? await PreviewDownAsync(page, cdp, options, cancellationToken)
+                    : await ReadingDownAsync(page, cdp, options, cancellationToken);
 
                 if (trace != null)
                     traces.Add(trace);
@@ -431,12 +449,8 @@ namespace PlaywrightHumanInput
             return traces;
         }
 
-
         /// <summary>
-        /// 连续随机向上滑动。
-        /// 如果某一次滑动失败、页面滑不动、到底、或者返回 null，就立即停止。
-        /// 
-        /// 适合：列表页/搜索结果页一直往下浏览，但不强行死循环。
+        /// 连续随机向上滑动。某一次滑动失败、页面滑不动、到底、或者返回 null，就立即停止。
         /// </summary>
         public static async Task<List<HumanSwipeTrace>> RandomUpUntilStopAsync(
             IPage page,
@@ -447,17 +461,10 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
 
             var traces = new List<HumanSwipeTrace>();
-
-            if (minTimes < 0)
-                minTimes = 0;
-
-            if (maxTimes < minTimes)
-                maxTimes = minTimes;
-
             int times = NextInt(minTimes, maxTimes);
 
             for (int i = 0; i < times; i++)
@@ -467,18 +474,12 @@ namespace PlaywrightHumanInput
                 if (page.IsClosed)
                     break;
 
-                var trace = await RandomUpOnceAsync(
-                    page,
-                    cdp,
-                    cancellationToken);
+                var trace = await RandomUpOnceAsync(page, cdp, options, cancellationToken);
 
-                // HumanSwipeEmulator.SwipeAsync 内部 VerifyScrollChanged=true 时，
-                // 如果到底、滑不动、滚动容器不能继续滚，会返回 null。
                 if (trace == null)
                     break;
 
                 traces.Add(trace);
-
                 await DelayAfterTraceAsync(trace, options, cancellationToken);
             }
 
@@ -486,9 +487,7 @@ namespace PlaywrightHumanInput
         }
 
         /// <summary>
-        /// 连续随机向上滑动指定最大次数。
-        /// 每次以向上为主，包含 Reading / Preview / Fling / Micro / LongFling。
-        /// 滑不动就停止。
+        /// 连续随机向上滑动指定最大次数。滑不动就停止。
         /// </summary>
         public static Task<List<HumanSwipeTrace>> RandomUpUntilStopAsync(
             IPage page,
@@ -506,142 +505,97 @@ namespace PlaywrightHumanInput
         }
 
         /// <summary>
-        /// 单次随机向上动作。
-        /// 只做向上，不做向下回看。
+        /// 单次随机向上动作。只做向上，不做向下回看。
         /// </summary>
         public static Task<HumanSwipeTrace?> RandomUpOnceAsync(
             IPage page,
             ICDPSession cdp,
             CancellationToken cancellationToken = default)
         {
+            return RandomUpOnceAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        /// <summary>
+        /// 单次随机向上动作。只做向上，不做向下回看。
+        /// </summary>
+        public static Task<HumanSwipeTrace?> RandomUpOnceAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
             ValidatePageAndCdp(page, cdp);
 
             double r = NextDouble();
 
-            // 只向上：
-            // 8%  慢速阅读
-            // 34% 正常预览
-            // 30% 普通甩动
-            // 18% 强力甩动
-            // 6%  超强甩动
-            // 3%  超长甩动
-            // 1%  微调
             if (r < 0.08)
-                return ReadingUpAsync(page, cdp, cancellationToken);
+                return ReadingUpAsync(page, cdp, options, cancellationToken);
 
             if (r < 0.42)
-                return PreviewUpAsync(page, cdp, cancellationToken);
+                return PreviewUpAsync(page, cdp, options, cancellationToken);
 
             if (r < 0.72)
-                return FlingUpAsync(page, cdp, FlingStrength.Normal, cancellationToken);
+                return FlingUpAsync(page, cdp, FlingStrength.Normal, options, cancellationToken);
 
             if (r < 0.90)
-                return FlingUpAsync(page, cdp, FlingStrength.Strong, cancellationToken);
+                return FlingUpAsync(page, cdp, FlingStrength.Strong, options, cancellationToken);
 
             if (r < 0.96)
-                return FlingUpAsync(page, cdp, FlingStrength.VeryStrong, cancellationToken);
+                return FlingUpAsync(page, cdp, FlingStrength.VeryStrong, options, cancellationToken);
 
             if (r < 0.99)
-                return LongFlingUpAsync(page, cdp, cancellationToken);
+                return LongFlingUpAsync(page, cdp, options, cancellationToken);
 
-            return MicroUpAsync(page, cdp, cancellationToken);
+            return MicroUpAsync(page, cdp, options, cancellationToken);
         }
 
-
         /// <summary>
-        /// 单次随机向下动作。
-        /// 只做向下，不做向上回看。
+        /// 单次随机向下动作。只做向下，不做向上回看。
         /// </summary>
         public static Task<HumanSwipeTrace?> RandomDownOnceAsync(
             IPage page,
             ICDPSession cdp,
             CancellationToken cancellationToken = default)
         {
-            ValidatePageAndCdp(page, cdp);
-
-            double r = NextDouble();
-
-            // 只向上：
-            // 8%  慢速阅读
-            // 34% 正常预览
-            // 30% 普通甩动
-            // 18% 强力甩动
-            // 6%  超强甩动
-            // 3%  超长甩动
-            // 1%  微调
-            if (r < 0.08)
-                return ReadingDownAsync(page, cdp, cancellationToken);
-
-            if (r < 0.42)
-                return PreviewDownAsync(page, cdp, cancellationToken);
-
-            if (r < 0.72)
-                return FlingDownAsync(page, cdp, FlingStrength.Normal, cancellationToken);
-
-            if (r < 0.90)
-                return FlingDownAsync(page, cdp, FlingStrength.Strong, cancellationToken);
-
-            if (r < 0.96)
-                return FlingDownAsync(page, cdp, FlingStrength.VeryStrong, cancellationToken);
-
-            if (r < 0.99)
-                return LongFlingDownAsync(page, cdp, cancellationToken);
-
-            return MicroDownAsync(page, cdp, cancellationToken);
+            return RandomDownOnceAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
         }
 
-
         /// <summary>
-        /// 超长距离快速向上甩动。
-        /// 更容易产生超过 1 页的惯性滚动。
+        /// 单次随机向下动作。只做向下，不做向上回看。
         /// </summary>
-        public static Task<HumanSwipeTrace?> LongFlingUpAsync(
+        public static Task<HumanSwipeTrace?> RandomDownOnceAsync(
             IPage page,
             ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
             CancellationToken cancellationToken = default)
         {
             ValidatePageAndCdp(page, cdp);
 
-            int vh = ViewportHeight(page);
+            double r = NextDouble();
 
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Up,
-                    Mode = HumanSwipeMode.Fling,
+            if (r < 0.08)
+                return ReadingDownAsync(page, cdp, options, cancellationToken);
 
-                    SpeedFactor = NextDouble(2.7, 3.0),
-                    DistancePx = NextInt((int)(vh * 0.90), (int)(vh * 1.20)),
-                    Steps = NextInt(5, 8),
+            if (r < 0.42)
+                return PreviewDownAsync(page, cdp, options, cancellationToken);
 
-                    HoldBeforeMove = false,
-                    HoldBeforeEnd = false,
+            if (r < 0.72)
+                return FlingDownAsync(page, cdp, FlingStrength.Normal, options, cancellationToken);
 
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.2, 0.7),
+            if (r < 0.90)
+                return FlingDownAsync(page, cdp, FlingStrength.Strong, options, cancellationToken);
 
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 20
-                },
-                cancellationToken);
+            if (r < 0.96)
+                return FlingDownAsync(page, cdp, FlingStrength.VeryStrong, options, cancellationToken);
+
+            if (r < 0.99)
+                return LongFlingDownAsync(page, cdp, options, cancellationToken);
+
+            return MicroDownAsync(page, cdp, options, cancellationToken);
         }
-
 
         /// <summary>
         /// 连续随机向上滑动，并支持自定义停止验证回调。
-        /// 
-        /// 逻辑：
-        /// 1. 每次滑动前先执行 stopVerifier，如果返回 true，直接停止。
-        /// 2. 执行一次随机向上滑动。
-        /// 3. 如果滑动返回 null，说明滑不动/到底/滚动无变化，停止。
-        /// 4. 滑动后等待 delay。
-        /// 5. 再执行 stopVerifier，如果返回 true，停止。
-        /// 
-        /// 适合：滑动列表时，发现指定节点出现就停止。
         /// </summary>
         public static async Task<List<HumanSwipeTrace>> RandomUpUntilAsync(
             IPage page,
@@ -655,20 +609,13 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
 
             if (stopVerifier == null)
                 throw new ArgumentNullException(nameof(stopVerifier));
 
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
             var traces = new List<HumanSwipeTrace>();
-
-            if (minTimes < 0)
-                minTimes = 0;
-
-            if (maxTimes < minTimes)
-                maxTimes = minTimes;
-
             int times = NextInt(minTimes, maxTimes);
 
             if (checkBeforeFirstSwipe)
@@ -686,17 +633,12 @@ namespace PlaywrightHumanInput
                 if (page.IsClosed)
                     break;
 
-                var trace = await RandomUpOnceAsync(
-                    page,
-                    cdp,
-                    cancellationToken);
+                var trace = await RandomUpOnceAsync(page, cdp, options, cancellationToken);
 
-                // 滑不动、到底、没有发生滚动，则停止。
                 if (trace == null)
                     break;
 
                 traces.Add(trace);
-
                 await DelayAfterTraceAsync(trace, options, cancellationToken);
 
                 if (checkAfterEachSwipe)
@@ -713,9 +655,8 @@ namespace PlaywrightHumanInput
 
         /// <summary>
         /// 连续随机向上滑动，并支持无参异步停止回调。
-        /// 回调返回 true 时停止。
         /// </summary>
-        public static async Task<List<HumanSwipeTrace>> RandomUpUntilAsync(
+        public static Task<List<HumanSwipeTrace>> RandomUpUntilAsync(
             IPage page,
             ICDPSession cdp,
             Func<Task<bool>> stopVerifier,
@@ -729,7 +670,7 @@ namespace PlaywrightHumanInput
             if (stopVerifier == null)
                 throw new ArgumentNullException(nameof(stopVerifier));
 
-            return await RandomUpUntilAsync(
+            return RandomUpUntilAsync(
                 page,
                 cdp,
                 _ => stopVerifier(),
@@ -743,9 +684,8 @@ namespace PlaywrightHumanInput
 
         /// <summary>
         /// 连续随机向上滑动，并支持同步停止回调。
-        /// 回调返回 true 时停止。
         /// </summary>
-        public static async Task<List<HumanSwipeTrace>> RandomUpUntilAsync(
+        public static Task<List<HumanSwipeTrace>> RandomUpUntilAsync(
             IPage page,
             ICDPSession cdp,
             Func<IPage, bool> stopVerifier,
@@ -759,7 +699,7 @@ namespace PlaywrightHumanInput
             if (stopVerifier == null)
                 throw new ArgumentNullException(nameof(stopVerifier));
 
-            return await RandomUpUntilAsync(
+            return RandomUpUntilAsync(
                 page,
                 cdp,
                 p => Task.FromResult(stopVerifier(p)),
@@ -772,9 +712,7 @@ namespace PlaywrightHumanInput
         }
 
         /// <summary>
-        /// 连续随机向上滑动，并支持自定义停止验证回调。
-        /// 回调包含 page 和当前已完成滑动次数。
-        /// 返回 true 时停止。
+        /// 连续随机向上滑动，并支持自定义停止验证回调。回调包含当前已完成滑动次数。
         /// </summary>
         public static async Task<List<HumanSwipeTrace>> RandomUpUntilAsync(
             IPage page,
@@ -788,20 +726,13 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
 
             if (stopVerifier == null)
                 throw new ArgumentNullException(nameof(stopVerifier));
 
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
             var traces = new List<HumanSwipeTrace>();
-
-            if (minTimes < 0)
-                minTimes = 0;
-
-            if (maxTimes < minTimes)
-                maxTimes = minTimes;
-
             int times = NextInt(minTimes, maxTimes);
 
             if (checkBeforeFirstSwipe)
@@ -819,16 +750,12 @@ namespace PlaywrightHumanInput
                 if (page.IsClosed)
                     break;
 
-                var trace = await RandomUpOnceAsync(
-                    page,
-                    cdp,
-                    cancellationToken);
+                var trace = await RandomUpOnceAsync(page, cdp, options, cancellationToken);
 
                 if (trace == null)
                     break;
 
                 traces.Add(trace);
-
                 await DelayAfterTraceAsync(trace, options, cancellationToken);
 
                 if (checkAfterEachSwipe)
@@ -843,130 +770,77 @@ namespace PlaywrightHumanInput
             return traces;
         }
 
-        private static async Task<bool> SafeVerifyStopAsync(
-            IPage page,
-            Func<IPage, Task<bool>> stopVerifier,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
+        #endregion
 
-                if (page == null || page.IsClosed)
-                    return true;
-
-                return await stopVerifier(page);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                // 验证方法异常时，不直接停止，继续滑动。
-                return false;
-            }
-        }
-
-        private static async Task<bool> SafeVerifyStopAsync(
-            IPage page,
-            int swipeCount,
-            Func<IPage, int, Task<bool>> stopVerifier,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (page == null || page.IsClosed)
-                    return true;
-
-                return await stopVerifier(page, swipeCount);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
+        #region 无规则浏览/限时浏览
 
         /// <summary>
         /// 随机无规则乱序浏览一次。
-        /// 模拟“反复查找某个东西”的浏览行为：
-        /// 可能向上、向下、微调、快速扫描、强甩、短暂停顿。
+        /// 模拟“反复查找某个东西”的浏览行为：可能向上、向下、微调、快速扫描、强甩、短暂停顿。
         /// </summary>
         public static async Task<HumanSwipeTrace?> ChaoticBrowseOnceAsync(
             IPage page,
             ICDPSession cdp,
             CancellationToken cancellationToken = default)
         {
+            return await ChaoticBrowseOnceAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        /// <summary>
+        /// 随机无规则乱序浏览一次，并使用指定 Operator 配置/Session。
+        /// </summary>
+        public static async Task<HumanSwipeTrace?> ChaoticBrowseOnceAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
             ValidatePageAndCdp(page, cdp);
 
             double r = NextDouble();
 
-            // 行为分布：
-            // 0.00 - 0.24 正常向上预览
-            // 0.24 - 0.42 普通/强力向上甩动
-            // 0.42 - 0.54 慢速向上阅读
-            // 0.54 - 0.66 正常向下回看
-            // 0.66 - 0.74 向下甩动
-            // 0.74 - 0.84 小幅上下微调
-            // 0.84 - 0.93 快速扫描向上
-            // 0.93 - 0.98 超长向上甩动
-            // 0.98 - 1.00 只停顿，不滑动
             if (r < 0.24)
-                return await PreviewUpAsync(page, cdp, cancellationToken);
+                return await PreviewUpAsync(page, cdp, options, cancellationToken);
 
             if (r < 0.42)
             {
-                var strength = NextDouble() < 0.72
-                    ? FlingStrength.Normal
-                    : FlingStrength.Strong;
-
-                return await FlingUpAsync(page, cdp, strength, cancellationToken);
+                var strength = NextDouble() < 0.72 ? FlingStrength.Normal : FlingStrength.Strong;
+                return await FlingUpAsync(page, cdp, strength, options, cancellationToken);
             }
 
             if (r < 0.54)
-                return await ReadingUpAsync(page, cdp, cancellationToken);
+                return await ReadingUpAsync(page, cdp, options, cancellationToken);
 
             if (r < 0.66)
-                return await PreviewDownAsync(page, cdp, cancellationToken);
+                return await PreviewDownAsync(page, cdp, options, cancellationToken);
 
             if (r < 0.74)
             {
-                var strength = NextDouble() < 0.80
-                    ? FlingStrength.Normal
-                    : FlingStrength.Strong;
-
-                return await FlingDownAsync(page, cdp, strength, cancellationToken);
+                var strength = NextDouble() < 0.80 ? FlingStrength.Normal : FlingStrength.Strong;
+                return await FlingDownAsync(page, cdp, strength, options, cancellationToken);
             }
 
             if (r < 0.84)
             {
-                if (NextDouble() < 0.62)
-                    return await MicroUpAsync(page, cdp, cancellationToken);
-
-                return await MicroDownAsync(page, cdp, cancellationToken);
+                return NextDouble() < 0.62
+                    ? await MicroUpAsync(page, cdp, options, cancellationToken)
+                    : await MicroDownAsync(page, cdp, options, cancellationToken);
             }
 
             if (r < 0.93)
-                return await FastScanOnceAsync(page, cdp, cancellationToken);
+                return await FastScanOnceAsync(page, cdp, options, cancellationToken);
 
             if (r < 0.98)
-                return await LongFlingUpAsync(page, cdp, cancellationToken);
+                return await LongFlingUpAsync(page, cdp, options, cancellationToken);
 
             // 偶尔停顿，像人在观察页面。
+            EnsureSession(options).RecordSwipe(null);
             await Task.Delay(NextInt(600, 1800), cancellationToken);
             return null;
         }
 
         /// <summary>
         /// 随机无规则乱序浏览多次。
-        /// 不带目标条件，只按随机次数执行。
         /// </summary>
         public static async Task<List<HumanSwipeTrace>> ChaoticBrowseTimesAsync(
             IPage page,
@@ -977,17 +851,10 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
 
             var traces = new List<HumanSwipeTrace>();
-
-            if (minTimes < 0)
-                minTimes = 0;
-
-            if (maxTimes < minTimes)
-                maxTimes = minTimes;
-
             int times = NextInt(minTimes, maxTimes);
 
             for (int i = 0; i < times; i++)
@@ -997,7 +864,7 @@ namespace PlaywrightHumanInput
                 if (page.IsClosed)
                     break;
 
-                var trace = await ChaoticBrowseOnceAsync(page, cdp, cancellationToken);
+                var trace = await ChaoticBrowseOnceAsync(page, cdp, options, cancellationToken);
 
                 if (trace != null)
                     traces.Add(trace);
@@ -1009,17 +876,7 @@ namespace PlaywrightHumanInput
         }
 
         /// <summary>
-        /// 随机无规则乱序查找。
-        /// 
-        /// 逻辑：
-        /// 1. 每次动作前先执行 stopVerifier，返回 true 则停止。
-        /// 2. 执行一次无规则动作：上滑、下滑、微调、强甩、停顿。
-        /// 3. 动作后等待随机时间。
-        /// 4. 再执行 stopVerifier，返回 true 则停止。
-        /// 5. 不会因为某一次滑动返回 null 就立刻停止，因为 Chaotic 模式里 null 可能代表“停顿观察”。
-        /// 6. 如果连续多次滑动都失败/无有效 trace，则认为页面可能不可滚动，停止。
-        /// 
-        /// 适合：像人在页面里反复上下查找某个节点。
+        /// 随机无规则乱序查找。stopVerifier 返回 true 时停止。
         /// </summary>
         public static async Task<List<HumanSwipeTrace>> ChaoticBrowseUntilAsync(
             IPage page,
@@ -1034,23 +891,15 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
 
             if (stopVerifier == null)
                 throw new ArgumentNullException(nameof(stopVerifier));
 
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
+            maxContinuousNoMove = Math.Max(1, maxContinuousNoMove);
+
             var traces = new List<HumanSwipeTrace>();
-
-            if (minTimes < 0)
-                minTimes = 0;
-
-            if (maxTimes < minTimes)
-                maxTimes = minTimes;
-
-            if (maxContinuousNoMove < 1)
-                maxContinuousNoMove = 1;
-
             int times = NextInt(minTimes, maxTimes);
             int continuousNoMove = 0;
 
@@ -1069,7 +918,7 @@ namespace PlaywrightHumanInput
                 if (page.IsClosed)
                     break;
 
-                var trace = await ChaoticBrowseOnceAsync(page, cdp, cancellationToken);
+                var trace = await ChaoticBrowseOnceAsync(page, cdp, options, cancellationToken);
 
                 if (trace != null)
                 {
@@ -1091,7 +940,6 @@ namespace PlaywrightHumanInput
                         break;
                 }
 
-                // 连续几次都没有有效滑动，通常说明已经到边界、页面不可滚动，或动作没有产生滚动。
                 if (continuousNoMove >= maxContinuousNoMove)
                     break;
             }
@@ -1099,9 +947,6 @@ namespace PlaywrightHumanInput
             return traces;
         }
 
-        /// <summary>
-        /// 随机无规则乱序查找，无参异步回调。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> ChaoticBrowseUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1130,9 +975,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 随机无规则乱序查找，同步回调。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> ChaoticBrowseUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1163,7 +1005,6 @@ namespace PlaywrightHumanInput
 
         /// <summary>
         /// 随机无规则乱序查找，回调包含当前有效滑动次数。
-        /// 注意：swipeCount 只统计产生有效 trace 的滑动，不统计纯停顿。
         /// </summary>
         public static async Task<List<HumanSwipeTrace>> ChaoticBrowseUntilAsync(
             IPage page,
@@ -1178,23 +1019,15 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
 
             if (stopVerifier == null)
                 throw new ArgumentNullException(nameof(stopVerifier));
 
+            NormalizeRange(ref minTimes, ref maxTimes, 0);
+            maxContinuousNoMove = Math.Max(1, maxContinuousNoMove);
+
             var traces = new List<HumanSwipeTrace>();
-
-            if (minTimes < 0)
-                minTimes = 0;
-
-            if (maxTimes < minTimes)
-                maxTimes = minTimes;
-
-            if (maxContinuousNoMove < 1)
-                maxContinuousNoMove = 1;
-
             int times = NextInt(minTimes, maxTimes);
             int continuousNoMove = 0;
 
@@ -1213,7 +1046,7 @@ namespace PlaywrightHumanInput
                 if (page.IsClosed)
                     break;
 
-                var trace = await ChaoticBrowseOnceAsync(page, cdp, cancellationToken);
+                var trace = await ChaoticBrowseOnceAsync(page, cdp, options, cancellationToken);
 
                 if (trace != null)
                 {
@@ -1242,48 +1075,6 @@ namespace PlaywrightHumanInput
             return traces;
         }
 
-        private static async Task DelayAfterChaoticTraceAsync(
-            HumanSwipeTrace? trace,
-            HumanSwipeOperatorOptions options,
-            CancellationToken cancellationToken)
-        {
-            int delay;
-
-            if (trace == null)
-            {
-                delay = NextInt(500, 1600);
-            }
-            else if (trace.Mode == HumanSwipeMode.Reading)
-            {
-                delay = NextInt(900, 2600);
-            }
-            else if (trace.Mode == HumanSwipeMode.Fling)
-            {
-                delay = NextInt(900, 2300);
-            }
-            else if (trace.Mode == HumanSwipeMode.Micro)
-            {
-                delay = NextInt(220, 760);
-            }
-            else
-            {
-                delay = NextInt(options.MinDelayAfterSwipeMs, options.MaxDelayAfterSwipeMs);
-            }
-
-            // 偶尔加一个长观察停顿。
-            if (NextDouble() < 0.12)
-                delay += NextInt(800, 2600);
-
-            await Task.Delay(delay, cancellationToken);
-        }
-
-
-
-
-        /// <summary>
-        /// 使用统一时间范围进行无规则浏览。
-        /// 支持毫秒、秒、分钟构造出来的 HumanBrowseDurationRange。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomAsync(
             IPage page,
             ICDPSession cdp,
@@ -1302,10 +1093,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 使用统一时间范围进行无规则浏览，并支持停止条件。
-        /// 支持毫秒、秒、分钟构造出来的 HumanBrowseDurationRange。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1330,9 +1117,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 使用统一时间范围进行无规则浏览，并支持无参异步停止条件。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1350,8 +1134,7 @@ namespace PlaywrightHumanInput
             return TimedChaoticBrowseRandomUntilAsync(
                 page,
                 cdp,
-                durationRange.MinDuration,
-                durationRange.MaxDuration,
+                durationRange,
                 _ => stopVerifier(),
                 options,
                 maxContinuousNoMove,
@@ -1360,9 +1143,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 使用统一时间范围进行无规则浏览，并支持同步停止条件。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1380,8 +1160,7 @@ namespace PlaywrightHumanInput
             return TimedChaoticBrowseRandomUntilAsync(
                 page,
                 cdp,
-                durationRange.MinDuration,
-                durationRange.MaxDuration,
+                durationRange,
                 p => Task.FromResult(stopVerifier(p)),
                 options,
                 maxContinuousNoMove,
@@ -1390,9 +1169,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 使用统一时间范围进行无规则浏览，并支持带统计信息的停止条件。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1420,9 +1196,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 毫秒范围：在 minMilliseconds ~ maxMilliseconds 之间随机取一个时长进行浏览。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomMillisecondsAsync(
             IPage page,
             ICDPSession cdp,
@@ -1441,9 +1214,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 秒范围：在 minSeconds ~ maxSeconds 之间随机取一个时长进行浏览。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomSecondsAsync(
             IPage page,
             ICDPSession cdp,
@@ -1462,10 +1232,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 分钟范围：在 minMinutes ~ maxMinutes 之间随机取一个时长进行浏览。
-        /// 支持小数，例如 0.5 ~ 1.5 分钟。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomMinutesAsync(
             IPage page,
             ICDPSession cdp,
@@ -1484,9 +1250,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 毫秒范围 + 条件退出。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomMillisecondsUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1511,9 +1274,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 秒范围 + 条件退出。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomSecondsUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1538,10 +1298,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 分钟范围 + 条件退出。
-        /// 支持小数，例如 0.5 ~ 1.5 分钟。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomMinutesUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1566,16 +1322,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 在 minDuration ~ maxDuration 之间随机取一个时长，进行无规则浏览。
-        /// 
-        /// 例如：
-        /// await HumanSwipeOperator.TimedChaoticBrowseRandomAsync(
-        ///     page,
-        ///     cdp,
-        ///     TimeSpan.FromMinutes(1),
-        ///     TimeSpan.FromMinutes(2));
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomAsync(
             IPage page,
             ICDPSession cdp,
@@ -1596,12 +1342,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 在 minSeconds ~ maxSeconds 之间随机取一个秒数，进行无规则浏览。
-        /// 
-        /// 例如：
-        /// await HumanSwipeOperator.TimedChaoticBrowseRandomAsync(page, cdp, 60, 120);
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomAsync(
             IPage page,
             ICDPSession cdp,
@@ -1628,10 +1368,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 在 minDuration ~ maxDuration 之间随机取一个时长，进行无规则浏览，并支持停止条件。
-        /// stopVerifier 返回 true 时提前退出。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1658,18 +1394,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 在 minSeconds ~ maxSeconds 之间随机取一个秒数，进行无规则浏览，并支持停止条件。
-        /// stopVerifier 返回 true 时提前退出。
-        /// 
-        /// 例如：
-        /// await HumanSwipeOperator.TimedChaoticBrowseRandomUntilAsync(
-        ///     page,
-        ///     cdp,
-        ///     60,
-        ///     120,
-        ///     async p => await p.Locator(".target").CountAsync() > 0);
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1702,9 +1426,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 在 minDuration ~ maxDuration 之间随机取一个时长，进行无规则浏览，并支持无参异步停止条件。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1733,9 +1454,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 在 minDuration ~ maxDuration 之间随机取一个时长，进行无规则浏览，并支持同步停止条件。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1764,9 +1482,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 在 minDuration ~ maxDuration 之间随机取一个时长，进行无规则浏览，并支持带统计信息的停止条件。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseRandomUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1796,37 +1511,10 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        private static TimeSpan NextDuration(TimeSpan minDuration, TimeSpan maxDuration)
-        {
-            if (minDuration < TimeSpan.Zero)
-                minDuration = TimeSpan.Zero;
-
-            if (maxDuration < minDuration)
-                maxDuration = minDuration;
-
-            double minMs = minDuration.TotalMilliseconds;
-            double maxMs = maxDuration.TotalMilliseconds;
-
-            if (maxMs <= minMs)
-                return minDuration;
-
-            double ms = NextDouble(minMs, maxMs);
-            return TimeSpan.FromMilliseconds(ms);
-        }
-
         /// <summary>
         /// 按指定时间进行无规则浏览。
-        /// 
-        /// 例如：
-        /// await HumanSwipeOperator.TimedChaoticBrowseAsync(page, cdp, TimeSpan.FromMinutes(1));
-        /// 
-        /// 特点：
-        /// 1. 在指定时间内持续执行无规则动作。
-        /// 2. 包含上滑、下滑、微调、快速扫描、长甩、短暂停顿。
-        /// 3. 不保证刚好精确到毫秒结束，但会在每轮动作前检查时间。
-        /// 4. 连续多次没有有效滑动时，可提前停止，避免到顶/到底后死循环。
         /// </summary>
-        public static async Task<List<HumanSwipeTrace>> TimedChaoticBrowseAsync(
+        public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseAsync(
             IPage page,
             ICDPSession cdp,
             TimeSpan duration,
@@ -1834,7 +1522,7 @@ namespace PlaywrightHumanInput
             int maxContinuousNoMove = 4,
             CancellationToken cancellationToken = default)
         {
-            return await TimedChaoticBrowseUntilAsync(
+            return TimedChaoticBrowseUntilAsync(
                 page,
                 cdp,
                 duration,
@@ -1846,12 +1534,6 @@ namespace PlaywrightHumanInput
                 cancellationToken: cancellationToken);
         }
 
-        /// <summary>
-        /// 按指定秒数进行无规则浏览。
-        /// 
-        /// 例如：
-        /// await HumanSwipeOperator.TimedChaoticBrowseAsync(page, cdp, seconds: 60);
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseAsync(
             IPage page,
             ICDPSession cdp,
@@ -1872,12 +1554,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 按指定时间进行无规则浏览，并支持停止条件。
-        /// 
-        /// stopVerifier 返回 true 时提前退出。
-        /// 适合：在 1 分钟内反复无规则浏览，遇到目标节点出现就停止。
-        /// </summary>
         public static async Task<List<HumanSwipeTrace>> TimedChaoticBrowseUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1890,19 +1566,16 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
 
             if (duration < TimeSpan.Zero)
                 duration = TimeSpan.Zero;
 
-            if (maxContinuousNoMove < 1)
-                maxContinuousNoMove = 1;
+            maxContinuousNoMove = Math.Max(1, maxContinuousNoMove);
 
             var traces = new List<HumanSwipeTrace>();
             DateTimeOffset startTime = DateTimeOffset.UtcNow;
             DateTimeOffset endTime = startTime.Add(duration);
-
             int continuousNoMove = 0;
 
             while (DateTimeOffset.UtcNow < endTime)
@@ -1922,11 +1595,7 @@ namespace PlaywrightHumanInput
                 if (remaining <= TimeSpan.Zero)
                     break;
 
-                var trace = await TimedChaoticBrowseOnceAsync(
-                    page,
-                    cdp,
-                    remaining,
-                    cancellationToken);
+                var trace = await TimedChaoticBrowseOnceAsync(page, cdp, remaining, options, cancellationToken);
 
                 if (trace != null)
                 {
@@ -1942,11 +1611,7 @@ namespace PlaywrightHumanInput
                 if (remainAfterAction <= TimeSpan.Zero)
                     break;
 
-                await DelayAfterTimedChaoticTraceAsync(
-                    trace,
-                    options,
-                    remainAfterAction,
-                    cancellationToken);
+                await DelayAfterTimedChaoticTraceAsync(trace, options, remainAfterAction, cancellationToken);
 
                 if (checkAfterEachAction && stopVerifier != null)
                 {
@@ -1963,10 +1628,6 @@ namespace PlaywrightHumanInput
             return traces;
         }
 
-        /// <summary>
-        /// 按指定时间进行无规则浏览，并支持无参异步停止条件。
-        /// stopVerifier 返回 true 时提前退出。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -1993,10 +1654,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 按指定时间进行无规则浏览，并支持同步停止条件。
-        /// stopVerifier 返回 true 时提前退出。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -2023,10 +1680,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 按指定秒数进行无规则浏览，并支持停止条件。
-        /// stopVerifier 返回 true 时提前退出。
-        /// </summary>
         public static Task<List<HumanSwipeTrace>> TimedChaoticBrowseUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -2053,17 +1706,6 @@ namespace PlaywrightHumanInput
                 cancellationToken);
         }
 
-        /// <summary>
-        /// 按指定时间进行无规则浏览，并支持带统计信息的停止条件。
-        /// 
-        /// stopVerifier 参数：
-        /// page: 当前页面。
-        /// traces.Count: 当前已经产生有效滑动的次数。
-        /// elapsed: 已运行时长。
-        /// remaining: 剩余时长。
-        /// 
-        /// 返回 true 时提前退出。
-        /// </summary>
         public static async Task<List<HumanSwipeTrace>> TimedChaoticBrowseUntilAsync(
             IPage page,
             ICDPSession cdp,
@@ -2076,7 +1718,6 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken = default)
         {
             options ??= new HumanSwipeOperatorOptions();
-
             ValidatePageAndCdp(page, cdp);
 
             if (stopVerifier == null)
@@ -2085,13 +1726,11 @@ namespace PlaywrightHumanInput
             if (duration < TimeSpan.Zero)
                 duration = TimeSpan.Zero;
 
-            if (maxContinuousNoMove < 1)
-                maxContinuousNoMove = 1;
+            maxContinuousNoMove = Math.Max(1, maxContinuousNoMove);
 
             var traces = new List<HumanSwipeTrace>();
             DateTimeOffset startTime = DateTimeOffset.UtcNow;
             DateTimeOffset endTime = startTime.Add(duration);
-
             int continuousNoMove = 0;
 
             while (DateTimeOffset.UtcNow < endTime)
@@ -2122,11 +1761,7 @@ namespace PlaywrightHumanInput
                 if (remaining <= TimeSpan.Zero)
                     break;
 
-                var trace = await TimedChaoticBrowseOnceAsync(
-                    page,
-                    cdp,
-                    remaining,
-                    cancellationToken);
+                var trace = await TimedChaoticBrowseOnceAsync(page, cdp, remaining, options, cancellationToken);
 
                 if (trace != null)
                 {
@@ -2142,11 +1777,7 @@ namespace PlaywrightHumanInput
                 if (remainAfterAction <= TimeSpan.Zero)
                     break;
 
-                await DelayAfterTimedChaoticTraceAsync(
-                    trace,
-                    options,
-                    remainAfterAction,
-                    cancellationToken);
+                await DelayAfterTimedChaoticTraceAsync(trace, options, remainAfterAction, cancellationToken);
 
                 if (checkAfterEachAction)
                 {
@@ -2172,15 +1803,11 @@ namespace PlaywrightHumanInput
             return traces;
         }
 
-        /// <summary>
-        /// 时间浏览中的单次无规则动作。
-        /// 会根据剩余时间动态选择动作：
-        /// 剩余时间短时，更倾向于微调/短滑/短停顿，避免最后一轮动作过长。
-        /// </summary>
         private static async Task<HumanSwipeTrace?> TimedChaoticBrowseOnceAsync(
             IPage page,
             ICDPSession cdp,
             TimeSpan remaining,
+            HumanSwipeOperatorOptions options,
             CancellationToken cancellationToken)
         {
             ValidatePageAndCdp(page, cdp);
@@ -2190,6 +1817,7 @@ namespace PlaywrightHumanInput
 
             if (secondsLeft <= 1.2)
             {
+                EnsureSession(options).RecordSwipe(null);
                 await Task.Delay(
                     Math.Max(80, Math.Min(600, (int)(remaining.TotalMilliseconds * 0.60))),
                     cancellationToken);
@@ -2199,57 +1827,1017 @@ namespace PlaywrightHumanInput
 
             if (secondsLeft <= 3.0)
             {
-                // 时间快结束时，不做长甩。
                 if (r < 0.35)
-                    return await MicroUpAsync(page, cdp, cancellationToken);
+                    return await MicroUpAsync(page, cdp, options, cancellationToken);
 
                 if (r < 0.55)
-                    return await MicroDownAsync(page, cdp, cancellationToken);
+                    return await MicroDownAsync(page, cdp, options, cancellationToken);
 
                 if (r < 0.80)
-                    return await PreviewUpAsync(page, cdp, cancellationToken);
+                    return await PreviewUpAsync(page, cdp, options, cancellationToken);
 
                 if (r < 0.92)
-                    return await PreviewDownAsync(page, cdp, cancellationToken);
+                    return await PreviewDownAsync(page, cdp, options, cancellationToken);
 
+                EnsureSession(options).RecordSwipe(null);
                 await Task.Delay(NextInt(200, 800), cancellationToken);
                 return null;
             }
 
             if (secondsLeft <= 8.0)
             {
-                // 剩余时间中等，减少 LongFling。
                 if (r < 0.24)
-                    return await PreviewUpAsync(page, cdp, cancellationToken);
+                    return await PreviewUpAsync(page, cdp, options, cancellationToken);
 
                 if (r < 0.40)
-                    return await FlingUpAsync(page, cdp, FlingStrength.Normal, cancellationToken);
+                    return await FlingUpAsync(page, cdp, FlingStrength.Normal, options, cancellationToken);
 
                 if (r < 0.52)
-                    return await ReadingUpAsync(page, cdp, cancellationToken);
+                    return await ReadingUpAsync(page, cdp, options, cancellationToken);
 
                 if (r < 0.66)
-                    return await PreviewDownAsync(page, cdp, cancellationToken);
+                    return await PreviewDownAsync(page, cdp, options, cancellationToken);
 
                 if (r < 0.75)
-                    return await FlingDownAsync(page, cdp, FlingStrength.Normal, cancellationToken);
+                    return await FlingDownAsync(page, cdp, FlingStrength.Normal, options, cancellationToken);
 
                 if (r < 0.88)
                 {
                     return NextDouble() < 0.58
-                        ? await MicroUpAsync(page, cdp, cancellationToken)
-                        : await MicroDownAsync(page, cdp, cancellationToken);
+                        ? await MicroUpAsync(page, cdp, options, cancellationToken)
+                        : await MicroDownAsync(page, cdp, options, cancellationToken);
                 }
 
                 if (r < 0.96)
-                    return await FastScanOnceAsync(page, cdp, cancellationToken);
+                    return await FastScanOnceAsync(page, cdp, options, cancellationToken);
 
+                EnsureSession(options).RecordSwipe(null);
                 await Task.Delay(NextInt(400, 1200), cancellationToken);
                 return null;
             }
 
-            // 时间充足，用完整 Chaotic 分布。
-            return await ChaoticBrowseOnceAsync(page, cdp, cancellationToken);
+            return await ChaoticBrowseOnceAsync(page, cdp, options, cancellationToken);
+        }
+
+        #endregion
+
+        #region 垂直滑动：阅读/预览/甩动/微调
+
+        public static Task<HumanSwipeTrace?> ReadingUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return ReadingUpAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> ReadingUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Up, HumanSwipeMode.Reading);
+            swipe.SpeedFactor = NextDouble(0.70, 0.95);
+            swipe.DistancePx = NextInt((int)(vh * 0.18), (int)(vh * 0.32));
+            swipe.Steps = NextInt(46, 72);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = true;
+            swipe.MaxJitter = NextDouble(0.8, 1.6);
+            swipe.ScrollChangedMinDelta = 5;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> ReadingDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return ReadingDownAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> ReadingDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Down, HumanSwipeMode.Reading);
+            swipe.SpeedFactor = NextDouble(0.70, 0.95);
+            swipe.DistancePx = NextInt((int)(vh * 0.16), (int)(vh * 0.30));
+            swipe.Steps = NextInt(46, 72);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = true;
+            swipe.MaxJitter = NextDouble(0.8, 1.6);
+            swipe.ScrollChangedMinDelta = 5;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> PreviewUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return PreviewUpAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> PreviewUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Up, HumanSwipeMode.Preview);
+            swipe.SpeedFactor = NextDouble(1.0, 1.35);
+            swipe.DistancePx = NextInt((int)(vh * 0.30), (int)(vh * 0.48));
+            swipe.Steps = NextInt(24, 40);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(1.2, 2.0);
+            swipe.ScrollChangedMinDelta = 8;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> PreviewDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return PreviewDownAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> PreviewDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Down, HumanSwipeMode.Preview);
+            swipe.SpeedFactor = NextDouble(1.0, 1.35);
+            swipe.DistancePx = NextInt((int)(vh * 0.26), (int)(vh * 0.44));
+            swipe.Steps = NextInt(24, 40);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(1.2, 2.0);
+            swipe.ScrollChangedMinDelta = 8;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> FlingUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            FlingStrength strength = FlingStrength.Normal,
+            CancellationToken cancellationToken = default)
+        {
+            return FlingUpAsync(page, cdp, strength, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> FlingUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            FlingStrength strength,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+            var cfg = GetFlingConfig(strength);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Up, HumanSwipeMode.Fling);
+            swipe.SpeedFactor = NextDouble(cfg.MinSpeed, cfg.MaxSpeed);
+            swipe.DistancePx = NextInt((int)(vh * cfg.MinDistanceRatio), (int)(vh * cfg.MaxDistanceRatio));
+            swipe.Steps = NextInt(cfg.MinSteps, cfg.MaxSteps);
+            swipe.HoldBeforeMove = false;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(cfg.MinJitter, cfg.MaxJitter);
+            swipe.ScrollChangedMinDelta = 12;
+            swipe.EndPullBackChance = 0.0;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> FlingDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            FlingStrength strength = FlingStrength.Normal,
+            CancellationToken cancellationToken = default)
+        {
+            return FlingDownAsync(page, cdp, strength, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> FlingDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            FlingStrength strength,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+            var cfg = GetFlingConfig(strength);
+
+            double minDistance = Math.Max(0.35, cfg.MinDistanceRatio - 0.06);
+            double maxDistance = Math.Max(minDistance + 0.05, cfg.MaxDistanceRatio - 0.08);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Down, HumanSwipeMode.Fling);
+            swipe.SpeedFactor = NextDouble(cfg.MinSpeed, cfg.MaxSpeed);
+            swipe.DistancePx = NextInt((int)(vh * minDistance), (int)(vh * maxDistance));
+            swipe.Steps = NextInt(cfg.MinSteps, cfg.MaxSteps);
+            swipe.HoldBeforeMove = false;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(cfg.MinJitter, cfg.MaxJitter);
+            swipe.ScrollChangedMinDelta = 12;
+            swipe.EndPullBackChance = 0.0;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> LongFlingUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return LongFlingUpAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> LongFlingUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Up, HumanSwipeMode.Fling);
+            swipe.SpeedFactor = NextDouble(2.7, 3.0);
+            swipe.DistancePx = NextInt((int)(vh * 0.90), (int)(vh * 1.20));
+            swipe.Steps = NextInt(5, 8);
+            swipe.HoldBeforeMove = false;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(0.2, 0.7);
+            swipe.ScrollChangedMinDelta = 20;
+            swipe.EndPullBackChance = 0.0;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> LongFlingDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return LongFlingDownAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> LongFlingDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Down, HumanSwipeMode.Fling);
+            swipe.SpeedFactor = NextDouble(2.5, 2.9);
+            swipe.DistancePx = NextInt((int)(vh * 0.72), (int)(vh * 1.00));
+            swipe.Steps = NextInt(6, 9);
+            swipe.HoldBeforeMove = false;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(0.2, 0.8);
+            swipe.ScrollChangedMinDelta = 16;
+            swipe.EndPullBackChance = 0.0;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> MicroUpAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Up, HumanSwipeMode.Micro);
+            swipe.SpeedFactor = NextDouble(0.78, 1.15);
+            swipe.DistancePx = NextInt((int)(vh * 0.06), (int)(vh * 0.16));
+            swipe.Steps = NextInt(18, 32);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = true;
+            swipe.MaxJitter = NextDouble(0.35, 0.9);
+            swipe.ScrollChangedMinDelta = 3;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> MicroDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return MicroDownAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> MicroDownAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vh = ViewportHeight(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Down, HumanSwipeMode.Micro);
+            swipe.SpeedFactor = NextDouble(0.78, 1.15);
+            swipe.DistancePx = NextInt((int)(vh * 0.05), (int)(vh * 0.14));
+            swipe.Steps = NextInt(18, 32);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = true;
+            swipe.MaxJitter = NextDouble(0.35, 0.9);
+            swipe.ScrollChangedMinDelta = 3;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> FastScanOnceAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return FastScanOnceAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> FastScanOnceAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            return NextDouble() < 0.72
+                ? FlingUpAsync(page, cdp, FlingStrength.Strong, options, cancellationToken)
+                : LongFlingUpAsync(page, cdp, options, cancellationToken);
+        }
+
+        #endregion
+
+        #region 横向滑动/元素动作
+
+        public static Task<HumanSwipeTrace?> SwipeLeftAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return SwipeLeftAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeLeftAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vw = ViewportWidth(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Left, HumanSwipeMode.Preview);
+            swipe.SpeedFactor = NextDouble(1.0, 1.35);
+            swipe.DistancePx = NextInt((int)(vw * 0.38), (int)(vw * 0.62));
+            swipe.Steps = NextInt(20, 34);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(0.8, 1.6);
+            swipe.ScrollChangedMinDelta = 8;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeRightAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            return SwipeRightAsync(page, cdp, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeRightAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+            int vw = ViewportWidth(page, options);
+
+            var swipe = CreateBaseOptions(options, HumanSwipeDirection.Right, HumanSwipeMode.Preview);
+            swipe.SpeedFactor = NextDouble(1.0, 1.35);
+            swipe.DistancePx = NextInt((int)(vw * 0.34), (int)(vw * 0.58));
+            swipe.Steps = NextInt(20, 34);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(0.8, 1.6);
+            swipe.ScrollChangedMinDelta = 8;
+
+            return RunPageSwipeAsync(page, cdp, swipe, options, cancellationToken);
+        }
+
+        public static Task<List<HumanSwipeTrace>> MoveToElementAsync(
+            IPage page,
+            ICDPSession cdp,
+            ILocator locator,
+            int maxSwipes = 10,
+            float comfortTopRatio = 0.22f,
+            float comfortBottomRatio = 0.72f,
+            HumanSwipeOperatorOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (locator == null)
+                throw new ArgumentNullException(nameof(locator));
+
+            options ??= new HumanSwipeOperatorOptions();
+            var session = options.Session ??= new HumanBrowseSessionState();
+
+            using var scope = HumanSwipeEmulator.BeginStyleScope(session.StyleProfile);
+
+            return HumanSwipeEmulator.SwipeToElementAsync(
+                page,
+                cdp,
+                locator,
+                maxSwipes,
+                comfortTopRatio,
+                comfortBottomRatio,
+                cancellationToken);
+        }
+        public static Task<List<HumanSwipeTrace>> MoveToElementAsync(
+            IPage page,
+            ICDPSession cdp,
+            IElementHandle element,
+            int maxSwipes = 10,
+            float comfortTopRatio = 0.22f,
+            float comfortBottomRatio = 0.72f,
+            HumanSwipeOperatorOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (element == null)
+                throw new ArgumentNullException(nameof(element));
+
+            options ??= new HumanSwipeOperatorOptions();
+            var session = options.Session ??= new HumanBrowseSessionState();
+
+            using var scope = HumanSwipeEmulator.BeginStyleScope(session.StyleProfile);
+
+            return HumanSwipeEmulator.SwipeToElementAsync(
+                page,
+                cdp,
+                element,
+                maxSwipes,
+                comfortTopRatio,
+                comfortBottomRatio,
+                cancellationToken);
+        }
+
+
+
+
+
+
+        public static Task<List<HumanSwipeTrace>> MoveToElementVisibleAsync(
+            IPage page,
+            ICDPSession cdp,
+            ILocator locator,
+            int maxSwipes = 8,
+            float visibleMarginPx = 8f,
+            HumanSwipeOperatorOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (locator == null)
+                throw new ArgumentNullException(nameof(locator));
+
+            options ??= new HumanSwipeOperatorOptions();
+            var session = options.Session ??= new HumanBrowseSessionState();
+
+            using var scope = HumanSwipeEmulator.BeginStyleScope(session.StyleProfile);
+
+            return HumanSwipeEmulator.SwipeToElementVisibleAsync(
+                page,
+                cdp,
+                locator,
+                maxSwipes,
+                visibleMarginPx,
+                cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementLeftAsync(
+            IPage page,
+            ICDPSession cdp,
+            ILocator locator,
+            CancellationToken cancellationToken = default)
+        {
+            return SwipeElementLeftAsync(page, cdp, locator, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementLeftAsync(
+            IPage page,
+            ICDPSession cdp,
+            ILocator locator,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (locator == null)
+                throw new ArgumentNullException(nameof(locator));
+
+            int vw = ViewportWidth(page, options);
+            var swipe = CreateElementSwipeOptions(options, HumanSwipeDirection.Left, vw);
+
+            return RunElementSwipeAsync(page, cdp, locator, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementRightAsync(
+            IPage page,
+            ICDPSession cdp,
+            ILocator locator,
+            CancellationToken cancellationToken = default)
+        {
+            return SwipeElementRightAsync(page, cdp, locator, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementRightAsync(
+            IPage page,
+            ICDPSession cdp,
+            ILocator locator,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (locator == null)
+                throw new ArgumentNullException(nameof(locator));
+
+            int vw = ViewportWidth(page, options);
+            var swipe = CreateElementSwipeOptions(options, HumanSwipeDirection.Right, vw);
+
+            return RunElementSwipeAsync(page, cdp, locator, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementLeftAsync(
+            IPage page,
+            ICDPSession cdp,
+            IElementHandle element,
+            CancellationToken cancellationToken = default)
+        {
+            return SwipeElementLeftAsync(page, cdp, element, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementLeftAsync(
+            IPage page,
+            ICDPSession cdp,
+            IElementHandle element,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (element == null)
+                throw new ArgumentNullException(nameof(element));
+
+            int vw = ViewportWidth(page, options);
+            var swipe = CreateElementSwipeOptions(options, HumanSwipeDirection.Left, vw);
+
+            return RunElementSwipeAsync(page, cdp, element, swipe, options, cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementRightAsync(
+            IPage page,
+            ICDPSession cdp,
+            IElementHandle element,
+            CancellationToken cancellationToken = default)
+        {
+            return SwipeElementRightAsync(page, cdp, element, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> SwipeElementRightAsync(
+            IPage page,
+            ICDPSession cdp,
+            IElementHandle element,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (element == null)
+                throw new ArgumentNullException(nameof(element));
+
+            int vw = ViewportWidth(page, options);
+            var swipe = CreateElementSwipeOptions(options, HumanSwipeDirection.Right, vw);
+
+            return RunElementSwipeAsync(page, cdp, element, swipe, options, cancellationToken);
+        }
+
+        #endregion
+
+        #region 自定义动作
+
+        /// <summary>
+        /// 直接传入自定义参数，仍然通过 HumanSwipeOperator 执行，并接入 Session。
+        /// </summary>
+        public static Task<HumanSwipeTrace?> CustomAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            return CustomAsync(page, cdp, options, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        /// <summary>
+        /// 直接传入自定义参数，仍然通过 HumanSwipeOperator 执行，并接入指定 Session。
+        /// </summary>
+        public static Task<HumanSwipeTrace?> CustomAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOptions swipeOptions,
+            HumanSwipeOperatorOptions operatorOptions,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (swipeOptions == null)
+                throw new ArgumentNullException(nameof(swipeOptions));
+
+            return RunPageSwipeAsync(page, cdp, swipeOptions, operatorOptions, cancellationToken);
+        }
+
+        /// <summary>
+        /// 根据元素中心位置自动选择微调方向。
+        /// centerY 小于 comfortTop 时向下拉；大于 comfortBottom 时向上推。
+        /// </summary>
+        public static Task<HumanSwipeTrace?> MicroAdjustToComfortAsync(
+            IPage page,
+            ICDPSession cdp,
+            double centerY,
+            double comfortTop,
+            double comfortBottom,
+            CancellationToken cancellationToken = default)
+        {
+            return MicroAdjustToComfortAsync(page, cdp, centerY, comfortTop, comfortBottom, new HumanSwipeOperatorOptions(), cancellationToken);
+        }
+
+        public static Task<HumanSwipeTrace?> MicroAdjustToComfortAsync(
+            IPage page,
+            ICDPSession cdp,
+            double centerY,
+            double comfortTop,
+            double comfortBottom,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (centerY < comfortTop)
+                return MicroDownAsync(page, cdp, options, cancellationToken);
+
+            if (centerY > comfortBottom)
+                return MicroUpAsync(page, cdp, options, cancellationToken);
+
+            EnsureSession(options).RecordSwipe(null);
+            return Task.FromResult<HumanSwipeTrace?>(null);
+        }
+
+        #endregion
+
+        #region 内部动作构造
+
+        private readonly struct SwipeActionPlan
+        {
+            public SwipeActionPlan(SwipeIntent intent, HumanSwipeDirection direction, FlingStrength? strength)
+            {
+                Intent = intent;
+                Direction = direction;
+                Strength = strength;
+            }
+
+            public SwipeIntent Intent { get; }
+            public HumanSwipeDirection Direction { get; }
+            public FlingStrength? Strength { get; }
+        }
+
+        private static SwipeActionPlan PickBrowseAction(HumanSwipeOperatorOptions options)
+        {
+            var weights = new List<(SwipeActionPlan plan, double weight)>
+            {
+                (new SwipeActionPlan(SwipeIntent.Reading, HumanSwipeDirection.Up, null), options.ReadingChance),
+                (new SwipeActionPlan(SwipeIntent.Preview, HumanSwipeDirection.Up, null), options.PreviewChance),
+                (new SwipeActionPlan(SwipeIntent.Fling, HumanSwipeDirection.Up, FlingStrength.Normal), options.FlingNormalChance),
+                (new SwipeActionPlan(SwipeIntent.Fling, HumanSwipeDirection.Up, FlingStrength.Strong), options.FlingStrongChance),
+                (new SwipeActionPlan(SwipeIntent.Fling, HumanSwipeDirection.Up, FlingStrength.VeryStrong), options.FlingVeryStrongChance),
+                (new SwipeActionPlan(SwipeIntent.MicroAdjust, HumanSwipeDirection.Up, null), options.MicroChance)
+            };
+
+            if (options.AllowBackReview)
+                weights.Add((new SwipeActionPlan(SwipeIntent.BackReview, HumanSwipeDirection.Down, null), options.BackReviewChance));
+
+            double total = weights.Sum(x => Math.Max(0, x.weight));
+            if (total <= 0.000001)
+                return new SwipeActionPlan(SwipeIntent.Preview, HumanSwipeDirection.Up, null);
+
+            double roll = NextDouble(0, total);
+            double acc = 0;
+
+            foreach (var item in weights)
+            {
+                double weight = Math.Max(0, item.weight);
+                acc += weight;
+
+                if (roll <= acc)
+                    return item.plan;
+            }
+
+            return weights.Last().plan;
+        }
+
+        private static Task<HumanSwipeTrace?> RunActionAsync(
+            IPage page,
+            ICDPSession cdp,
+            SwipeActionPlan action,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken)
+        {
+            return action.Intent switch
+            {
+                SwipeIntent.Reading when action.Direction == HumanSwipeDirection.Down => ReadingDownAsync(page, cdp, options, cancellationToken),
+                SwipeIntent.Reading => ReadingUpAsync(page, cdp, options, cancellationToken),
+
+                SwipeIntent.Preview when action.Direction == HumanSwipeDirection.Down => PreviewDownAsync(page, cdp, options, cancellationToken),
+                SwipeIntent.Preview => PreviewUpAsync(page, cdp, options, cancellationToken),
+
+                SwipeIntent.Fling when action.Direction == HumanSwipeDirection.Down => FlingDownAsync(page, cdp, action.Strength ?? FlingStrength.Normal, options, cancellationToken),
+                SwipeIntent.Fling => FlingUpAsync(page, cdp, action.Strength ?? FlingStrength.Normal, options, cancellationToken),
+
+                SwipeIntent.MicroAdjust when action.Direction == HumanSwipeDirection.Down => MicroDownAsync(page, cdp, options, cancellationToken),
+                SwipeIntent.MicroAdjust => MicroUpAsync(page, cdp, options, cancellationToken),
+
+                SwipeIntent.BackReview => PreviewDownAsync(page, cdp, options, cancellationToken),
+                SwipeIntent.FastScan => FastScanOnceAsync(page, cdp, options, cancellationToken),
+
+                _ => PreviewUpAsync(page, cdp, options, cancellationToken)
+            };
+        }
+
+        private static HumanSwipeOptions CreateBaseOptions(
+            HumanSwipeOperatorOptions operatorOptions,
+            HumanSwipeDirection direction,
+            HumanSwipeMode mode)
+        {
+            var session = EnsureSession(operatorOptions);
+
+            return new HumanSwipeOptions
+            {
+                Direction = direction,
+                Mode = mode,
+                StyleProfile = operatorOptions.UseSessionBrowseModel ? session.StyleProfile : null,
+                VerifyScrollChanged = true,
+                CheckScrollableBeforeSwipe = true,
+                UseBezierCurve = true,
+                UseJitter = true,
+                UseSmoothJitter = true,
+                EnableCrossAxisDrift = true,
+                EnableForceCurve = true,
+                EnableTouchAreaCurve = true,
+                EnableHesitationPause = true,
+                EnableEndPullBack = true,
+                EnableVisualConfirmPause = true,
+                AllowNativeScrollFallback = operatorOptions.AllowNativeScrollFallback,
+                Log = operatorOptions.Log
+            };
+        }
+
+        private static HumanSwipeOptions CreateElementSwipeOptions(
+            HumanSwipeOperatorOptions operatorOptions,
+            HumanSwipeDirection direction,
+            int viewportWidth)
+        {
+            var swipe = CreateBaseOptions(operatorOptions, direction, HumanSwipeMode.Preview);
+            swipe.SpeedFactor = NextDouble(1.0, 1.35);
+            swipe.DistancePx = direction == HumanSwipeDirection.Left
+                ? NextInt((int)(viewportWidth * 0.42), (int)(viewportWidth * 0.66))
+                : NextInt((int)(viewportWidth * 0.38), (int)(viewportWidth * 0.62));
+            swipe.Steps = NextInt(20, 34);
+            swipe.HoldBeforeMove = true;
+            swipe.HoldBeforeEnd = false;
+            swipe.MaxJitter = NextDouble(0.8, 1.6);
+            swipe.VerifyScrollChanged = false;
+            swipe.CheckScrollableBeforeSwipe = false;
+            swipe.SafeMargin = 8;
+
+            return swipe;
+        }
+
+        private static async Task<HumanSwipeTrace?> RunPageSwipeAsync(
+            IPage page,
+            ICDPSession cdp,
+            HumanSwipeOptions swipeOptions,
+            HumanSwipeOperatorOptions operatorOptions,
+            CancellationToken cancellationToken)
+        {
+            ValidatePageAndCdp(page, cdp);
+
+            if (swipeOptions == null)
+                throw new ArgumentNullException(nameof(swipeOptions));
+
+            var session = EnsureSession(operatorOptions);
+            PrepareSwipeOptionsForSession(swipeOptions, operatorOptions, session);
+
+            var trace = await HumanSwipeEmulator.SwipeAsync(
+                page,
+                cdp,
+                swipeOptions,
+                cancellationToken);
+
+            session.RecordSwipe(trace);
+            return trace;
+        }
+
+        private static async Task<HumanSwipeTrace?> RunElementSwipeAsync(
+            IPage page,
+            ICDPSession cdp,
+            ILocator locator,
+            HumanSwipeOptions swipeOptions,
+            HumanSwipeOperatorOptions operatorOptions,
+            CancellationToken cancellationToken)
+        {
+            var session = EnsureSession(operatorOptions);
+            PrepareSwipeOptionsForSession(swipeOptions, operatorOptions, session);
+
+            var trace = await HumanSwipeEmulator.SwipeInsideElementAsync(
+                page,
+                cdp,
+                locator,
+                swipeOptions,
+                cancellationToken);
+
+            session.RecordSwipe(trace);
+            return trace;
+        }
+
+        private static async Task<HumanSwipeTrace?> RunElementSwipeAsync(
+            IPage page,
+            ICDPSession cdp,
+            IElementHandle element,
+            HumanSwipeOptions swipeOptions,
+            HumanSwipeOperatorOptions operatorOptions,
+            CancellationToken cancellationToken)
+        {
+            var session = EnsureSession(operatorOptions);
+            PrepareSwipeOptionsForSession(swipeOptions, operatorOptions, session);
+
+            var trace = await HumanSwipeEmulator.SwipeInsideElementAsync(
+                page,
+                cdp,
+                element,
+                swipeOptions,
+                cancellationToken);
+
+            session.RecordSwipe(trace);
+            return trace;
+        }
+
+        private static void PrepareSwipeOptionsForSession(
+            HumanSwipeOptions swipeOptions,
+            HumanSwipeOperatorOptions operatorOptions,
+            HumanBrowseSessionState session)
+        {
+            if (operatorOptions.UseSessionBrowseModel)
+                swipeOptions.StyleProfile ??= session.StyleProfile;
+
+            swipeOptions.AllowNativeScrollFallback = operatorOptions.AllowNativeScrollFallback || swipeOptions.AllowNativeScrollFallback;
+
+            if (operatorOptions.EnableFatigueDelay)
+            {
+                double fatigue = Math.Clamp(session.Fatigue, 0.0, 1.0);
+
+                swipeOptions.SpeedFactor = Math.Clamp(
+                    swipeOptions.SpeedFactor * (1.0 - fatigue * 0.12) * NextDouble(0.96, 1.04),
+                    0.30,
+                    3.0);
+
+                if (swipeOptions.HesitationChance.HasValue)
+                {
+                    swipeOptions.HesitationChance = Math.Clamp(
+                        swipeOptions.HesitationChance.Value + fatigue * 0.018,
+                        0.0,
+                        0.25);
+                }
+            }
+        }
+
+        #endregion
+
+        #region 延迟/停止验证
+
+        private static async Task DelayAfterTraceAsync(
+            HumanSwipeTrace? trace,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken)
+        {
+            var session = EnsureSession(options);
+            int delay = NextInt(options.MinDelayAfterSwipeMs, options.MaxDelayAfterSwipeMs);
+
+            if (trace == null)
+            {
+                delay = NextInt(320, 1100);
+            }
+            else if (trace.Mode == HumanSwipeMode.Reading)
+            {
+                delay += NextInt(600, 1800);
+            }
+            else if (trace.Mode == HumanSwipeMode.Fling)
+            {
+                delay += NextInt(500, 1400);
+            }
+            else if (trace.Mode == HumanSwipeMode.Micro)
+            {
+                delay = NextInt(220, 620);
+            }
+
+            if (NextDouble() < Math.Clamp(options.LongObserveChance, 0, 0.8))
+                delay += NextInt(700, 2200);
+
+            if (options.EnableFatigueDelay)
+            {
+                double fatigueFactor = 1.0 + Math.Clamp(session.Fatigue, 0.0, 1.0) * 0.35;
+                delay = (int)Math.Round(delay * fatigueFactor);
+            }
+
+            delay = (int)Math.Round(delay * Math.Clamp(options.DelayFactor, 0.25, 4.0));
+
+            await Task.Delay(Math.Max(50, delay), cancellationToken);
+        }
+
+        private static async Task DelayAfterChaoticTraceAsync(
+            HumanSwipeTrace? trace,
+            HumanSwipeOperatorOptions options,
+            CancellationToken cancellationToken)
+        {
+            int delay;
+
+            if (trace == null)
+            {
+                delay = NextInt(500, 1600);
+            }
+            else if (trace.Mode == HumanSwipeMode.Reading)
+            {
+                delay = NextInt(900, 2600);
+            }
+            else if (trace.Mode == HumanSwipeMode.Fling)
+            {
+                delay = NextInt(900, 2300);
+            }
+            else if (trace.Mode == HumanSwipeMode.Micro)
+            {
+                delay = NextInt(220, 760);
+            }
+            else
+            {
+                delay = NextInt(options.MinDelayAfterSwipeMs, options.MaxDelayAfterSwipeMs);
+            }
+
+            if (NextDouble() < Math.Clamp(options.LongObserveChance + 0.02, 0, 0.8))
+                delay += NextInt(800, 2600);
+
+            var session = EnsureSession(options);
+            if (options.EnableFatigueDelay)
+                delay = (int)Math.Round(delay * (1.0 + Math.Clamp(session.Fatigue, 0.0, 1.0) * 0.30));
+
+            delay = (int)Math.Round(delay * Math.Clamp(options.DelayFactor, 0.25, 4.0));
+            await Task.Delay(Math.Max(50, delay), cancellationToken);
         }
 
         private static async Task DelayAfterTimedChaoticTraceAsync(
@@ -2281,13 +2869,66 @@ namespace PlaywrightHumanInput
                 delay = NextInt(options.MinDelayAfterSwipeMs, options.MaxDelayAfterSwipeMs);
             }
 
-            // 偶尔长观察。
-            if (NextDouble() < 0.10)
+            if (NextDouble() < Math.Clamp(options.LongObserveChance, 0, 0.8))
                 delay += NextInt(700, 2200);
 
-            // 不要超过剩余时间太多。
+            var session = EnsureSession(options);
+            if (options.EnableFatigueDelay)
+                delay = (int)Math.Round(delay * (1.0 + Math.Clamp(session.Fatigue, 0.0, 1.0) * 0.25));
+
+            delay = (int)Math.Round(delay * Math.Clamp(options.DelayFactor, 0.25, 4.0));
+
             int maxAllowed = Math.Max(50, (int)Math.Min(remaining.TotalMilliseconds, delay));
             await Task.Delay(maxAllowed, cancellationToken);
+        }
+
+        private static async Task<bool> SafeVerifyStopAsync(
+            IPage page,
+            Func<IPage, Task<bool>> stopVerifier,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (page == null || page.IsClosed)
+                    return true;
+
+                return await stopVerifier(page);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static async Task<bool> SafeVerifyStopAsync(
+            IPage page,
+            int swipeCount,
+            Func<IPage, int, Task<bool>> stopVerifier,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (page == null || page.IsClosed)
+                    return true;
+
+                return await stopVerifier(page, swipeCount);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static async Task<bool> SafeVerifyTimedStopAsync(
@@ -2313,786 +2954,8 @@ namespace PlaywrightHumanInput
             }
             catch
             {
-                // 回调异常不直接停止，继续浏览。
                 return false;
             }
-        }
-
-        #endregion
-
-        #region 垂直滑动：阅读/预览/甩动/微调
-
-        /// <summary>
-        /// 慢速向上阅读。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> ReadingUpAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Up,
-                    Mode = HumanSwipeMode.Reading,
-
-                    SpeedFactor = NextDouble(0.70, 0.95),
-                    DistancePx = NextInt((int)(vh * 0.18), (int)(vh * 0.32)),
-                    Steps = NextInt(46, 72),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = true,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 5
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 慢速向下回看。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> ReadingDownAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Down,
-                    Mode = HumanSwipeMode.Reading,
-
-                    SpeedFactor = NextDouble(0.70, 0.95),
-                    DistancePx = NextInt((int)(vh * 0.16), (int)(vh * 0.30)),
-                    Steps = NextInt(46, 72),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = true,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 5
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 正常向上预览。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> PreviewUpAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Up,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vh * 0.30), (int)(vh * 0.48)),
-                    Steps = NextInt(24, 40),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(1.2, 2.0),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 8
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 正常向下回看。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> PreviewDownAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Down,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vh * 0.26), (int)(vh * 0.44)),
-                    Steps = NextInt(24, 40),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(1.2, 2.0),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 8
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 快速向上甩动。力度越大，距离越长、步数越少、速度越快。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> FlingUpAsync(
-            IPage page,
-            ICDPSession cdp,
-            FlingStrength strength = FlingStrength.Normal,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-            var cfg = GetFlingConfig(strength);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Up,
-                    Mode = HumanSwipeMode.Fling,
-
-                    SpeedFactor = NextDouble(cfg.MinSpeed, cfg.MaxSpeed),
-                    DistancePx = NextInt(
-                        (int)(vh * cfg.MinDistanceRatio),
-                        (int)(vh * cfg.MaxDistanceRatio)),
-
-                    Steps = NextInt(cfg.MinSteps, cfg.MaxSteps),
-
-                    HoldBeforeMove = false,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(cfg.MinJitter, cfg.MaxJitter),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 12
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 快速向下甩动。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> FlingDownAsync(
-            IPage page,
-            ICDPSession cdp,
-            FlingStrength strength = FlingStrength.Normal,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-            var cfg = GetFlingConfig(strength);
-
-            // 向下通常略短一点，避免顶部回弹太明显。
-            double minDistance = Math.Max(0.35, cfg.MinDistanceRatio - 0.06);
-            double maxDistance = Math.Max(minDistance + 0.05, cfg.MaxDistanceRatio - 0.08);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Down,
-                    Mode = HumanSwipeMode.Fling,
-
-                    SpeedFactor = NextDouble(cfg.MinSpeed, cfg.MaxSpeed),
-                    DistancePx = NextInt(
-                        (int)(vh * minDistance),
-                        (int)(vh * maxDistance)),
-
-                    Steps = NextInt(cfg.MinSteps, cfg.MaxSteps),
-
-                    HoldBeforeMove = false,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(cfg.MinJitter, cfg.MaxJitter),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 12
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 超长距离快速向下甩动。
-        /// 更容易产生较长距离的向下惯性滚动。
-        /// 适合从页面中下部快速回看上方内容。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> LongFlingDownAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Down,
-                    Mode = HumanSwipeMode.Fling,
-
-                    // 向下长甩也要快，但略低于向上，避免顶部回弹太明显
-                    SpeedFactor = NextDouble(2.5, 3.0),
-
-                    // 向下距离略短于 LongFlingUp，避免一甩直接顶到顶部
-                    DistancePx = NextInt(
-                        (int)(vh * 0.78),
-                        (int)(vh * 1.05)),
-
-                    // 步数越少，抬手速度越大，惯性越明显
-                    Steps = NextInt(5, 9),
-
-                    HoldBeforeMove = false,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-
-                    // 强甩不要抖太大
-                    MaxJitter = NextDouble(0.2, 0.7),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 20
-                },
-                cancellationToken);
-        }
-
-
-
-        /// <summary>
-        /// 小幅向上微调。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> MicroUpAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Up,
-                    Mode = HumanSwipeMode.Micro,
-
-                    SpeedFactor = NextDouble(0.85, 1.15),
-                    DistancePx = NextInt((int)(vh * 0.07), (int)(vh * 0.16)),
-                    Steps = NextInt(16, 32),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = true,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.4, 0.9),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 3
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 小幅向下微调。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> MicroDownAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vh = ViewportHeight(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Down,
-                    Mode = HumanSwipeMode.Micro,
-
-                    SpeedFactor = NextDouble(0.85, 1.15),
-                    DistancePx = NextInt((int)(vh * 0.07), (int)(vh * 0.15)),
-                    Steps = NextInt(16, 32),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = true,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.4, 0.9),
-
-                    VerifyScrollChanged = true,
-                    CheckScrollableBeforeSwipe = true,
-                    ScrollChangedMinDelta = 3
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 快速扫描一次。多数情况下是 Strong Fling，少数是 Preview 或 VeryStrong。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> FastScanOnceAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            double r = NextDouble();
-
-            if (r < 0.18)
-                return PreviewUpAsync(page, cdp, cancellationToken);
-
-            if (r < 0.82)
-                return FlingUpAsync(page, cdp, FlingStrength.Strong, cancellationToken);
-
-            return FlingUpAsync(page, cdp, FlingStrength.VeryStrong, cancellationToken);
-        }
-
-        #endregion
-
-        #region 横向滑动
-
-        /// <summary>
-        /// 页面级横向左滑。如果页面本身不支持横向滚动，建议用 SwipeElementLeftAsync。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> SwipeLeftAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vw = ViewportWidth(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Left,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vw * 0.45), (int)(vw * 0.68)),
-                    Steps = NextInt(20, 34),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = false,
-                    CheckScrollableBeforeSwipe = false
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 页面级横向右滑。如果页面本身不支持横向滚动，建议用 SwipeElementRightAsync。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> SwipeRightAsync(
-            IPage page,
-            ICDPSession cdp,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            int vw = ViewportWidth(page);
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Right,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vw * 0.42), (int)(vw * 0.64)),
-                    Steps = NextInt(20, 34),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = false,
-                    CheckScrollableBeforeSwipe = false
-                },
-                cancellationToken);
-        }
-
-        #endregion
-
-        #region 元素相关
-
-        /// <summary>
-        /// 把元素滑动到屏幕舒适区。
-        /// </summary>
-        public static Task<List<HumanSwipeTrace>> MoveToElementAsync(
-            IPage page,
-            ICDPSession cdp,
-            ILocator locator,
-            int maxSwipes = 10,
-            float comfortTopRatio = 0.22f,
-            float comfortBottomRatio = 0.72f,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (locator == null)
-                throw new ArgumentNullException(nameof(locator));
-
-            return HumanSwipeEmulator.SwipeToElementAsync(
-                page,
-                cdp,
-                locator,
-                maxSwipes,
-                comfortTopRatio,
-                comfortBottomRatio,
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 把元素滑动到屏幕舒适区。
-        /// </summary>
-        public static Task<List<HumanSwipeTrace>> MoveToElementAsync(
-            IPage page,
-            ICDPSession cdp,
-            IElementHandle element,
-            int maxSwipes = 10,
-            float comfortTopRatio = 0.22f,
-            float comfortBottomRatio = 0.72f,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (element == null)
-                throw new ArgumentNullException(nameof(element));
-
-            return HumanSwipeEmulator.SwipeToElementAsync(
-                page,
-                cdp,
-                element,
-                maxSwipes,
-                comfortTopRatio,
-                comfortBottomRatio,
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 把无素滑动到屏幕可见区域
-        /// </summary>
-        /// <param name="page"></param>
-        /// <param name="cdp"></param>
-        /// <param name="locator"></param>
-        /// <param name="maxSwipes"></param>
-        /// <param name="visibleMarginPx"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public static Task<List<HumanSwipeTrace>> MoveToElementVisibleAsync(
-        IPage page,
-        ICDPSession cdp,
-        ILocator locator,
-        int maxSwipes = 8,
-        float visibleMarginPx = 8f,
-        CancellationToken cancellationToken = default)
-        {
-            return HumanSwipeEmulator.SwipeToElementVisibleAsync(
-                page,
-                cdp,
-                locator,
-                maxSwipes,
-                visibleMarginPx,
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 元素内部左滑，适合 Banner / Swiper / 横向卡片。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> SwipeElementLeftAsync(
-            IPage page,
-            ICDPSession cdp,
-            ILocator locator,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (locator == null)
-                throw new ArgumentNullException(nameof(locator));
-
-            int vw = ViewportWidth(page);
-
-            return HumanSwipeEmulator.SwipeInsideElementAsync(
-                page,
-                cdp,
-                locator,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Left,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vw * 0.42), (int)(vw * 0.66)),
-                    Steps = NextInt(20, 34),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = false,
-                    CheckScrollableBeforeSwipe = false,
-                    SafeMargin = 8
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 元素内部右滑，适合 Banner / Swiper / 横向卡片。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> SwipeElementRightAsync(
-            IPage page,
-            ICDPSession cdp,
-            ILocator locator,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (locator == null)
-                throw new ArgumentNullException(nameof(locator));
-
-            int vw = ViewportWidth(page);
-
-            return HumanSwipeEmulator.SwipeInsideElementAsync(
-                page,
-                cdp,
-                locator,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Right,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vw * 0.38), (int)(vw * 0.62)),
-                    Steps = NextInt(20, 34),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = false,
-                    CheckScrollableBeforeSwipe = false,
-                    SafeMargin = 8
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 元素内部左滑，适合 Banner / Swiper / 横向卡片。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> SwipeElementLeftAsync(
-            IPage page,
-            ICDPSession cdp,
-            IElementHandle element,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (element == null)
-                throw new ArgumentNullException(nameof(element));
-
-            int vw = ViewportWidth(page);
-
-            return HumanSwipeEmulator.SwipeInsideElementAsync(
-                page,
-                cdp,
-                element,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Left,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vw * 0.42), (int)(vw * 0.66)),
-                    Steps = NextInt(20, 34),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = false,
-                    CheckScrollableBeforeSwipe = false,
-                    SafeMargin = 8
-                },
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 元素内部右滑，适合 Banner / Swiper / 横向卡片。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> SwipeElementRightAsync(
-            IPage page,
-            ICDPSession cdp,
-            IElementHandle element,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (element == null)
-                throw new ArgumentNullException(nameof(element));
-
-            int vw = ViewportWidth(page);
-
-            return HumanSwipeEmulator.SwipeInsideElementAsync(
-                page,
-                cdp,
-                element,
-                new HumanSwipeOptions
-                {
-                    Direction = HumanSwipeDirection.Right,
-                    Mode = HumanSwipeMode.Preview,
-
-                    SpeedFactor = NextDouble(1.0, 1.35),
-                    DistancePx = NextInt((int)(vw * 0.38), (int)(vw * 0.62)),
-                    Steps = NextInt(20, 34),
-
-                    HoldBeforeMove = true,
-                    HoldBeforeEnd = false,
-
-                    UseBezierCurve = true,
-                    UseJitter = true,
-                    MaxJitter = NextDouble(0.8, 1.6),
-
-                    VerifyScrollChanged = false,
-                    CheckScrollableBeforeSwipe = false,
-                    SafeMargin = 8
-                },
-                cancellationToken);
-        }
-
-        #endregion
-
-        #region 自定义动作
-
-        /// <summary>
-        /// 直接传入自定义参数，仍然通过 HumanSwipeOperator 执行。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> CustomAsync(
-            IPage page,
-            ICDPSession cdp,
-            HumanSwipeOptions options,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (options == null)
-                throw new ArgumentNullException(nameof(options));
-
-            return HumanSwipeEmulator.SwipeAsync(
-                page,
-                cdp,
-                options,
-                cancellationToken);
-        }
-
-        /// <summary>
-        /// 根据元素中心位置自动选择微调方向。
-        /// centerY 小于 comfortTop 时向下拉；大于 comfortBottom 时向上推。
-        /// </summary>
-        public static Task<HumanSwipeTrace?> MicroAdjustToComfortAsync(
-            IPage page,
-            ICDPSession cdp,
-            double centerY,
-            double comfortTop,
-            double comfortBottom,
-            CancellationToken cancellationToken = default)
-        {
-            ValidatePageAndCdp(page, cdp);
-
-            if (centerY < comfortTop)
-                return MicroDownAsync(page, cdp, cancellationToken);
-
-            if (centerY > comfortBottom)
-                return MicroUpAsync(page, cdp, cancellationToken);
-
-            return Task.FromResult<HumanSwipeTrace?>(null);
         }
 
         #endregion
@@ -3141,25 +3004,25 @@ namespace PlaywrightHumanInput
 
                 FlingStrength.Strong => new FlingConfig
                 {
-                    MinDistanceRatio = 0.72,
+                    MinDistanceRatio = 0.70,
                     MaxDistanceRatio = 0.92,
-                    MinSteps = 7,
-                    MaxSteps = 11,
+                    MinSteps = 6,
+                    MaxSteps = 10,
                     MinSpeed = 2.3,
                     MaxSpeed = 2.9,
-                    MinJitter = 0.5,
+                    MinJitter = 0.4,
                     MaxJitter = 1.0
                 },
 
                 FlingStrength.VeryStrong => new FlingConfig
                 {
                     MinDistanceRatio = 0.82,
-                    MaxDistanceRatio = 1.05,
-                    MinSteps = 6,
-                    MaxSteps = 9,
+                    MaxDistanceRatio = 1.08,
+                    MinSteps = 5,
+                    MaxSteps = 8,
                     MinSpeed = 2.6,
                     MaxSpeed = 3.0,
-                    MinJitter = 0.3,
+                    MinJitter = 0.2,
                     MaxJitter = 0.8
                 },
 
@@ -3181,45 +3044,36 @@ namespace PlaywrightHumanInput
         {
             double r = NextDouble();
 
-            if (r < 0.15)
+            if (r < 0.18)
                 return FlingStrength.Soft;
 
-            if (r < 0.65)
+            if (r < 0.72)
                 return FlingStrength.Normal;
 
-            if (r < 0.92)
+            if (r < 0.94)
                 return FlingStrength.Strong;
 
             return FlingStrength.VeryStrong;
         }
 
-        private static async Task DelayAfterTraceAsync(
-            HumanSwipeTrace? trace,
-            HumanSwipeOperatorOptions options,
-            CancellationToken cancellationToken)
+        private static HumanBrowseSessionState EnsureSession(HumanSwipeOperatorOptions options)
         {
-            int delay = NextInt(options.MinDelayAfterSwipeMs, options.MaxDelayAfterSwipeMs);
-
-            if (trace?.Mode == HumanSwipeMode.Reading)
-                delay += NextInt(600, 1800);
-
-            if (trace?.Mode == HumanSwipeMode.Fling)
-                delay += NextInt(500, 1400);
-
-            if (trace?.Mode == HumanSwipeMode.Micro)
-                delay = NextInt(220, 620);
-
-            await Task.Delay(delay, cancellationToken);
+            options.Session ??= new HumanBrowseSessionState();
+            return options.Session;
         }
 
-        private static int ViewportHeight(IPage page)
+        private static int ViewportHeight(IPage page, HumanSwipeOperatorOptions? options = null)
         {
-            return page.ViewportSize?.Height ?? 800;
+            return page.ViewportSize?.Height
+                ?? options?.DefaultViewportHeight
+                ?? 800;
         }
 
-        private static int ViewportWidth(IPage page)
+        private static int ViewportWidth(IPage page, HumanSwipeOperatorOptions? options = null)
         {
-            return page.ViewportSize?.Width ?? 390;
+            return page.ViewportSize?.Width
+                ?? options?.DefaultViewportWidth
+                ?? 390;
         }
 
         private static void ValidatePageAndCdp(IPage page, ICDPSession cdp)
@@ -3234,12 +3088,39 @@ namespace PlaywrightHumanInput
                 throw new InvalidOperationException("Page is closed.");
         }
 
-        private static int NextInt(int min, int max)
+        private static void NormalizeRange(ref int min, ref int max, int lowerBound)
         {
-            if (max < min)
-                (min, max) = (max, min);
+            if (min < lowerBound)
+                min = lowerBound;
 
-            return RandomLocal.Value!.Next(min, max + 1);
+            if (max < min)
+                max = min;
+        }
+
+        private static TimeSpan NextDuration(TimeSpan minDuration, TimeSpan maxDuration)
+        {
+            if (minDuration < TimeSpan.Zero)
+                minDuration = TimeSpan.Zero;
+
+            if (maxDuration < minDuration)
+                maxDuration = minDuration;
+
+            double minMs = minDuration.TotalMilliseconds;
+            double maxMs = maxDuration.TotalMilliseconds;
+
+            if (maxMs <= minMs)
+                return minDuration;
+
+            double ms = NextDouble(minMs, maxMs);
+            return TimeSpan.FromMilliseconds(ms);
+        }
+
+        private static int NextInt(int minInclusive, int maxInclusive)
+        {
+            if (maxInclusive < minInclusive)
+                maxInclusive = minInclusive;
+
+            return RandomLocal.Value!.Next(minInclusive, maxInclusive + 1);
         }
 
         private static double NextDouble()
@@ -3247,12 +3128,12 @@ namespace PlaywrightHumanInput
             return RandomLocal.Value!.NextDouble();
         }
 
-        private static double NextDouble(double min, double max)
+        private static double NextDouble(double minInclusive, double maxInclusive)
         {
-            if (max < min)
-                (min, max) = (max, min);
+            if (maxInclusive < minInclusive)
+                maxInclusive = minInclusive;
 
-            return min + RandomLocal.Value!.NextDouble() * (max - min);
+            return minInclusive + RandomLocal.Value!.NextDouble() * (maxInclusive - minInclusive);
         }
 
         #endregion
