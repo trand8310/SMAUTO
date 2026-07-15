@@ -19,7 +19,7 @@ namespace PlaywrightHumanInput;
 public sealed class HumanPageOperator
 {
     private readonly IPage _page;
-    private readonly Random _random;
+    private readonly StableRandom _random;
     private readonly HumanBehaviorProfile _profile;
 
     private float _mouseX;
@@ -31,15 +31,18 @@ public sealed class HumanPageOperator
 
     public HumanPageOperator(
         IPage page,
-        HumanBehaviorProfile? profile = null,
-        int? randomSeed = null)
+        HumanBehaviorProfile profile,
+        int randomSeed)
     {
-        _page = page ?? throw new ArgumentNullException(nameof(page));
-        _profile = profile ?? HumanBehaviorProfile.Normal();
+        _page = page ??
+                throw new ArgumentNullException(
+                    nameof(page));
 
-        _random = randomSeed.HasValue
-            ? new Random(randomSeed.Value)
-            : new Random();
+        _profile = profile ??
+                   throw new ArgumentNullException(
+                       nameof(profile));
+
+        _random = new StableRandom(randomSeed);
     }
 
     public async Task NavigateAsync(
@@ -73,13 +76,13 @@ public sealed class HumanPageOperator
         if (maxSections < minSections)
             throw new ArgumentOutOfRangeException(nameof(maxSections));
 
-        int sections = _random.Next(minSections, maxSections + 1);
+        int sections = _random.NextInt(minSections, maxSections + 1);
 
         for (int i = 0; i < sections; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            int distance = _random.Next(280, 850);
+            int distance = _random.NextInt(280, 850);
 
             await ScrollByAsync(distance, cancellationToken);
             await ReadingPauseAsync(cancellationToken);
@@ -95,7 +98,7 @@ public sealed class HumanPageOperator
                 _random.NextDouble() < _profile.ScrollBackProbability)
             {
                 await ScrollByAsync(
-                    -_random.Next(80, 260),
+                    -_random.NextInt(80, 260),
                     cancellationToken);
 
                 await DelayAsync(350, 1_200, cancellationToken);
@@ -397,7 +400,7 @@ public sealed class HumanPageOperator
 
         // 一次滚动动作由多个脉冲构成。
         int pulseCount = Math.Clamp(
-            (int)(remaining / 100f) + _random.Next(2, 5),
+            (int)(remaining / 100f) + _random.NextInt(2, 5),
             3,
             16);
 
@@ -425,11 +428,11 @@ public sealed class HumanPageOperator
 
             if (i == pulseCount - 1)
             {
-                pause = ScaleDelay(_random.Next(90, 260));
+                pause = ScaleDelay(_random.NextInt(90, 260));
             }
             else
             {
-                pause = ScaleDelay(_random.Next(28, 105));
+                pause = ScaleDelay(_random.NextInt(28, 105));
             }
 
             await Task.Delay(pause, cancellationToken);
@@ -474,7 +477,7 @@ public sealed class HumanPageOperator
                 break;
 
             await ScrollByAsync(
-                _random.Next(380, 760),
+                _random.NextInt(380, 760),
                 cancellationToken);
 
             await DelayAsync(420, 1_250, cancellationToken);
@@ -822,7 +825,7 @@ public sealed class HumanPageOperator
             72f);
 
         curveStrength *=
-            _random.Next(0, 2) == 0 ? -1f : 1f;
+            _random.NextInt(0, 2) == 0 ? -1f : 1f;
 
         float control1X =
             startX +
@@ -907,7 +910,7 @@ public sealed class HumanPageOperator
             {
                 int jitteredDelay = Math.Max(
                     1,
-                    stepDelay + _random.Next(-2, 3));
+                    stepDelay + _random.NextInt(-2, 3));
 
                 await Task.Delay(
                     jitteredDelay,
@@ -1019,7 +1022,7 @@ public sealed class HumanPageOperator
 
     private int GetTypingDelay(string value)
     {
-        int baseDelay = _random.Next(
+        int baseDelay = _random.NextInt(
             _profile.MinKeyDelayMs,
             _profile.MaxKeyDelayMs + 1);
 
@@ -1027,7 +1030,7 @@ public sealed class HumanPageOperator
         if (value.Length == 1 &&
             char.IsUpper(value[0]))
         {
-            baseDelay += _random.Next(20, 65);
+            baseDelay += _random.NextInt(20, 65);
         }
 
         // 数字和符号略慢。
@@ -1035,7 +1038,7 @@ public sealed class HumanPageOperator
             !char.IsLetter(value[0]) &&
             !char.IsWhiteSpace(value[0]))
         {
-            baseDelay += _random.Next(15, 80);
+            baseDelay += _random.NextInt(15, 80);
         }
 
         return ScaleDelay(baseDelay);
@@ -1090,7 +1093,7 @@ public sealed class HumanPageOperator
                 (maxMilliseconds, minMilliseconds);
         }
 
-        int rawDelay = _random.Next(
+        int rawDelay = _random.NextInt(
             minMilliseconds,
             maxMilliseconds + 1);
 
@@ -1180,7 +1183,7 @@ public sealed class HumanPageOperator
         };
 
         char result =
-            neighbors[_random.Next(neighbors.Length)];
+            neighbors[_random.NextInt(0, neighbors.Length)];
 
         return upper
             ? char.ToUpperInvariant(result)

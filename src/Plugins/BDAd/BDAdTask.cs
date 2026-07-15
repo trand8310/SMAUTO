@@ -7,12 +7,9 @@ using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Common.Models;
-using QTP.Common.Win32;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
-using System.Threading;
-
 
 namespace QTP.Plugins
 {
@@ -276,15 +273,15 @@ namespace QTP.Plugins
             }
         }
 
-        private static List<string> InitFPArgs(JToken taskArgs, int maxTouchPoints)
+        private static List<string> InitFPArgs(TaskConfig config)
         {
+            JToken taskArgs = config.TaskArgs;
+            int maxTouchPoints = config.MaxTouchPoints;
             var result = new List<string>();
 
             uint hash_code = (uint)Math.Abs($"{taskArgs.ToString()}".GetHashCode()) % 1048560;
             uint fingerprint = hash_code;
-
-            ///
-
+            config.Fingerprint = (int)fingerprint;
 
             #region 指纹参数设置
 
@@ -431,20 +428,16 @@ namespace QTP.Plugins
                 }
             }
 
-
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 token.ThrowIfCancellationRequested();
-
                 IBrowser? browser = null;
-
                 try
                 {
                     var launchOptions = new BrowserTypeLaunchOptions
                     {
 
                         Headless = IsHiddenMode(config),
-                        //Channel = "chrome",
                         ChromiumSandbox = true,
                         IgnoreDefaultArgs = new List<string>()
                         {
@@ -458,13 +451,8 @@ namespace QTP.Plugins
                     };
                     if (isProxyMode)
                     {
-
-
-
-
                         launchOptions.Proxy = new Proxy { Server = proxyServer! };
                     }
-
 
                     browser = await playwright.Chromium.LaunchAsync(launchOptions);
 
@@ -583,13 +571,9 @@ namespace QTP.Plugins
             try
             {
                 ctx = CreateWorkerRunContext(uniqueId, taskArgs, linkedCts);
-
-
                 _activeContexts[uniqueId] = ctx;
-
                 this.QTPExecuteStart(ctx.Config.TaskId);
                 LogWriteLine($"{this.Title}:ExecuteWorker:Start");
-
                 var initializationFailure = await InitializeWorkerAsync(ctx, linkedCts.Token);
                 if (initializationFailure != null)
                     return initializationFailure;
@@ -1024,13 +1008,6 @@ namespace QTP.Plugins
         {
 
 
-            var profile = HumanBehaviorProfile.Normal();
-            using var humanSession = new HumanBrowserSession(
-                ctx.Context!,
-                profile);
-
-
-
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
             {
                 token.ThrowIfCancellationRequested();
@@ -1245,7 +1222,6 @@ namespace QTP.Plugins
         {
 
             var os = taskArgs.SelectToken("os")!.Value<int>();
-
             var sw1 = taskArgs.SelectToken("dev.screen.width")?.Value<int>() ?? 1920;
             var sh1 = taskArgs.SelectToken("dev.screen.height")?.Value<int>() ?? 1080;
             var profileResult = WindowsViewportMatcher.Match(sw1, sh1);
@@ -1363,45 +1339,6 @@ namespace QTP.Plugins
                 //$"--screen-size=\"{config.Sw},{config.Sh}\"",
                // $"--screen-avail-size=\"{config.Sw},{config.Sh}\"",
             };
-
-
-
-            if (config.Os == 1 || config.Os == 2)
-            {
-
-            }
-
-            //proxyServer = string.Empty;
-            //proxyServer = string.Empty;
-            //var isProxyMode = config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() ?? false;
-            //if (isProxyMode)
-            //{
-            //    proxyServer = config.TaskArgs.SelectToken("proxy_server")!.Value<string>();
-            //    var protocol = config.TaskArgs.SelectToken("protocol")?.Value<string>();
-            //    if (!string.IsNullOrWhiteSpace(protocol) && protocol.Equals("socks5"))
-            //    {
-            //        args.Add($"--proxy-server=\"socks5://{proxyServer}\"");
-            //        //--proxy-server="socks5://127.0.0.1:1080" ^
-            //        //--disable-features=DnsOverHttps ^
-            //        //--host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"
-            //    }
-            //    else
-            //    {
-            //        args.Add($"--proxy-server=\"{proxyServer}\"");
-            //    }
-
-            //}
-
-            //if (config.TaskArgs.SelectToken("incognito")?.Value<bool>() ?? false)
-            //{
-            //    args.Add("--incognito");
-            //    args.Add("--enable-incognito-themes");
-            //}
-            //else
-            //{
-            //    args.Add($"--disk-cache-dir=\"{config.CacheDir}\"");
-            //}
-
             if (_appSettings.BlockImage || _appSettings.BlockMedia)
             {
                 args.Add("--autoplay-policy=user-gesture-required");
@@ -1411,13 +1348,8 @@ namespace QTP.Plugins
             {
                 args.Add("--blink-settings=imagesEnabled=false");
             }
-
             args.Add($"--fingerprint-config-dir={System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fingerprint")}");
-
-
-
-
-            args.AddRange(InitFPArgs(config.TaskArgs, config.MaxTouchPoints));
+            args.AddRange(InitFPArgs(config));
             return args;
         }
 
@@ -1439,10 +1371,15 @@ namespace QTP.Plugins
             }
 
             var initialPage = await ctx.Context.NewPageAsync();
-            await ctx.InitializeHumanSessionAsync(
-            initialPage,
-            HumanBehaviorProfile.Normal(),
-            token);
+            // 创建一次 HumanBrowserSession。
+            ctx.InitializeHumanSession();
+
+
+
+            //await ctx.InitializeHumanSessionAsync(
+            //initialPage,
+            //HumanBehaviorProfile.Normal(),
+            //token);
         }
 
         private Task AttachLifecycleEventsAsync(WorkerRunContext ctx, CancellationToken token)
@@ -1598,7 +1535,7 @@ namespace QTP.Plugins
                 await ctx.Context.Pages[^1].CloseAsync();
             }
             var initialPage = ctx.Context.Pages[0];
-           // ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(initialPage);
+            // ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(initialPage);
         }
 
         private string BuildTraceTag(WorkerRunContext ctx)
@@ -3570,6 +3507,9 @@ namespace QTP.Plugins
         {
 
 
+            await ctx.HumanSession!
+            .For(ctx.Page!)
+            .BrowsePageAsync(2, 6, token);
 
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 

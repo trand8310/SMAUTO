@@ -2,123 +2,46 @@
 
 namespace PlaywrightHumanInput;
 
-/// <summary>
-/// 单个浏览器会话的操作习惯。
-///
-/// 不要在每一次操作时重新生成配置，
-/// 同一个用户会话应始终复用同一个 Profile。
-/// </summary>
-public sealed class HumanBehaviorProfile
+public sealed record HumanBehaviorProfile
 {
-    /// <summary>
-    /// 整体速度系数。
-    /// 小于 1 更快，大于 1 更慢。
-    /// 建议范围：0.75～1.8。
-    /// </summary>
-    public double SpeedFactor { get; init; } = 1.0;
+    public int Seed { get; init; }
 
     /// <summary>
-    /// 长距离鼠标移动时发生轻微过冲的概率。
+    /// 整体操作速度。越大越慢。
     /// </summary>
-    public double MouseOvershootProbability { get; init; } = 0.38;
+    public double SpeedFactor { get; init; }
 
-    /// <summary>
-    /// 移动到元素后，点击前稍作停顿的概率。
-    /// </summary>
-    public double PreClickPauseProbability { get; init; } = 0.72;
+    public double MouseOvershootProbability { get; init; }
 
-    /// <summary>
-    /// 点击前发生小范围二次修正的概率。
-    /// </summary>
-    public double MouseCorrectionProbability { get; init; } = 0.24;
+    public double PreClickPauseProbability { get; init; }
 
-    /// <summary>
-    /// 英文输入时产生可恢复输入错误的概率。
-    /// 建议不要设置得太大。
-    /// </summary>
-    public double TypoProbability { get; init; } = 0.018;
+    public double MouseCorrectionProbability { get; init; }
 
-    /// <summary>
-    /// 输入时出现思考停顿的概率。
-    /// </summary>
-    public double ThinkingPauseProbability { get; init; } = 0.055;
+    public double TypoProbability { get; init; }
 
-    /// <summary>
-    /// 浏览过程中发生小幅回看滚动的概率。
-    /// </summary>
-    public double ScrollBackProbability { get; init; } = 0.12;
+    public double ThinkingPauseProbability { get; init; }
 
-    /// <summary>
-    /// 普通按键间隔。
-    /// </summary>
-    public int MinKeyDelayMs { get; init; } = 38;
+    public double ScrollBackProbability { get; init; }
 
-    public int MaxKeyDelayMs { get; init; } = 135;
+    public int MinKeyDelayMs { get; init; }
 
-    /// <summary>
-    /// 点击按下到释放的时间。
-    /// </summary>
-    public int MinMouseDownMs { get; init; } = 55;
+    public int MaxKeyDelayMs { get; init; }
 
-    public int MaxMouseDownMs { get; init; } = 145;
+    public int MinMouseDownMs { get; init; }
 
-    /// <summary>
-    /// 页面操作超时时间。
-    /// </summary>
-    public float ActionTimeoutMs { get; init; } = 15_000;
+    public int MaxMouseDownMs { get; init; }
 
-    public float NavigationTimeoutMs { get; init; } = 35_000;
+    public float ActionTimeoutMs { get; init; }
 
-    /// <summary>
-    /// 页面阅读停顿。
-    /// </summary>
-    public int MinReadingDelayMs { get; init; } = 650;
+    public float NavigationTimeoutMs { get; init; }
 
-    public int MaxReadingDelayMs { get; init; } = 2_400;
+    public int MinReadingDelayMs { get; init; }
 
-    /// <summary>
-    /// 鼠标轨迹的最少和最多节点。
-    /// </summary>
-    public int MinMouseSteps { get; init; } = 12;
+    public int MaxReadingDelayMs { get; init; }
 
-    public int MaxMouseSteps { get; init; } = 80;
+    public int MinMouseSteps { get; init; }
 
-    /// <summary>
-    /// 定位目标时最多滚动次数。
-    /// </summary>
-    public int MaxTargetScrollAttempts { get; init; } = 14;
+    public int MaxMouseSteps { get; init; }
 
-    public static HumanBehaviorProfile Normal()
-    {
-        return new HumanBehaviorProfile
-        {
-            SpeedFactor = 1.0,
-            TypoProbability = 0.018,
-            MouseOvershootProbability = 0.38
-        };
-    }
-
-    public static HumanBehaviorProfile Deliberate()
-    {
-        return new HumanBehaviorProfile
-        {
-            SpeedFactor = 1.35,
-            TypoProbability = 0.012,
-            MouseOvershootProbability = 0.25,
-            MinReadingDelayMs = 900,
-            MaxReadingDelayMs = 3_200
-        };
-    }
-
-    public static HumanBehaviorProfile Fast()
-    {
-        return new HumanBehaviorProfile
-        {
-            SpeedFactor = 0.78,
-            TypoProbability = 0.025,
-            MouseOvershootProbability = 0.45,
-            MinReadingDelayMs = 350,
-            MaxReadingDelayMs = 1_400
-        };
-    }
+    public int MaxTargetScrollAttempts { get; init; }
 }
