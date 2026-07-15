@@ -1,4 +1,4 @@
-﻿using BDAd;
+using BDAd;
 using BDAd.LandingPolicy;
 using BDAd.Models;
 using Microsoft.Playwright;
@@ -1516,8 +1516,12 @@ namespace QTP.Plugins
                 try { await download.CancelAsync(); } catch { }
             };
 
-            //if (ctx.Page == page)
-            //    ctx.CdpSession = cdpSession;
+            page.Close += (_, closedPage) =>
+            {
+                try { ctx.ClearActivePage(closedPage); } catch { }
+            };
+
+            ctx.SetActivePage(page, cdpSession);
 
         }
 
@@ -1535,7 +1539,8 @@ namespace QTP.Plugins
                 await ctx.Context.Pages[^1].CloseAsync();
             }
             var initialPage = ctx.Context.Pages[0];
-            // ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(initialPage);
+            var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(initialPage);
+            ctx.SetActivePage(initialPage, cdpSession);
         }
 
         private string BuildTraceTag(WorkerRunContext ctx)
