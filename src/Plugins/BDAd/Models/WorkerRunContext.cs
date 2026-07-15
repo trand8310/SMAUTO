@@ -1,4 +1,4 @@
-﻿using BDAd.LandingPolicy;
+using BDAd.LandingPolicy;
 using Microsoft.Playwright;
 using PlaywrightHumanInput;
 using QTP.Plugins;
@@ -51,11 +51,101 @@ public sealed class WorkerRunContext
 
     public IBrowserContext? Context { get; set; }
 
-    public IPage? Page { get; private set; }
+    private IPage? _activePage;
 
-    public ICDPSession? CdpSession { get; private set; }
+    private ICDPSession? _activeCdpSession;
+
+    /// <summary>
+    /// 当前 Worker 的操作页。
+    /// 优先返回显式激活页；如果激活页已关闭，则自动回退到
+    /// BrowserContext 中最后一个未关闭的页面，确保后续人工操作落到当前页。
+    /// </summary>
+    public IPage? Page => GetCurrentPage();
+
+    /// <summary>
+    /// 当前操作页对应的 CDP Session。
+    /// 该属性只返回已经创建好的 Session；需要确保 Session 存在时请调用
+    /// <see cref="GetCurrentPageSessionAsync"/>。
+    /// </summary>
+    public ICDPSession? CdpSession => GetCurrentCdpSession();
 
     public CDPSessionManager? CdpManager { get; set; }
+
+    public IPage? GetCurrentPage()
+    {
+        if (_activePage is { IsClosed: false })
+            return _activePage;
+
+        var page = Context?.Pages.LastOrDefault(x => !x.IsClosed);
+        if (page != null)
+            _activePage = page;
+
+        return _activePage is { IsClosed: false } ? _activePage : null;
+    }
+
+    public ICDPSession? GetCurrentCdpSession()
+    {
+        var page = GetCurrentPage();
+        if (page == null)
+            return null;
+
+        if (ReferenceEquals(page, _activePage) && _activeCdpSession != null)
+            return _activeCdpSession;
+
+        if (CdpManager != null && CdpManager.TryGetSession(page, out var session))
+        {
+            _activePage = page;
+            _activeCdpSession = session;
+            return session;
+        }
+
+        return ReferenceEquals(page, _activePage) ? _activeCdpSession : null;
+    }
+
+    public async Task<(IPage Page, ICDPSession CdpSession)> GetCurrentPageSessionAsync()
+    {
+        var page = GetCurrentPage()
+            ?? throw new InvalidOperationException("当前没有可用页面。");
+
+        return await GetPageSessionAsync(page).ConfigureAwait(false);
+    }
+
+    public async Task<(IPage Page, ICDPSession CdpSession)> GetPageSessionAsync(IPage page)
+    {
+        if (page == null)
+            throw new ArgumentNullException(nameof(page));
+
+        if (page.IsClosed)
+            throw new InvalidOperationException("指定页面已经关闭。");
+
+        if (CdpManager == null)
+            throw new InvalidOperationException("CDP Session 管理器尚未初始化。");
+
+        var session = await CdpManager.GetOrCreateSessionAsync(page).ConfigureAwait(false);
+        SetActivePage(page, session);
+        return (page, session);
+    }
+
+    public void SetActivePage(IPage page, ICDPSession? cdpSession = null)
+    {
+        if (page == null)
+            throw new ArgumentNullException(nameof(page));
+
+        if (page.IsClosed)
+            throw new InvalidOperationException("指定页面已经关闭。");
+
+        _activePage = page;
+        _activeCdpSession = cdpSession;
+    }
+
+    public void ClearActivePage(IPage page)
+    {
+        if (!ReferenceEquals(_activePage, page))
+            return;
+
+        _activePage = null;
+        _activeCdpSession = null;
+    }
 
     public LandingPageStrategyDispatcher?
         LandingDispatcher

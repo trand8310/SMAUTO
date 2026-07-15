@@ -1,4 +1,4 @@
-﻿
+
  
 namespace QTP.Plugins
 {
@@ -54,6 +54,23 @@ namespace QTP.Plugins
                 _sessionMap.TryRemove(new KeyValuePair<IPage, SessionEntry>(page, entry));
                 throw;
             }
+        }
+
+        public bool TryGetSession(IPage page, out ICDPSession? session)
+        {
+            session = null;
+
+            if (page == null)
+                return false;
+
+            if (!_sessionMap.TryGetValue(page, out var entry))
+                return false;
+
+            if (!entry.LazySession.IsValueCreated || !entry.LazySession.Value.IsCompletedSuccessfully)
+                return false;
+
+            session = entry.LazySession.Value.Result;
+            return session != null;
         }
 
         public bool ContainsPage(IPage page)
