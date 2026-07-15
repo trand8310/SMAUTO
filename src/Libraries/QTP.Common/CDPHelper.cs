@@ -1,5 +1,6 @@
 ﻿using Microsoft.Playwright;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using QTP.Common.Models;
 using System.Diagnostics;
 
@@ -18,15 +19,11 @@ namespace QTP.Common
         }
         public static async Task InitCDPSession(ICDPSession cdpSession, int maxTouchPoints)
         {
-            //await SetAutoDarkModeOverride(cdpSession, true);
-            //await CDPHelper.SetTouchEmulationEnabled(cdpSession, true, maxTouchPoints);
-            // await CDPHelper.SetScrollbarsHidden(cdpSession, true);
-            //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
-            //await CDPHelper.ChangeDeviceOrientationAsync(cdpSession);
+
             await Task.CompletedTask;
         }
 
-        public static async Task SetDeviceMetricsOverride(ICDPSession cdpSession, int width, int height, float deviceScaleFactor, bool mobile = true)
+        public static async Task SetDeviceMetricsOverride(ICDPSession cdpSession, int width, int height, float deviceScaleFactor, bool mobile = false)
         {
             try
             {
@@ -43,20 +40,60 @@ namespace QTP.Common
 
         }
 
-        public static async Task SetUserAgentOverride(ICDPSession cdpSession, string userAgent, string platform = "Android")
+        public static async Task SetUserAgentOverride(ICDPSession cdpSession,
+            string userAgent,
+            string platform = "Windows",
+            string? platformVersion = null,
+            JToken? brands = null,
+            JToken? fullVersionList = null)
         {
             try
             {
-                await cdpSession.SendAsync("Emulation.setUserAgentOverride", new Dictionary<string, object>()
+
+                var userAgentMetadata = new Dictionary<string, object>
                 {
-                     {"userAgent",userAgent },
-                     {"platform",platform },
-                });
+                    //["brands"] = brands ?? [],
+                    //["fullVersionList"] = fullVersionList ?? [],
+                    ["platform"] = "Windows",
+                    ["platformVersion"] = platformVersion ?? "",
+                    ["architecture"] = "x86",
+                    ["bitness"] = "64",
+                    ["model"] = "",
+                    ["mobile"] = false,
+                    ["wow64"] = false
+                };
+                if (brands != null && brands.Count() > 0)
+                {
+                    userAgentMetadata["brands"] = brands
+                        .Children<JObject>()
+                        .Select(item => item.Properties().ToDictionary(
+                            property => property.Name,
+                            property => (object)property.Value.ToString()))
+                        .ToArray();
+
+                }
+                if (fullVersionList != null && fullVersionList.Count() > 0)
+                {
+                    userAgentMetadata["fullVersionList"] = fullVersionList
+                        .Children<JObject>()
+                        .Select(item => item.Properties().ToDictionary(
+                            property => property.Name,
+                            property => (object)property.Value.ToString()))
+                        .ToArray();
+                }
+
+                var parameters = new Dictionary<string, object>
+                {
+                    ["userAgent"] = userAgent,
+                    ["acceptLanguage"] = "zh-CN,en-US",
+                    ["platform"] = "Win32",
+                    ["userAgentMetadata"] = userAgentMetadata
+                };
+                await cdpSession.SendAsync("Emulation.setUserAgentOverride", parameters);
             }
             catch (Exception)
             {
             }
-
         }
 
         public static async Task SetGeolocationOverride(ICDPSession cdpSession, double latitude, double longitude)
