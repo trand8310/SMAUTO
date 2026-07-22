@@ -486,6 +486,198 @@ public sealed class HumanPageOperator
         return false;
     }
 
+
+    /// <summary>
+    /// 使用鼠标滚轮逐步滑动到指定目标。
+    ///
+    /// 返回 true：目标已进入指定的视口安全区域。
+    /// 返回 false：达到最大滚动次数后仍未定位成功。
+    /// </summary>
+    public async Task<bool> ScrollToElementAsync(
+        ILocator locator,
+        int maxScrollAttempts = 20,
+        float targetViewportRatio = 0.50f,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(locator);
+
+        targetViewportRatio = Math.Clamp(
+            targetViewportRatio,
+            0.20f,
+            0.80f);
+
+        if (maxScrollAttempts <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxScrollAttempts));
+        }
+
+        await locator.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Attached,
+            Timeout = _profile.ActionTimeoutMs
+        });
+
+        int viewportHeight =
+            _page.ViewportSize?.Height ??
+            await _page.EvaluateAsync<int>(
+                "() => window.innerHeight");
+
+        int viewportWidth =
+            _page.ViewportSize?.Width ??
+            await _page.EvaluateAsync<int>(
+                "() => window.innerWidth");
+
+        // 目标最终停留位置，例如 0.50 表示视口纵向中间。
+        float desiredY =
+            viewportHeight * targetViewportRatio;
+
+        // 目标可接受的安全范围。
+        float safeTop =
+            viewportHeight * Math.Max(
+                0.12f,
+                targetViewportRatio - 0.12f);
+
+        float safeBottom =
+            viewportHeight * Math.Min(
+                0.88f,
+                targetViewportRatio + 0.12f);
+
+        double? previousScrollY = null;
+        int noMovementCount = 0;
+
+        for (int attempt = 0;
+             attempt < maxScrollAttempts;
+             attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            LocatorBoundingBoxResult? box;
+
+            try
+            {
+                box = await locator.BoundingBoxAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // 页面正在重新渲染，稍后重试。
+                await DelayAsync(
+                    120,
+                    360,
+                    cancellationToken);
+
+                continue;
+            }
+
+            if (box != null &&
+                box.Width > 0 &&
+                box.Height > 0)
+            {
+                float elementCenterX =
+                    box.X + box.Width / 2f;
+
+                float elementCenterY =
+                    box.Y + box.Height / 2f;
+
+                bool horizontalVisible =
+                    elementCenterX >= 0 &&
+                    elementCenterX <= viewportWidth;
+
+                bool verticalInSafeArea =
+                    elementCenterY >= safeTop &&
+                    elementCenterY <= safeBottom;
+
+                if (horizontalVisible &&
+                    verticalInSafeArea)
+                {
+                    // 到达目标后稍微停留。
+                    await DelayAsync(
+                        180,
+                        620,
+                        cancellationToken);
+
+                    return true;
+                }
+
+                // 元素中心相对于理想位置的距离。
+                float difference =
+                    elementCenterY - desiredY;
+
+                // 不一次滚完，只移动其中一部分。
+                float ratio =
+                    RandomFloat(0.56f, 0.82f);
+
+                int scrollDistance =
+                    (int)(difference * ratio);
+
+                scrollDistance = Math.Clamp(
+                    scrollDistance,
+                    -680,
+                    680);
+
+                // 避免滚动距离太小，导致反复不动。
+                if (Math.Abs(scrollDistance) < 90)
+                {
+                    scrollDistance =
+                        difference >= 0
+                            ? _random.NextInt(90, 151)
+                            : -_random.NextInt(90, 151);
+                }
+
+                await ScrollByAsync(
+                    scrollDistance,
+                    cancellationToken);
+            }
+            else
+            {
+                /*
+                 * 元素已存在但 BoundingBox 为 null，可能是：
+                 * 1. display:none；
+                 * 2. 父元素隐藏；
+                 * 3. 虚拟列表还没有真正渲染；
+                 * 4. 元素正在重新创建。
+                 */
+
+                await ScrollByAsync(
+                    _random.NextInt(280, 581),
+                    cancellationToken);
+            }
+
+            await DelayAsync(
+                160,
+                520,
+                cancellationToken);
+
+            double currentScrollY =
+                await _page.EvaluateAsync<double>(
+                    "() => window.scrollY");
+
+            if (previousScrollY.HasValue &&
+                Math.Abs(currentScrollY -
+                         previousScrollY.Value) < 1)
+            {
+                noMovementCount++;
+            }
+            else
+            {
+                noMovementCount = 0;
+            }
+
+            previousScrollY = currentScrollY;
+
+            // 连续几次无法移动，说明可能到顶部、底部或页面不可滚动。
+            if (noMovementCount >= 3)
+            {
+                break;
+            }
+        }
+
+        return false;
+    }
+
+
+
+
     /// <summary>
     /// 等待页面网络和 DOM 相对稳定。
     /// 不强制使用 NetworkIdle，避免持续请求页面永久等待。

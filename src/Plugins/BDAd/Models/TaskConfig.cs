@@ -17,7 +17,6 @@ namespace BDAd.Models
         public int PageLoadedDelayMs { get; set; }
         public string UserAgent { get; set; } = "";
         public int Os { get; set; }
-        public int? DevSw { get; set; }
         public float DeviceScale { get; set; }
         public int Sw { get; set; }
         public int Sh { get; set; }

@@ -2,11 +2,13 @@ using BDAd;
 using BDAd.LandingPolicy;
 using BDAd.Models;
 using Microsoft.Playwright;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Common.Models;
+using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
@@ -334,9 +336,18 @@ namespace QTP.Plugins
             {
                 result.Add($"--disable-brand-version-list");
             }
+            else
+            {
+                result.Add($"--brand-version-list={JsonConvert.SerializeObject(taskArgs.SelectToken("dev.brands"), Formatting.None)}");
+            }
+
             if (taskArgs.SelectToken("dev.fullVersionList") == null || taskArgs.SelectToken("dev.fullVersionList").Count() == 0)
             {
                 result.Add($"--disable-full-version-list");
+            }
+            else
+            {
+                result.Add($"--full-version-list={JsonConvert.SerializeObject(taskArgs.SelectToken("dev.brands"), Formatting.None)}");
             }
 
 
@@ -728,10 +739,7 @@ namespace QTP.Plugins
 
             ctx.Context = ctx.Browser.Contexts[0];
             ctx.CdpManager = new CDPSessionManager(ctx.Context);
-
-
             await AttachLifecycleEventsAsync(ctx, token);
-
             await ConfigureContextAsync(ctx, token);
 
 
@@ -1037,7 +1045,7 @@ namespace QTP.Plugins
 
                 if (ctx.Config.IsTest)
                 {
-                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=10000&q=塑料";
+
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/KtpmHjYN5sC8vyEfvBSesVjwn9Z/index.html?babelChannel=ttt12";
                     //entry.FirstPageUrl = "https://pro.m.jd.com/mall/active/27cGVLCp2Rk5UAemjMvigeJXok9/index.html?babelChannel=ttt1&hy_entry=UC_SearchSkin";
                     //entry.FirstPageUrl = "https://m.1688.com/zw/hamlet.html?scene=8&q=%E7%AF%AE%E7%90%83%E8%B6%B3%E7%90%83&imgurl=img/ibank/O1CN014k1XW01LMa13eBYoI_!!2207873421285-0-cib.jpg&cosite=smjj&keywordid=74320369958&trackid={}&format=shandian&bd_vid=11084568593119754510&outerId=618324461983&creative=50000002313693958&trackid=88585857717827007619670&clickid=11084568593119754510&uctrackid=czoxMTY5NjMwNTUyNjMzNDM1MDE2MTtjOjUwMDAwMDAyMzEzNjkzOTU4O2Q6ZG1wXy01NjI5MzQyMTI1NDM3MjIyOTQ4O3A6d2w=&flowfrom=shenma";
@@ -1062,7 +1070,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://www.browserscan.net/zh";
                     //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r1/";
-                    entry.FirstPageUrl = "https://www.browserscan.net/zh/client-hints";
+                    //entry.FirstPageUrl = "https://www.browserscan.net/zh/client-hints";
+                    //entry.FirstPageUrl = "https://www.baidu.com/s?&tn=100000_99_pg&wd=塑料颗粒";
 
                 }
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1318,6 +1327,14 @@ namespace QTP.Plugins
 
         private List<string> BuildChromiumArgs(TaskConfig config)
         {
+
+            var screen = config.TaskArgs.SelectToken("dev.screen");
+            int sw = screen?.SelectToken("width")?.Value<int>() ?? config.Sw;
+            int sh = screen?.SelectToken("height")?.Value<int>() ?? config.Sh;
+            int availWidth = screen?.SelectToken("availWidth")?.Value<int>() ?? config.Sw;
+            int availHeight = screen?.SelectToken("availHeight")?.Value<int>() ?? config.Sh;
+
+
             var args = new List<string>
             {
                 "--no-first-run",
@@ -1332,12 +1349,11 @@ namespace QTP.Plugins
                 "--hide-crashed-bubble",
                 "--enable-unsafe-swiftshader",
                 $"--user-agent={config.UserAgent}",
-                $"--window-size={config.Sw},{config.Sh}",
                 $"--window-position=0,0",
-                //"--virtual-clipboard",
-                //$"--device-pixel-ratio={config.DeviceScale}",
-                //$"--screen-size=\"{config.Sw},{config.Sh}\"",
-               // $"--screen-avail-size=\"{config.Sw},{config.Sh}\"",
+                $"--window-size={sw},{sh}",
+                $"--screen-size={sw},{sh}",
+                $"--screen-avail-size={availWidth},{availHeight}",
+                $"--device-pixel-ratio={config.DeviceScale}",
             };
             if (_appSettings.BlockImage || _appSettings.BlockMedia)
             {
@@ -1369,17 +1385,8 @@ namespace QTP.Plugins
                     Longitude = ctx.Config.TaskArgs.SelectToken("ipInfo.lon")!.Value<float>()
                 });
             }
-
             var initialPage = await ctx.Context.NewPageAsync();
-            // 创建一次 HumanBrowserSession。
             ctx.InitializeHumanSession();
-
-
-
-            //await ctx.InitializeHumanSessionAsync(
-            //initialPage,
-            //HumanBehaviorProfile.Normal(),
-            //token);
         }
 
         private Task AttachLifecycleEventsAsync(WorkerRunContext ctx, CancellationToken token)
@@ -1442,22 +1449,23 @@ namespace QTP.Plugins
                 });
             }
             await page.SetViewportSizeAsync(ctx.Config.Sw, ctx.Config.Sh);
+
             var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(page);
+            //var cdpSession2 = ctx.CdpSession!;
+
             await cdpSession.SendAsync("Page.enable");
             cdpSession.Event("Page.downloadWillBegin").OnEvent += (_, _) =>
             {
                 Interlocked.Increment(ref ctx.TriggerDownloadSign);
             };
 
-            await CDPHelper.InitCDPSession(cdpSession, ctx.Config.MaxTouchPoints);
-
-            await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, false);
-
-            await CDPHelper.SetUserAgentOverride(cdpSession,
-                ctx.Config.UserAgent,
-                platformVersion: ctx.Config.TaskArgs.SelectToken("dev.platformVersion")?.Value<string>(),
-                brands: ctx.Config.TaskArgs.SelectToken("dev.brands"),
-                fullVersionList: ctx.Config.TaskArgs.SelectToken("dev.fullVersionList"));
+            //await CDPHelper.InitCDPSession(cdpSession, ctx.Config.MaxTouchPoints);
+            //await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, false);
+            //await CDPHelper.SetUserAgentOverride(cdpSession,
+            //    ctx.Config.UserAgent,
+            //    platformVersion: ctx.Config.TaskArgs.SelectToken("dev.platformVersion")?.Value<string>(),
+            //    brands: ctx.Config.TaskArgs.SelectToken("dev.brands"),
+            //    fullVersionList: ctx.Config.TaskArgs.SelectToken("dev.fullVersionList"));
 
             page.Dialog += async (_, dialog) =>
             {
@@ -1755,9 +1763,9 @@ namespace QTP.Plugins
 
             try
             {
-                var adDotUrls = ctx.Page.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
-                ctx.PageAdsCount = await adDotUrls.CountAsync();
 
+                var ads = ctx.Page!.Locator("span.ec-tuiguang:text-is(\"广告\")");
+                ctx.PageAdsCount = await ads.CountAsync();
                 if (ctx.PageAdsCount <= 0)
                 {
                     LogWriteLine("没有广告标记,重试");
@@ -1769,96 +1777,6 @@ namespace QTP.Plugins
 
                 _aggregator.EnqueueAdWordHit(q);
 
-                int ad1688 = 0;
-                int adOther = 0;
-
-                var domains1688 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var domainsOther = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var brandsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var i in Enumerable.Range(0, ctx.PageAdsCount))
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    if (ctx.Page == null || ctx.Page.IsClosed)
-                    {
-                        LogWriteLine("广告检测中断: Page已关闭");
-                        return false;
-                    }
-
-                    if (ctx.Browser == null || !ctx.Browser.IsConnected)
-                    {
-                        LogWriteLine("广告检测中断: Browser已断开");
-                        return false;
-                    }
-
-                    var item = adDotUrls.Nth(i);
-                    var links = item.Locator("a[data-url]");
-                    int linkCount = await links.CountAsync();
-                    if (linkCount == 0)
-                        continue;
-                    string? dataUrl = null;
-                    for (int j = 0; j < linkCount; j++)
-                    {
-                        var value = await links.Nth(j).GetAttributeAsync("data-url");
-                        if (string.IsNullOrWhiteSpace(value))
-                            continue;
-                        dataUrl = value.Trim();
-                        break;
-                    }
-                    if (string.IsNullOrWhiteSpace(dataUrl))
-                        continue;
-                    if (!Uri.TryCreate(dataUrl, UriKind.Absolute, out var uri))
-                        continue;
-
-                    var rootDomain = string.Join(".", uri.Host.Split(".").Reverse().Take(2).Reverse());
-
-
-
-                    var tagText = "广告";
-                    if (await item.GetByText("汇川广告", new() { Exact = true }).CountAsync() > 0)
-                    {
-                        tagText = "汇川广告";
-                    }
-                    else if (await item.GetByText("品牌广告", new() { Exact = true }).CountAsync() > 0)
-                    {
-                        tagText = "品牌广告";
-                    }
-
-                    brandsSet.Add(tagText);
-
-                    if (rootDomain.Equals("1688.com", StringComparison.OrdinalIgnoreCase))
-                    {
-                        domains1688.Add(rootDomain);
-                        ad1688++;
-                    }
-                    else
-                    {
-                        domainsOther.Add(rootDomain);
-                        adOther++;
-                    }
-                }
-
-                if (domainsOther.Count > 0 && domains1688.Count == 0)
-                    QTPUploadAdWord("no1688", q);
-
-                if (domainsOther.Count > 0)
-                    QTPUploadAdWord("other", q);
-
-                if (domains1688.Count > 0)
-                    QTPUploadAdWord("1688", q);
-
-                var allDomains = domains1688.Concat(domainsOther).ToList();
-                if (allDomains.Count > 0)
-                {
-                    var allBrands = brandsSet.ToList();
-                    _aggregator.EnqueueAdKeywordDomain(new AdKeywordDomain
-                    {
-                        Keyword = q,
-                        Domains = allDomains,
-                        Brands = allBrands
-                    });
-                }
                 return true;
             }
             catch (OperationCanceledException)
@@ -1904,41 +1822,52 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task<FlowControl> TryExecuteJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
+
             token.ThrowIfCancellationRequested();
-            var sponsoreds = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
+
+            var sponsoreds = ctx.Page!
+            .Locator(".c-container")
+            .Filter(new LocatorFilterOptions
+            {
+                Has = ctx.Page!
+                    .Locator("span.ec-tuiguang:text-is(\"广告\")")
+            });
+
+            //var sponsoreds = ctx.Page!.Locator("span.ec-tuiguang:text-is(\"广告\")");
             var sponsoredCount = await sponsoreds.CountAsync();
             if (sponsoredCount <= 0)
             {
                 return FlowControl.Continue;
             }
 
+            //c-container
             var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
+
+            var human = ctx.HumanSession!.For(ctx.Page!);
+
+
+            //await ctx.HumanSession!
+            //.For(ctx.Page!)
+            //.BrowsePageAsync(2, 6, token);
 
             foreach (var sponsored in candidates)
             {
                 token.ThrowIfCancellationRequested();
-                //await HumanSwipeOperator.MoveToElementAsync(
-                //  ctx.Page!,
-                //  ctx.CdpSession!,
-                //  sponsored,
-                //  maxSwipes: 10,
-                //  cancellationToken: token);
 
-                //await sponsored.ScrollIntoViewIfNeededAsync();
+                await human.ScrollToElementAsync(sponsored,
+                maxScrollAttempts: 20,
+                targetViewportRatio: 0.48f,
+                cancellationToken: token);
 
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-
-                var target = await PickSponsoredTargetAsync(sponsored, token);
-                if (target == null)
+                var alis = sponsored.Locator("a");
+                var alis_count = await alis.CountAsync();
+                if (alis_count == 0)
+                {
                     continue;
-
-                var dataUrl = await target.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
-                    continue;
-
+                }
+                var target = alis.Nth(CommonHelper.RandomRange(0, alis_count));
                 var text = await target.InnerTextAsync();
                 var box = await target.BoundingBoxAsync();
-
                 if (box != null)
                     LogWriteLine($"触发广告位:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
                 else
@@ -1981,58 +1910,18 @@ namespace QTP.Plugins
         private async Task<List<ILocator>> BuildSponsoredCandidatesAsync(WorkerRunContext ctx, ILocator sponsoreds, int count, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-
-            //if (!ctx.Config.PriorityNon1688)
-            //{
-            //    return Enumerable.Range(0, count)
-            //        .OrderBy(_ => Guid.NewGuid())
-            //        .Select(i => sponsoreds.Nth(i))
-            //        .ToList();
-            //}
-
-            var scored = new List<(int Score, ILocator Locator)>();
-
-            foreach (var i in Enumerable.Range(0, count))
-            {
-                token.ThrowIfCancellationRequested();
-
-                var sponsored = sponsoreds.Nth(i);
-                var alis = sponsored.Locator("a.c-title,a.ad-desc,a.img-item,a[data-url^='http']");
-                var alisCount = await alis.CountAsync();
-
-                if (alisCount == 0)
-                {
-                    scored.Add((1000 + i, sponsored));
-                    continue;
-                }
-
-                var dataUrl = await alis.First.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
-                {
-                    scored.Add((1000 + i, sponsored));
-                    continue;
-                }
-
-                int score = 0;
-                if (dataUrl.Contains("1688.com")) score = 50;
-                else if (dataUrl.Contains("jd.com")) score = 60;
-                else if (dataUrl.Contains("qq.com")) score = 70;
-                else if (dataUrl.Contains("baidu.com")) score = 80;
-                else if (dataUrl.Contains("taobao.com")) score = 100;
-                else if (dataUrl.Contains("pinduoduo.com")) score = 800;
-
-
-                scored.Add((score * 1000 + i, sponsored));
-            }
-
-            return scored.OrderBy(x => x.Score).Select(x => x.Locator).ToList();
+            await Task.Delay(1);
+            return Enumerable.Range(0, count)
+                .OrderBy(_ => Guid.NewGuid())
+                .Select(i => sponsoreds.Nth(i))
+                .ToList();
         }
 
         private async Task<ILocator?> PickSponsoredTargetAsync(ILocator sponsored, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
 
-            var alis = sponsored.Locator("a.c-title,a[data-url^='http']");
+            var alis = sponsored.Locator(".ec_title");
             var visible = await GetVisibleElementsAsync(alis);
             if (visible.Count == 0)
                 return null;
@@ -2095,15 +1984,6 @@ namespace QTP.Plugins
 
             return await ctx.LandingDispatcher.DispatchAsync(ctx, token);
         }
-
-
-
-
-
-
-
-
-
 
         #endregion
 
@@ -3510,11 +3390,16 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+            //var ads = ctx.Page!.Locator("span.ec-tuiguang:text-is(\"广告\")");
+
+            //var count = await ads.CountAsync();
 
 
-            await ctx.HumanSession!
-            .For(ctx.Page!)
-            .BrowsePageAsync(2, 6, token);
+
+
+            //await ctx.HumanSession!
+            //.For(ctx.Page!)
+            //.BrowsePageAsync(2, 6, token);
 
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 
@@ -3558,7 +3443,16 @@ namespace QTP.Plugins
                 {
                     //ctx.Page = ctx.Context.Pages[^1];
                     //ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-                    //await CDPHelper.InitCDPSession(ctx.CdpSession, ctx.Config.MaxTouchPoints);
+                    var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
+
+                    //await CDPHelper.InitCDPSession(cdpSession, ctx.Config.MaxTouchPoints);
+                    //await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, false);
+                    //await CDPHelper.SetUserAgentOverride(cdpSession,
+                    //    ctx.Config.UserAgent,
+                    //    platformVersion: ctx.Config.TaskArgs.SelectToken("dev.platformVersion")?.Value<string>(),
+                    //    brands: ctx.Config.TaskArgs.SelectToken("dev.brands"),
+                    //    fullVersionList: ctx.Config.TaskArgs.SelectToken("dev.fullVersionList"));
+
                     return ClickResult.SuccessNewPage();
                 }
 
