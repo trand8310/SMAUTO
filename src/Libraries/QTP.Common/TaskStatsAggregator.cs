@@ -581,14 +581,6 @@ namespace QTP
 
         public TaskStats GetTotalStats() => _totalStats;
 
-        public bool CanHomepageTrigger(int taskId)
-        {
-            if (_appSettings.HompageTrigger == 0)
-                return false;
-
-            var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
-            return stats.HomepageTriggerRatio < _appSettings.HompageTrigger;
-        }
 
 
         public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)

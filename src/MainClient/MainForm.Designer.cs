@@ -92,20 +92,6 @@
             comboBox_VersionList = new ComboBox();
             btnUpdate = new Button();
             checkBox_UseDynamicWord = new CheckBox();
-            groupBox1 = new GroupBox();
-            label13 = new Label();
-            numericUpDown_MinFrequency = new NumericUpDown();
-            label41 = new Label();
-            textBox_ExcludeWords = new TextBox();
-            button4 = new Button();
-            checkBox_DistinctByHour = new CheckBox();
-            comboBox_DynamicWordName = new ComboBox();
-            label40 = new Label();
-            label32 = new Label();
-            numericUpDown_FetchRecently = new NumericUpDown();
-            label16 = new Label();
-            comboBox_WordType = new ComboBox();
-            checkBox_CleaningWords = new CheckBox();
             checkBox_PVsTriggerOne = new CheckBox();
             checkBox_Incognito = new CheckBox();
             label30 = new Label();
@@ -145,9 +131,6 @@
             tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_p4psearchRate).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Rfq1688Rate).BeginInit();
-            groupBox1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_MinFrequency).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchRecently).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).BeginInit();
             groupBox9.SuspendLayout();
@@ -202,7 +185,6 @@
             label9.Size = new Size(82, 20);
             label9.TabIndex = 82;
             label9.Text = "成功数量:0";
-            label9.Click += label9_Click;
             // 
             // label5
             // 
@@ -583,8 +565,6 @@
             tabPage1.Controls.Add(comboBox_VersionList);
             tabPage1.Controls.Add(btnUpdate);
             tabPage1.Controls.Add(checkBox_UseDynamicWord);
-            tabPage1.Controls.Add(groupBox1);
-            tabPage1.Controls.Add(checkBox_CleaningWords);
             tabPage1.Controls.Add(groupBox6);
             tabPage1.Controls.Add(checkBox_PVsTriggerOne);
             tabPage1.Controls.Add(checkBox_Incognito);
@@ -867,159 +847,6 @@
             checkBox_UseDynamicWord.TabIndex = 165;
             checkBox_UseDynamicWord.Text = "使用动态词库";
             checkBox_UseDynamicWord.UseVisualStyleBackColor = true;
-            // 
-            // groupBox1
-            // 
-            groupBox1.Controls.Add(label13);
-            groupBox1.Controls.Add(numericUpDown_MinFrequency);
-            groupBox1.Controls.Add(label41);
-            groupBox1.Controls.Add(textBox_ExcludeWords);
-            groupBox1.Controls.Add(button4);
-            groupBox1.Controls.Add(checkBox_DistinctByHour);
-            groupBox1.Controls.Add(comboBox_DynamicWordName);
-            groupBox1.Controls.Add(label40);
-            groupBox1.Controls.Add(label32);
-            groupBox1.Controls.Add(numericUpDown_FetchRecently);
-            groupBox1.Controls.Add(label16);
-            groupBox1.Controls.Add(comboBox_WordType);
-            groupBox1.Location = new Point(808, 283);
-            groupBox1.Margin = new Padding(6);
-            groupBox1.Name = "groupBox1";
-            groupBox1.Padding = new Padding(6);
-            groupBox1.Size = new Size(311, 231);
-            groupBox1.TabIndex = 163;
-            groupBox1.TabStop = false;
-            groupBox1.Text = "动态词库";
-            // 
-            // label13
-            // 
-            label13.AutoSize = true;
-            label13.Location = new Point(168, 110);
-            label13.Margin = new Padding(6, 0, 6, 0);
-            label13.Name = "label13";
-            label13.Size = new Size(62, 20);
-            label13.TabIndex = 170;
-            label13.Text = "天,频率:";
-            // 
-            // numericUpDown_MinFrequency
-            // 
-            numericUpDown_MinFrequency.Location = new Point(231, 106);
-            numericUpDown_MinFrequency.Margin = new Padding(6, 5, 6, 5);
-            numericUpDown_MinFrequency.Name = "numericUpDown_MinFrequency";
-            numericUpDown_MinFrequency.Size = new Size(66, 27);
-            numericUpDown_MinFrequency.TabIndex = 171;
-            // 
-            // label41
-            // 
-            label41.AutoSize = true;
-            label41.Location = new Point(14, 148);
-            label41.Margin = new Padding(4, 0, 4, 0);
-            label41.Name = "label41";
-            label41.Size = new Size(69, 20);
-            label41.TabIndex = 169;
-            label41.Text = "排除词条";
-            // 
-            // textBox_ExcludeWords
-            // 
-            textBox_ExcludeWords.Location = new Point(90, 144);
-            textBox_ExcludeWords.Margin = new Padding(4);
-            textBox_ExcludeWords.Multiline = true;
-            textBox_ExcludeWords.Name = "textBox_ExcludeWords";
-            textBox_ExcludeWords.ScrollBars = ScrollBars.Both;
-            textBox_ExcludeWords.Size = new Size(207, 73);
-            textBox_ExcludeWords.TabIndex = 168;
-            textBox_ExcludeWords.WordWrap = false;
-            // 
-            // button4
-            // 
-            button4.Location = new Point(235, 26);
-            button4.Margin = new Padding(4);
-            button4.Name = "button4";
-            button4.Size = new Size(58, 28);
-            button4.TabIndex = 167;
-            button4.Text = "刷新";
-            button4.UseVisualStyleBackColor = true;
-            button4.Click += button4_Click;
-            // 
-            // checkBox_DistinctByHour
-            // 
-            checkBox_DistinctByHour.AutoSize = true;
-            checkBox_DistinctByHour.Location = new Point(232, 68);
-            checkBox_DistinctByHour.Margin = new Padding(4);
-            checkBox_DistinctByHour.Name = "checkBox_DistinctByHour";
-            checkBox_DistinctByHour.Size = new Size(61, 24);
-            checkBox_DistinctByHour.TabIndex = 166;
-            checkBox_DistinctByHour.Text = "去重";
-            checkBox_DistinctByHour.UseVisualStyleBackColor = true;
-            // 
-            // comboBox_DynamicWordName
-            // 
-            comboBox_DynamicWordName.FormattingEnabled = true;
-            comboBox_DynamicWordName.Location = new Point(90, 26);
-            comboBox_DynamicWordName.Margin = new Padding(4);
-            comboBox_DynamicWordName.Name = "comboBox_DynamicWordName";
-            comboBox_DynamicWordName.Size = new Size(134, 28);
-            comboBox_DynamicWordName.TabIndex = 165;
-            // 
-            // label40
-            // 
-            label40.AutoSize = true;
-            label40.Location = new Point(14, 32);
-            label40.Margin = new Padding(4, 0, 4, 0);
-            label40.Name = "label40";
-            label40.Size = new Size(69, 20);
-            label40.TabIndex = 164;
-            label40.Text = "词库名称";
-            // 
-            // label32
-            // 
-            label32.AutoSize = true;
-            label32.Location = new Point(10, 108);
-            label32.Margin = new Padding(6, 0, 6, 0);
-            label32.Name = "label32";
-            label32.Size = new Size(73, 20);
-            label32.TabIndex = 155;
-            label32.Text = "范围,最近";
-            // 
-            // numericUpDown_FetchRecently
-            // 
-            numericUpDown_FetchRecently.Location = new Point(90, 106);
-            numericUpDown_FetchRecently.Margin = new Padding(6, 5, 6, 5);
-            numericUpDown_FetchRecently.Name = "numericUpDown_FetchRecently";
-            numericUpDown_FetchRecently.Size = new Size(73, 27);
-            numericUpDown_FetchRecently.TabIndex = 156;
-            // 
-            // label16
-            // 
-            label16.AutoSize = true;
-            label16.Location = new Point(44, 72);
-            label16.Margin = new Padding(6, 0, 6, 0);
-            label16.Name = "label16";
-            label16.Size = new Size(39, 20);
-            label16.TabIndex = 154;
-            label16.Text = "类别";
-            // 
-            // comboBox_WordType
-            // 
-            comboBox_WordType.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBox_WordType.FormattingEnabled = true;
-            comboBox_WordType.Items.AddRange(new object[] { "1688", "no1688", "other" });
-            comboBox_WordType.Location = new Point(90, 66);
-            comboBox_WordType.Margin = new Padding(4, 2, 4, 2);
-            comboBox_WordType.Name = "comboBox_WordType";
-            comboBox_WordType.Size = new Size(134, 28);
-            comboBox_WordType.TabIndex = 153;
-            // 
-            // checkBox_CleaningWords
-            // 
-            checkBox_CleaningWords.AutoSize = true;
-            checkBox_CleaningWords.Location = new Point(456, 395);
-            checkBox_CleaningWords.Margin = new Padding(6);
-            checkBox_CleaningWords.Name = "checkBox_CleaningWords";
-            checkBox_CleaningWords.Size = new Size(106, 24);
-            checkBox_CleaningWords.TabIndex = 162;
-            checkBox_CleaningWords.Text = "清洗广告词";
-            checkBox_CleaningWords.UseVisualStyleBackColor = true;
             // 
             // checkBox_PVsTriggerOne
             // 
@@ -1345,10 +1172,6 @@
             tabPage1.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_p4psearchRate).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Rfq1688Rate).EndInit();
-            groupBox1.ResumeLayout(false);
-            groupBox1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_MinFrequency).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchRecently).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).EndInit();
             groupBox9.ResumeLayout(false);
@@ -1395,7 +1218,6 @@
         private ToolStripStatusLabel toolStripStatusLabel4;
         private ToolStripStatusLabel toolStripStatusLabel5;
         private ToolStripStatusLabel toolStripStatusLabel6;
-        private Label label16;
         private NumericUpDown numericUpDown_PageLoadingTimeout;
         private ComboBox comboBox_QTPName;
         private Label label25;
@@ -1429,18 +1251,7 @@
         private ComboBox comboBox_KernelVersion;
         private CheckBox checkBox_Incognito;
         private CheckBox checkBox_PVsTriggerOne;
-        private CheckBox checkBox_CleaningWords;
-        private GroupBox groupBox1;
-        private Label label32;
-        private NumericUpDown numericUpDown_FetchRecently;
-        private ComboBox comboBox_WordType;
         private CheckBox checkBox_UseDynamicWord;
-        private ComboBox comboBox_DynamicWordName;
-        private Label label40;
-        private CheckBox checkBox_DistinctByHour;
-        private Button button4;
-        private Label label41;
-        private TextBox textBox_ExcludeWords;
         private Label label43;
         private ComboBox comboBox_VersionList;
         private Button btnUpdate;
@@ -1459,8 +1270,6 @@
         private Button button2;
         private Button button3;
         private CheckBox checkBox_AutoUpdate;
-        private Label label13;
-        private NumericUpDown numericUpDown_MinFrequency;
         private Label label17;
         private ComboBox comboBox_Protocol;
         private CheckBox checkBox_BlockMedia;

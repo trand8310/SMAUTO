@@ -278,17 +278,17 @@ namespace QTP
         {
             metrics ??= new Dictionary<string, long>();
             string wordName = "default";
-            if (!string.IsNullOrWhiteSpace(_appSettings.DynamicWordName) && !_appSettings.DynamicWordName.Equals("不使用采集库"))
-            {
-                wordName = _appSettings.DynamicWordName;
-            }
-            else
-            {
-                if (_appSettings.UseLocalWord)
-                    wordName = _appSettings.WordName;
-                else
-                    wordName = $"default_{_appSettings.WordType}_{_appSettings.FetchRecently}天{(_appSettings.DistinctByHour ? "去重" : "")}";
-            }
+            //if (!string.IsNullOrWhiteSpace(_appSettings.DynamicWordName) && !_appSettings.DynamicWordName.Equals("不使用采集库"))
+            //{
+            //    wordName = _appSettings.DynamicWordName;
+            //}
+            //else
+            //{
+            //    if (_appSettings.UseLocalWord)
+            //        wordName = _appSettings.WordName;
+            //    else
+            //        wordName = $"default_{_appSettings.WordType}_{_appSettings.FetchRecently}天{(_appSettings.DistinctByHour ? "去重" : "")}";
+            //}
 
             var host = await CommonHelper.GetHostAsync();
             try
@@ -521,25 +521,15 @@ namespace QTP
                 if (_appSettings.UseDynamicWord)
                 {
                     var bidRequest = new JObject();
-                    bidRequest["category"] = _appSettings.WordType;
+                    bidRequest["category"] = "no1688";
                     bidRequest["count"] = count;
-                    bidRequest["minFrequency"] = _appSettings.MinFrequency;
-                    
-                    bidRequest["exclude"] = JArray.FromObject(_appSettings.ExcludeWords.Split(System.Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
-                    if (!string.IsNullOrWhiteSpace(_appSettings.DynamicWordName) && !_appSettings.DynamicWordName.Equals("不使用采集库"))
-                    {
-                        builder.Append($"/api{_apiVersion}/get_spider_word.php?t={System.DateTime.Now.Ticks}");
-                        bidRequest["name"] = _appSettings.DynamicWordName;
-                        bidRequest["distinct"] = _appSettings.DistinctByHour ? 1 : 0;
-                        bidRequest["recently"] = _appSettings.FetchRecently;
-                    }
-                    else
-                    {
-                        builder.Append($"/api{_apiVersion}/get_dynamic_word.php?t={System.DateTime.Now.Ticks}");
-                        bidRequest["recently"] = _appSettings.FetchRecently;
-                        bidRequest["name"] = "default";
-                        bidRequest["distinct"] = _appSettings.DistinctByHour ? 1 : 0;
-                    }
+                    bidRequest["minFrequency"] = 1;
+                    builder.Append($"/api{_apiVersion}/get_dynamic_word.php?t={System.DateTime.Now.Ticks}");
+                    bidRequest["recently"] = 7;
+                    bidRequest["name"] = "default";
+                    bidRequest["distinct"] = 1;
+
+
                     var postData = JsonConvert.SerializeObject(bidRequest);
                     HttpContent content = new StringContent(postData);
                     content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
@@ -865,7 +855,7 @@ namespace QTP
                 StringBuilder builder = new StringBuilder(baseUrl);
                 var bidRequest = new JObject();
                 bidRequest["words"] = JArray.FromObject(words);
-                bidRequest["cleaning_words"] = _appSettings.CleaningWords;
+                bidRequest["cleaning_words"] = false;
                 bidRequest["host"] = host;
                 bidRequest["wordname"] = _appSettings.WordName;
                 builder.Append($"/api{_apiVersion}/cloud_word.php?action=addsmkw&t={System.DateTime.Now.Ticks}");
@@ -892,17 +882,6 @@ namespace QTP
                 return;
 
             string wordName = "default";
-            if (!string.IsNullOrWhiteSpace(_appSettings.DynamicWordName) && !_appSettings.DynamicWordName.Equals("不使用采集库"))
-            {
-                wordName = _appSettings.DynamicWordName;
-            }
-            else
-            {
-                if (_appSettings.UseLocalWord)
-                    wordName = _appSettings.WordName;
-                else
-                    wordName = $"default_{_appSettings.WordType}_{_appSettings.FetchRecently}天{(_appSettings.DistinctByHour ? "去重" : "")}";
-            }
 
             try
             {
