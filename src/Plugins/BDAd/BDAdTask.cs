@@ -1121,11 +1121,6 @@ namespace QTP.Plugins
                     continue;
                 }
 
-                if (ctx.Page.Url.Contains("punish?x5secdata"))
-                {
-                    this.X5Secdata(ctx.Config.TaskId, 1, ctx.Page.Url);
-                    return CompleteSuccess(ctx);
-                }
 
                 if (entry.IsHomepageTrigger)
                 {
@@ -1886,7 +1881,7 @@ namespace QTP.Plugins
                     this.QTPExecuteClickthrough(ctx.Config.TaskId);
                     LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
                     ctx.PageTriggerClick = true;
-                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    await Task.Delay(CommonHelper.RandomRange(5000, 8000), token);
                     return await HandleLandingPageAsync(ctx, token);
                 }
             }

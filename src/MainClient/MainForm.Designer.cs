@@ -80,12 +80,6 @@
             button2 = new Button();
             button7 = new Button();
             button6 = new Button();
-            label45 = new Label();
-            numericUpDown_p4psearchRate = new NumericUpDown();
-            checkBox_p4psearch = new CheckBox();
-            label44 = new Label();
-            numericUpDown_Rfq1688Rate = new NumericUpDown();
-            checkBox_Rfq1688 = new CheckBox();
             checkBox_IsTest = new CheckBox();
             btnStartStop = new Button();
             label43 = new Label();
@@ -129,8 +123,6 @@
             statusStrip1.SuspendLayout();
             tabControl1.SuspendLayout();
             tabPage1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_p4psearchRate).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_Rfq1688Rate).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).BeginInit();
             groupBox9.SuspendLayout();
@@ -553,12 +545,6 @@
             tabPage1.Controls.Add(button2);
             tabPage1.Controls.Add(button7);
             tabPage1.Controls.Add(button6);
-            tabPage1.Controls.Add(label45);
-            tabPage1.Controls.Add(numericUpDown_p4psearchRate);
-            tabPage1.Controls.Add(checkBox_p4psearch);
-            tabPage1.Controls.Add(label44);
-            tabPage1.Controls.Add(numericUpDown_Rfq1688Rate);
-            tabPage1.Controls.Add(checkBox_Rfq1688);
             tabPage1.Controls.Add(checkBox_IsTest);
             tabPage1.Controls.Add(btnStartStop);
             tabPage1.Controls.Add(label43);
@@ -725,64 +711,6 @@
             button6.Text = "下载";
             button6.UseVisualStyleBackColor = true;
             button6.Click += button6_Click;
-            // 
-            // label45
-            // 
-            label45.AutoSize = true;
-            label45.Location = new Point(749, 359);
-            label45.Margin = new Padding(6, 0, 6, 0);
-            label45.Name = "label45";
-            label45.Size = new Size(22, 20);
-            label45.TabIndex = 192;
-            label45.Text = "%";
-            // 
-            // numericUpDown_p4psearchRate
-            // 
-            numericUpDown_p4psearchRate.Location = new Point(660, 355);
-            numericUpDown_p4psearchRate.Margin = new Padding(6, 5, 6, 5);
-            numericUpDown_p4psearchRate.Name = "numericUpDown_p4psearchRate";
-            numericUpDown_p4psearchRate.Size = new Size(86, 27);
-            numericUpDown_p4psearchRate.TabIndex = 191;
-            // 
-            // checkBox_p4psearch
-            // 
-            checkBox_p4psearch.AutoSize = true;
-            checkBox_p4psearch.Location = new Point(529, 355);
-            checkBox_p4psearch.Margin = new Padding(6);
-            checkBox_p4psearch.Name = "checkBox_p4psearch";
-            checkBox_p4psearch.Size = new Size(112, 24);
-            checkBox_p4psearch.TabIndex = 190;
-            checkBox_p4psearch.Text = "1688重定向";
-            checkBox_p4psearch.UseVisualStyleBackColor = true;
-            // 
-            // label44
-            // 
-            label44.AutoSize = true;
-            label44.Location = new Point(749, 327);
-            label44.Margin = new Padding(6, 0, 6, 0);
-            label44.Name = "label44";
-            label44.Size = new Size(22, 20);
-            label44.TabIndex = 189;
-            label44.Text = "%";
-            // 
-            // numericUpDown_Rfq1688Rate
-            // 
-            numericUpDown_Rfq1688Rate.Location = new Point(660, 323);
-            numericUpDown_Rfq1688Rate.Margin = new Padding(6, 5, 6, 5);
-            numericUpDown_Rfq1688Rate.Name = "numericUpDown_Rfq1688Rate";
-            numericUpDown_Rfq1688Rate.Size = new Size(86, 27);
-            numericUpDown_Rfq1688Rate.TabIndex = 188;
-            // 
-            // checkBox_Rfq1688
-            // 
-            checkBox_Rfq1688.AutoSize = true;
-            checkBox_Rfq1688.Location = new Point(529, 323);
-            checkBox_Rfq1688.Margin = new Padding(6);
-            checkBox_Rfq1688.Name = "checkBox_Rfq1688";
-            checkBox_Rfq1688.Size = new Size(127, 24);
-            checkBox_Rfq1688.TabIndex = 187;
-            checkBox_Rfq1688.Text = "1688手机询价";
-            checkBox_Rfq1688.UseVisualStyleBackColor = true;
             // 
             // checkBox_IsTest
             // 
@@ -1170,8 +1098,6 @@
             tabControl1.ResumeLayout(false);
             tabPage1.ResumeLayout(false);
             tabPage1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_p4psearchRate).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_Rfq1688Rate).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).EndInit();
             groupBox9.ResumeLayout(false);
@@ -1259,12 +1185,6 @@
         private Button btnStartStop;
         private ToolStripStatusLabel lblStatus;
         private CheckBox checkBox_IsTest;
-        private Label label44;
-        private NumericUpDown numericUpDown_Rfq1688Rate;
-        private CheckBox checkBox_Rfq1688;
-        private Label label45;
-        private NumericUpDown numericUpDown_p4psearchRate;
-        private CheckBox checkBox_p4psearch;
         private Button button6;
         private Button button7;
         private Button button2;
