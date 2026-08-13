@@ -9,5 +9,7 @@ namespace BDAd.Models
         public bool IsHomepageTrigger { get; set; }
         public string? QueryWord { get; set; }
         public string? FirstPageUrl { get; set; }
+        public string? HomePageUrl { get; set; }
+        
     }
 }

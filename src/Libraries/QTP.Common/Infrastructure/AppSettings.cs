@@ -35,6 +35,11 @@
 
         public int IpTtl { get; set; }
 
+        /// <summary>
+        /// 首页触发比例
+        /// </summary>
+        public int HompageTrigger { get; set; }
+
         public string WordName { get; set; }
 
         /// <summary>

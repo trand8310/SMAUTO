@@ -1128,17 +1128,23 @@ namespace QTP.Plugins
                     var homepageOk = await ExecuteHomepageTriggerAsync(ctx, entry.QueryWord, token);
                     if (!homepageOk)
                         continue;
+
+
+
+
                 }
                 else
                 {
                     LogWriteLine($"{this.Title}:ExecuteWorker: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}");
-                    var delay_ms = CommonHelper.RandomRange(5000, 8000);
-                    await Task.Delay(delay_ms, token);
-                    //await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
-                    //ctx.Page!,
-                    //ctx.CdpSession!,
-                    //duration: TimeSpan.FromMilliseconds(Math.Abs(ctx.Config.PageLoadedDelayMs - delay_ms)),
-                    //cancellationToken: token);
+                    var delayMs = CommonHelper.RandomRange(5000, 8000);
+                    await Task.Delay(delayMs, token);
+                    var restMs = Math.Max(0, ctx.Config.PageLoadedDelayMs - delayMs);
+                    if (restMs > 300)
+                    {
+                        await ctx.HumanSession!
+                        .For(ctx.Page!)
+                        .BrowsePageAsync(1, 2, token);
+                    }
                 }
 
                 token.ThrowIfCancellationRequested();
@@ -1154,12 +1160,6 @@ namespace QTP.Plugins
                     continue;
                 }
 
-                //await HumanSwipeOperator.RandomUpUntilStopAsync(
-                //    ctx.Page!,
-                //    ctx.CdpSession!,
-                //    minTimes: 0,
-                //    maxTimes: 5,
-                //    cancellationToken: token);
 
                 await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
@@ -1181,15 +1181,24 @@ namespace QTP.Plugins
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
-                    //await HumanSwipeOperator.TimedChaoticBrowseUntilAsync(
-                    //ctx.Page!,
-                    //ctx.CdpSession!,
-                    //duration: TimeSpan.FromMilliseconds(CommonHelper.RandomRangeDouble(3000, 8000)),
-                    //cancellationToken: token);
+                    await ctx.HumanSession!
+                    .For(ctx.Page!)
+                    .BrowsePageAsync(2, 6, token);
 
                     var clickFlow = await TryExecuteJumpClickAsync(ctx, token);
                     if (clickFlow == FlowControl.EndTask)
                         return CompleteSuccess(ctx);
+                }
+                else
+                {
+                    if (CommonHelper.Chance(0.2))
+                    {
+                        await ctx.HumanSession!
+                        .For(ctx.Page!)
+                        .BrowsePageAsync(1, 3, token);
+
+                        await ClickNoneAdAsync(ctx, token);
+                    }
                 }
 
                 var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
@@ -1244,6 +1253,7 @@ namespace QTP.Plugins
                 LinkedCts = linkedCts,
                 TaskId = taskArgs.SelectToken("task.id")!.Value<int>(),
                 TaskUrl = taskArgs.SelectToken("task.url")!.Value<string>(),
+                TaskHomeUrl = taskArgs.SelectToken("task.referer")?.Value<string>(),
                 SleepMs = ParseSleepMilliseconds(taskArgs),
                 IsLocalAdWord = taskArgs.SelectToken("isLocalAdWord")?.Value<bool>() ?? false,
                 PageLoadingTimeoutMs = taskArgs.SelectToken("pageLoadingTimeout")?.Value<int>() * 1000 ?? 30000,
@@ -1577,12 +1587,15 @@ namespace QTP.Plugins
                 EndTask = false
             };
 
-            //if (_aggregator.CanHomepageTrigger(ctx.Config.TaskId))
-            //{
-            //    result.FirstPageUrl = result.FirstPageUrl.Replace("&q=[QUERY]", "");
-            //    result.IsHomepageTrigger = true;
-            //    return result;
-            //}
+            if (_aggregator.CanHomepageTrigger(ctx.Config.TaskId))
+            {
+                //https://www.baidu.com/index.php?tn=02049043_24_pg
+                //https://www.baidu.com/s?&tn=02049043_24_pg&wd=[QUERY]
+                result.FirstPageUrl = ctx.Config.TaskHomeUrl;
+                result.IsHomepageTrigger = true;
+                _aggregator.Enqueue(new TaskEvent(ctx.Config.TaskId, StateType.HomepageTrigger, 1));
+                return result;
+            }
 
             if (!result.FirstPageUrl.Contains("[QUERY]"))
                 return result;
@@ -1668,7 +1681,7 @@ namespace QTP.Plugins
                             return false;
                     }
 
-                    var input = ctx.Page!.Locator("textarea#kw");
+                    var input = ctx.Page!.Locator("textarea#chat-textarea");
                     if (await input.CountAsync() == 0)
                     {
                         LogWriteLine($"{this.Title}:输入框不存在");
@@ -1676,24 +1689,35 @@ namespace QTP.Plugins
                     }
 
                     await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, input);
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200), ct);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), ct);
 
                     await input.PressSequentiallyAsync(word!, new LocatorPressSequentiallyOptions
                     {
-                        Delay = CommonHelper.RandomRange(20, 100)
+                        Delay = CommonHelper.RandomRange(50, 200)
                     });
 
-                    await Task.Delay(CommonHelper.RandomRange(1500, 2000), ct);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), ct);
 
-                    var btn = ctx.Page.Locator("div.submit");
+                    var btn = ctx.Page.Locator("button#chat-submit-button");
                     if (await btn.CountAsync() == 0)
                     {
                         LogWriteLine($"{this.Title}:搜索按钮不存在");
                         return false;
                     }
 
+
+
+
                     ctx.CurrentPageUrl = ctx.Page.Url;
-                    await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, btn.First);
+                    if (CommonHelper.Chance(0.5))
+                    {
+                        //await input.PressAsync("Enter");
+                        await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, btn.First);
+                    }
+                    else
+                    {
+                        await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, btn.First);
+                    }
 
                     try
                     {
@@ -1708,7 +1732,7 @@ namespace QTP.Plugins
                     catch (TimeoutException) { }
 
                     LogWriteLine($"{this.Title}:搜索完成");
-                    await Task.Delay(CommonHelper.RandomRange(5000, 8000), ct);
+                    await Task.Delay(CommonHelper.RandomRange(8000, 12000), ct);
                     return true;
                 },
                 maxAttempts: 2,
@@ -1824,22 +1848,20 @@ namespace QTP.Plugins
                     .Locator("span.ec-tuiguang:text-is(\"广告\")")
             });
 
-            //var sponsoreds = ctx.Page!.Locator("span.ec-tuiguang:text-is(\"广告\")");
-            var sponsoredCount = await sponsoreds.CountAsync();
-            if (sponsoredCount <= 0)
+            var count = await sponsoreds.CountAsync();
+            if (count <= 0)
             {
                 return FlowControl.Continue;
             }
 
-            //c-container
-            var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
+            var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, count, token);
 
             var human = ctx.HumanSession!.For(ctx.Page!);
 
 
-            //await ctx.HumanSession!
-            //.For(ctx.Page!)
-            //.BrowsePageAsync(2, 6, token);
+            await ctx.HumanSession!
+            .For(ctx.Page!)
+            .BrowsePageAsync(0, 3, token);
 
             foreach (var sponsored in candidates)
             {
@@ -1862,7 +1884,9 @@ namespace QTP.Plugins
                 if (box != null)
                     LogWriteLine($"触发广告位:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
                 else
-                    LogWriteLine($"触发广告位:{text}");
+                    continue;
+
+
 
                 var click = await ClickAndDetectNavigationAsync(ctx, sponsored, token);
                 if (!click.Attempted)
@@ -1887,6 +1911,71 @@ namespace QTP.Plugins
             }
             return FlowControl.Continue;
         }
+
+
+
+        private async Task<FlowControl> ClickNoneAdAsync(WorkerRunContext ctx, CancellationToken token)
+        {
+
+            token.ThrowIfCancellationRequested();
+
+            var not_sponsoreds = ctx.Page!
+            .Locator(".c-container")
+            .Filter(new LocatorFilterOptions
+            {
+                HasNotText = "广告"
+            });
+
+            var count = await not_sponsoreds.CountAsync();
+            if (count <= 0)
+            {
+                return FlowControl.Continue;
+            }
+
+            var candidates = Enumerable.Range(0, count)
+                .OrderBy(_ => Guid.NewGuid())
+                .Select(i => not_sponsoreds.Nth(i))
+                .ToList();
+
+            var human = ctx.HumanSession!.For(ctx.Page!);
+
+
+            foreach (var sponsored in candidates)
+            {
+                token.ThrowIfCancellationRequested();
+
+                await human.ScrollToElementAsync(sponsored,
+                maxScrollAttempts: 20,
+                targetViewportRatio: 0.48f,
+                cancellationToken: token);
+
+                var alis = sponsored.Locator("a");
+                var alis_count = await alis.CountAsync();
+                if (alis_count == 0)
+                {
+                    continue;
+                }
+                var target = alis.Nth(CommonHelper.RandomRange(0, alis_count));
+                var text = await target.InnerTextAsync();
+                var box = await target.BoundingBoxAsync();
+                if (box != null)
+                    LogWriteLine($"触发:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
+                else
+                    continue;
+
+                var click = await ClickAndDetectNavigationAsync(ctx, sponsored, token);
+                if (!click.Attempted)
+                    continue;
+
+                if (click.Navigated)
+                {
+                    await Task.Delay(CommonHelper.RandomRange(5000, 8000), token);
+                }
+            }
+            return FlowControl.Continue;
+        }
+
+
 
 
 
@@ -2440,7 +2529,7 @@ namespace QTP.Plugins
                     .BrowsePageAsync(1, 3, token);
 
                     token.ThrowIfCancellationRequested();
- 
+
                     if ((int)(DateTime.Now - start).TotalMilliseconds >= ctx.Config.SleepMs)
                         break;
 
@@ -2802,18 +2891,7 @@ namespace QTP.Plugins
 
                 if (ctx.Context.Pages.Count > ctx.PagesCount)
                 {
-                    //ctx.Page = ctx.Context.Pages[^1];
-                    //ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-                    var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-
-                    //await CDPHelper.InitCDPSession(cdpSession, ctx.Config.MaxTouchPoints);
-                    //await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, false);
-                    //await CDPHelper.SetUserAgentOverride(cdpSession,
-                    //    ctx.Config.UserAgent,
-                    //    platformVersion: ctx.Config.TaskArgs.SelectToken("dev.platformVersion")?.Value<string>(),
-                    //    brands: ctx.Config.TaskArgs.SelectToken("dev.brands"),
-                    //    fullVersionList: ctx.Config.TaskArgs.SelectToken("dev.fullVersionList"));
-
+                    await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
                     return ClickResult.SuccessNewPage();
                 }
 
@@ -2854,9 +2932,7 @@ namespace QTP.Plugins
 
                 if (ctx.Context.Pages.Count > ctx.PagesCount)
                 {
-                    //ctx.Page = ctx.Context.Pages[^1];
-                    //ctx.CdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
-                    //await CDPHelper.InitCDPSession(ctx.CdpSession, ctx.Config.MaxTouchPoints);
+                    await ctx.CdpManager!.GetOrCreateSessionAsync(ctx.Page);
                     return ClickResult.SuccessNewPage();
                 }
 

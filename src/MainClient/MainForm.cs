@@ -929,6 +929,7 @@ namespace MainClient
             textBox_UVOverride.Text = _appSettings.UVOverride;
             textBox_PVOverride.Text = _appSettings.PVOverride;
             numericUpDown_IpTtl.Value = _appSettings.IpTtl;
+            numericUpDown_HompageTrigger.Value = _appSettings.HompageTrigger;
             comboBox_WordName.Text = _appSettings.WordName;
             checkBox_UVsTriggerOne.Checked = _appSettings.UVsTriggerOne;
             checkBox_PVsTriggerOne.Checked = _appSettings.PVsTriggerOne;
@@ -970,6 +971,7 @@ namespace MainClient
                 _appSettings.UVOverride = textBox_UVOverride.Text;
                 _appSettings.PVOverride = textBox_PVOverride.Text;
                 _appSettings.IpTtl = (int)numericUpDown_IpTtl.Value;
+                _appSettings.HompageTrigger = (int)numericUpDown_HompageTrigger.Value;
                 _appSettings.WordName = comboBox_WordName.Text;
                 _appSettings.UVsTriggerOne = checkBox_UVsTriggerOne.Checked;
                 _appSettings.PVsTriggerOne = checkBox_PVsTriggerOne.Checked;
@@ -1704,6 +1706,7 @@ namespace MainClient
                 ["currentUV"] = uvIndex + 1,
                 ["pageLoadingTimeout"] = _appSettings.PageLoadingTimeout,
                 ["pageloadedDelay"] = _appSettings.PageloadedDelay,
+                ["hompageTrigger"] = _appSettings.HompageTrigger,
                 ["os"] = (int)ctx.OS,
                 ["isLocalAdWord"] = _appSettings.UseLocalWord,
                 ["pvsTriggerOne"] = _appSettings.PVsTriggerOne,

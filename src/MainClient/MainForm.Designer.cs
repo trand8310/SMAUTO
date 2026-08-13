@@ -115,6 +115,8 @@
             label12 = new Label();
             label11 = new Label();
             label10 = new Label();
+            label34 = new Label();
+            numericUpDown_HompageTrigger = new NumericUpDown();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_MainResetTimeout).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Multiple).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchTaskInterval).BeginInit();
@@ -126,6 +128,7 @@
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).BeginInit();
             groupBox9.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).BeginInit();
             SuspendLayout();
             // 
             // comboBox_QTPName
@@ -536,6 +539,8 @@
             // 
             // tabPage1
             // 
+            tabPage1.Controls.Add(label34);
+            tabPage1.Controls.Add(numericUpDown_HompageTrigger);
             tabPage1.Controls.Add(checkBox_BlockMedia);
             tabPage1.Controls.Add(checkBox_BlockImage);
             tabPage1.Controls.Add(label17);
@@ -1074,6 +1079,24 @@
             label10.TabIndex = 86;
             label10.Text = "失败数量:0";
             // 
+            // label34
+            // 
+            label34.AutoSize = true;
+            label34.Location = new Point(385, 170);
+            label34.Margin = new Padding(6, 0, 6, 0);
+            label34.Name = "label34";
+            label34.Size = new Size(126, 20);
+            label34.TabIndex = 205;
+            label34.Text = "首页触发机率(%):";
+            // 
+            // numericUpDown_HompageTrigger
+            // 
+            numericUpDown_HompageTrigger.Location = new Point(515, 166);
+            numericUpDown_HompageTrigger.Margin = new Padding(6, 5, 6, 5);
+            numericUpDown_HompageTrigger.Name = "numericUpDown_HompageTrigger";
+            numericUpDown_HompageTrigger.Size = new Size(104, 27);
+            numericUpDown_HompageTrigger.TabIndex = 206;
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(120F, 120F);
@@ -1102,6 +1125,7 @@
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).EndInit();
             groupBox9.ResumeLayout(false);
             groupBox9.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -1194,6 +1218,8 @@
         private ComboBox comboBox_Protocol;
         private CheckBox checkBox_BlockMedia;
         private CheckBox checkBox_BlockImage;
+        private Label label34;
+        private NumericUpDown numericUpDown_HompageTrigger;
     }
 }
 

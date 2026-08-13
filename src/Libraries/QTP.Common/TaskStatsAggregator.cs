@@ -98,7 +98,7 @@ namespace QTP
         private long _deltaClickthrough;
 
         public double ClickRatio => DSP == 0 ? 0 : (double)Clickthrough / DSP;
-        public double HomepageTriggerRatio => DSP == 0 ? 0 : (double)HomepageTrigger / DSP;
+        public double HomepageTriggerRatio => DSP == 0 ? 0 : ((double)HomepageTrigger / DSP) * 100;
 
         public void Add(StateType type, int count)
         {
@@ -582,6 +582,14 @@ namespace QTP
         public TaskStats GetTotalStats() => _totalStats;
 
 
+        public bool CanHomepageTrigger(int taskId)
+        {
+            if (_appSettings.HompageTrigger == 0)
+                return false;
+
+            var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
+            return stats.HomepageTriggerRatio < _appSettings.HompageTrigger;
+        }
 
         public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)
         {
