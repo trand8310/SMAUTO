@@ -240,41 +240,6 @@ namespace MainClient
              });
         }
 
-        public async Task ReloadWordNames(string category)
-        {
-            this.BeginInvoke(() =>
-            {
-                this.comboBox_DynamicWordName.Items.Clear();
-                this.comboBox_DynamicWordName.Items.Add("不使用采集库");
-            });
-
-            try
-            {
-                var client = _httpClientFactory.CreateClient();
-                client.DefaultRequestHeaders.Clear();
-                client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
-                HttpResponseMessage response = await client.GetAsync($"http://117.21.200.221/api/spider/get_word_names.php?category={category}");
-                response.EnsureSuccessStatusCode();
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = JObject.Parse(await response.Content.ReadAsStringAsync());
-                    if (json != null && json.ContainsKey("data"))
-                    {
-                        foreach (var f in json["data"])
-                        {
-                            this.BeginInvoke(() =>
-                            {
-                                this.comboBox_DynamicWordName.Items.Add(f.ToString());
-                            });
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ReloadWordNames failed");
-            }
-        }
         public async Task<List<FileVersionInfo>> GetLatestFileWithVersionAsync()
         {
             List<FileVersionInfo> result = new List<FileVersionInfo>();
@@ -754,41 +719,6 @@ namespace MainClient
 
 
         }
-        public async Task InitCloudNames()
-        {
-            this.InvokeOnUiThreadIfRequired(() =>
-            {
-                this.comboBox_WordName.Items.Clear();
-            });
-            var wordNames = await this._adeHelper.GetWordNamesAsync("get_cloud_names");
-            if (wordNames.Count() > 0)
-            {
-                foreach (var word in wordNames)
-                {
-                    this.BeginInvoke(() => { this.comboBox_WordName.Items.Add(word); });
-                }
-            }
-        }
-        public async Task InitSpiderNames(string category)
-        {
-            this.InvokeOnUiThreadIfRequired(() =>
-            {
-                this.comboBox_DynamicWordName.Items.Clear();
-                this.comboBox_DynamicWordName.Items.Add("不使用采集库");
-            });
-            var wordNames = await this._adeHelper.GetWordNamesAsync("get_spider_names", category);
-            if (wordNames.Count() > 0)
-            {
-                foreach (var word in wordNames)
-                {
-                    this.InvokeOnUiThreadIfRequired(() =>
-                    {
-                        this.comboBox_DynamicWordName.Items.Add(word);
-                    });
-                }
-            }
-        }
-
         private void ClearLocalCacheFile()
         {
             string downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
@@ -850,8 +780,6 @@ namespace MainClient
                 try
                 {
                     await InitBrowserVersionListAsync();
-                    await InitSpiderNames(_appSettings.WordType);
-                    await InitCloudNames();
                     await InitGlobalStatus();
                     ClearLocalCacheFile();
                 }
@@ -874,7 +802,7 @@ namespace MainClient
                 {
 
                     #region 控件初始化
-                    var controls = new List<Control>() { tabPage1, groupBox1, groupBox6 };
+                    var controls = new List<Control>() { tabPage1, groupBox6 };
                     foreach (var control in controls)
                     {
                         foreach (var c in control.Controls)
@@ -911,19 +839,6 @@ namespace MainClient
                             {
                                 (c as ComboBox).SelectedIndexChanged += (s, e) =>
                                 {
-                                    //if ((c as ComboBox).Name.Equals("comboBox_WordType"))
-                                    //{
-                                    //    var _value = (c as ComboBox).Text;
-                                    //    Task.Run(async () =>
-                                    //    {
-                                    //        await ReloadWordNames(_value);
-                                    //        this.BeginInvoke(() =>
-                                    //        {
-                                    //            this.comboBox_DynamicWordName.Text = _appSettings.DynamicWordName;
-                                    //        });
-                                    //    });
-
-                                    //}
                                     UpdateAppSetting();
                                 };
                             }
@@ -948,34 +863,6 @@ namespace MainClient
             if (File.Exists(patchFile))
                 return;
 
-
-            //_appSettings.Rfq1688 = false;
-            //_appSettings.Rfq1688Rate = 0;
-
-            //_appSettings.p4psearch = false;
-            //_appSettings.p4psearchRate = 0;
-
-            //_appSettings.DevApiUrl = "http://211.154.24.179:9000/api/fingerprint.php";
-            //_appSettings.NoTrigger1688Shop = true;
-            //_appSettings.Protocol = "http";
-
-            //var chromePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "File", "chrome-win");
-            //if (Directory.Exists(chromePath))
-            //{
-            //    try
-            //    {
-            //        System.IO.Directory.Delete(chromePath, true);
-            //    }
-            //    catch (Exception)
-            //    {
-
-            //    }
-
-            //}
-
-
-
-
             UserConfigService.Save("AppSettings", _appSettings);
             // 创建标记文件
             File.WriteAllText(
@@ -986,14 +873,9 @@ namespace MainClient
         }
         private void LoadAppSetting()
         {
-
             ApplyOneTimeLocalPatch();
-            if (_appSettings.MinFrequency == 0)
-                _appSettings.MinFrequency = 1;
             if (string.IsNullOrWhiteSpace(_appSettings.Protocol))
                 _appSettings.Protocol = "http";
-
-
             comboBox_QTPName.Text = _appSettings.QTPName;
             textBox_ProxyIpUrl.Text = _appSettings.ProxyIpUrl;
             textBox_TaskApiUrl.Text = _appSettings.TaskApiUrl;
@@ -1015,36 +897,16 @@ namespace MainClient
             else
                 radioButton_UseSystemDev.Checked = true;
             checkBox_IsDetailLog.Checked = _appSettings.IsDetailLog;
-            checkBox_UseLocalWord.Checked = _appSettings.UseLocalWord;
             textBox_UVOverride.Text = _appSettings.UVOverride;
             textBox_PVOverride.Text = _appSettings.PVOverride;
             numericUpDown_IpTtl.Value = _appSettings.IpTtl;
-            numericUpDown_HompageTrigger.Value = _appSettings.HompageTrigger;
-            comboBox_WordName.Text = _appSettings.WordName;
-            checkBox_PriorityNon1688.Checked = _appSettings.PriorityNon1688;
             checkBox_UVsTriggerOne.Checked = _appSettings.UVsTriggerOne;
             checkBox_PVsTriggerOne.Checked = _appSettings.PVsTriggerOne;
             comboBox_KernelVersion.Text = _appSettings.KernelVersion;
             checkBox_Incognito.Checked = _appSettings.Incognito;
-            checkBox_NoTrigger1688.Checked = _appSettings.NoTrigger1688;
-            checkBox_CleaningWords.Checked = _appSettings.CleaningWords;
-            checkBox_UseDynamicWord.Checked = _appSettings.UseDynamicWord;
-            comboBox_WordType.Text = _appSettings.WordType;
-            numericUpDown_FetchRecently.Value = _appSettings.FetchRecently;
-            checkBox_NotTriggerDownload.Checked = _appSettings.NotTriggerDownload;
-            comboBox_DynamicWordName.Text = _appSettings.DynamicWordName;
-            checkBox_DistinctByHour.Checked = _appSettings.DistinctByHour;
-            textBox_ExcludeWords.Text = _appSettings.ExcludeWords;
             checkBox_IsTest.Checked = _appSettings.IsTest;
-            checkBox_Rfq1688.Checked = _appSettings.Rfq1688;
-            numericUpDown_Rfq1688Rate.Value = _appSettings.Rfq1688Rate;
-            checkBox_p4psearch.Checked = _appSettings.p4psearch;
-            numericUpDown_p4psearchRate.Value = _appSettings.p4psearchRate;
             checkBox_AutoUpdate.Checked = _appSettings.AutoUpdate;
-            numericUpDown_MinFrequency.Value = _appSettings.MinFrequency;
             comboBox_Protocol.Text = _appSettings.Protocol ?? "http";
-            checkBox_NoTrigger1688Shop.Checked = _appSettings.NoTrigger1688Shop;
-            textBox_SecondJumpRate.Text = _appSettings.SecondJumpRate;
         }
         private static object lock_config = new object();
         private void UpdateAppSetting()
@@ -1071,39 +933,16 @@ namespace MainClient
                 else
                     _appSettings.UsingDevIndex = 1;
                 _appSettings.IsDetailLog = checkBox_IsDetailLog.Checked;
-                _appSettings.UseLocalWord = checkBox_UseLocalWord.Checked;
                 _appSettings.UVOverride = textBox_UVOverride.Text;
                 _appSettings.PVOverride = textBox_PVOverride.Text;
                 _appSettings.IpTtl = (int)numericUpDown_IpTtl.Value;
-                _appSettings.HompageTrigger = (int)numericUpDown_HompageTrigger.Value;
-                _appSettings.WordName = comboBox_WordName.Text;
-                _appSettings.PriorityNon1688 = checkBox_PriorityNon1688.Checked;
                 _appSettings.UVsTriggerOne = checkBox_UVsTriggerOne.Checked;
                 _appSettings.PVsTriggerOne = checkBox_PVsTriggerOne.Checked;
                 _appSettings.KernelVersion = comboBox_KernelVersion.Text;
                 _appSettings.Incognito = checkBox_Incognito.Checked;
-                _appSettings.NoTrigger1688 = checkBox_NoTrigger1688.Checked;
-                _appSettings.CleaningWords = checkBox_CleaningWords.Checked;
-                _appSettings.UseDynamicWord = checkBox_UseDynamicWord.Checked;
-                _appSettings.WordType = comboBox_WordType.Text;
-                _appSettings.FetchRecently = (int)numericUpDown_FetchRecently.Value;
-                _appSettings.NotTriggerDownload = checkBox_NotTriggerDownload.Checked;
-                _appSettings.DynamicWordName = comboBox_DynamicWordName.Text;
-                _appSettings.DistinctByHour = checkBox_DistinctByHour.Checked;
-                _appSettings.ExcludeWords = textBox_ExcludeWords.Text;
                 _appSettings.IsTest = checkBox_IsTest.Checked;
-
-                _appSettings.Rfq1688 = checkBox_Rfq1688.Checked;
-                _appSettings.Rfq1688Rate = (int)numericUpDown_Rfq1688Rate.Value;
-                _appSettings.p4psearch = checkBox_p4psearch.Checked;
-                _appSettings.p4psearchRate = (int)numericUpDown_p4psearchRate.Value;
-
                 _appSettings.AutoUpdate = checkBox_AutoUpdate.Checked;
-                _appSettings.MinFrequency = (int)numericUpDown_MinFrequency.Value;
-
                 _appSettings.Protocol = comboBox_Protocol.Text;
-                _appSettings.NoTrigger1688Shop = checkBox_NoTrigger1688Shop.Checked;
-                _appSettings.SecondJumpRate = textBox_SecondJumpRate.Text;
 
                 UserConfigService.Save("AppSettings", _appSettings);
             }
@@ -1158,21 +997,6 @@ namespace MainClient
             Process.Start(new ProcessStartInfo { FileName = currentDirectory, UseShellExecute = true });
 
         }
-
-        private void button4_Click(object sender, EventArgs e)
-        {
-            button4.Enabled = false;
-            Task.Run(async () =>
-            {
-                await ReloadWordNames(_appSettings.WordType);
-
-                this.BeginInvoke(() =>
-                {
-                    button4.Enabled = true;
-                });
-            });
-        }
-
         private void label9_Click(object sender, EventArgs e)
         {
 
@@ -1807,18 +1631,11 @@ namespace MainClient
                 ["currentUV"] = uvIndex + 1,
                 ["pageLoadingTimeout"] = _appSettings.PageLoadingTimeout,
                 ["pageloadedDelay"] = _appSettings.PageloadedDelay,
-                ["hompageTrigger"] = _appSettings.HompageTrigger,
                 ["os"] = (int)ctx.OS,
-                ["isLocalAdWord"] = _appSettings.UseLocalWord,
-                ["priorityNon1688"] = _appSettings.PriorityNon1688,
                 ["pvsTriggerOne"] = _appSettings.PVsTriggerOne,
                 ["isTest"] = _appSettings.IsTest,
                 ["kernelVersion"] = _appSettings.KernelVersion,
                 ["incognito"] = _appSettings.Incognito,
-                ["wordname"] = _appSettings.WordName,
-                ["noTrigger1688"] = _appSettings.NoTrigger1688,
-                ["cleaningWords"] = _appSettings.CleaningWords,
-                ["notTriggerDownload"] = _appSettings.NotTriggerDownload,
                 ["protocol"] = _appSettings.Protocol,  // "socks5",//"http"
                 ["scaleX"] = this.scaleX,
                 ["scaleY"] = this.scaleY,
@@ -2005,21 +1822,6 @@ namespace MainClient
                     return;
                 }
             }
-
-            if (_appSettings.UseLocalWord)
-            {
-                var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", $"{_appSettings.WordName}.txt");
-                if (!File.Exists(filePath))
-                {
-                    await _adeHelper.DownloadWordFileByNameAsync(_appSettings.WordName);
-                }
-                if (!File.Exists(filePath))
-                {
-                    _logger.LogWarning("缺少本地词库: {filePath}", filePath);
-                    return;
-                }
-            }
-
 
             await _aggregator.StartAsync();
 
@@ -2262,48 +2064,6 @@ namespace MainClient
                     button6.Enabled = true;
                 });
             });
-        }
-
-        private void button1_Click(object sender, EventArgs e)
-        {
-
-            using (OpenFileDialog dialog = new OpenFileDialog())
-            {
-                dialog.Title = "请选择一个文件";
-                dialog.Filter = "文本文件 (*.txt)|*.txt";
-                dialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                if (dialog.ShowDialog() == DialogResult.OK)
-                {
-                    button1.Enabled = false;
-                    string selectedFilePath = dialog.FileName;
-                    Task.Run(async () =>
-                    {
-                        await _adeHelper.UploadWordFileAsZipAsync(selectedFilePath);
-                        this.BeginInvoke(() =>
-                        {
-                            button1.Enabled = true;
-                        });
-                    });
-                }
-            }
-        }
-
-        private void button7_Click(object sender, EventArgs e)
-        {
-            button7.Enabled = false;
-            Task.Run(async () =>
-            {
-                await _adeHelper.DownloadWordFileByNameAsync(_appSettings.WordName);
-                this.BeginInvoke(() =>
-                {
-                    button7.Enabled = true;
-                });
-            });
-        }
-
-        private void button3_Click(object sender, EventArgs e)
-        {
-
         }
 
         private void button2_Click(object sender, EventArgs e)

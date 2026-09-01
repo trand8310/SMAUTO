@@ -581,16 +581,6 @@ namespace QTP
 
         public TaskStats GetTotalStats() => _totalStats;
 
-        public bool CanHomepageTrigger(int taskId)
-        {
-            if (_appSettings.HompageTrigger == 0)
-                return false;
-
-            var stats = _tasks.GetOrAdd(taskId, _ => new TaskStats());
-            return stats.HomepageTriggerRatio < _appSettings.HompageTrigger;
-        }
-
-
         public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)
         {
             await EnsureTaskBaselineAsync(taskId, taskCtr).ConfigureAwait(false);
@@ -861,72 +851,6 @@ namespace QTP
                 }
             }
 
-            {
-                List<AdWord>? snapshot = null;
-                lock (_adWordLock)
-                {
-                    if (_adWordBuffer.Count > 0)
-                        snapshot = new List<AdWord>(_adWordBuffer);
-                }
-
-                if (snapshot != null && snapshot.Count > 0)
-                {
-                    flushTasks.Add(FlushAdWordsAsync(snapshot, token));
-                }
-            }
-
-            {
-                List<AdWordUsageStat>? snapshot = null;
-                lock (_adWordStatLock)
-                {
-                    if (_adWordStatBuffer.Count > 0)
-                    {
-                        snapshot = new List<AdWordUsageStat>(_adWordStatBuffer.Count);
-                        foreach (var kv in _adWordStatBuffer)
-                        {
-                            snapshot.Add(new AdWordUsageStat
-                            {
-                                Word = kv.Key,
-                                Extract = kv.Value.Extract,
-                                Hit = kv.Value.Hit
-                            });
-                        }
-                    }
-                }
-
-                if (snapshot != null && snapshot.Count > 0)
-                {
-                    flushTasks.Add(FlushAdWordStatsAsync(snapshot, token));
-                }
-            }
-
-
-            {
-                List<AdKeywordDomain>? snapshot = null;
-
-                lock (_adKeywordDomainLock)
-                {
-                    if (_adKeywordDomainBuffer.Count > 0)
-                    {
-                        snapshot = new List<AdKeywordDomain>(_adKeywordDomainBuffer.Count);
-                        foreach (var kv in _adKeywordDomainBuffer)
-                        {
-                            snapshot.Add(new AdKeywordDomain
-                            {
-                                Keyword = kv.Key,
-                                Domains = kv.Value.Domains.ToList(),
-                                Brands = kv.Value.Brands.ToList()
-                            });
-                        }
-                    }
-                }
-
-                if (snapshot != null && snapshot.Count > 0)
-                {
-                    flushTasks.Add(FlushAdKeywordDomainsAsync(snapshot, token));
-                }
-            }
-
             if (flushTasks.Count > 0)
                 await Task.WhenAll(flushTasks).ConfigureAwait(false);
         }
@@ -1007,98 +931,6 @@ namespace QTP
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FlushTotalStatsAsync failed.");
-            }
-            finally
-            {
-                _flushSemaphore.Release();
-            }
-        }
-
-        private async Task FlushAdWordsAsync(List<AdWord> snapshot, CancellationToken token)
-        {
-            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
-            try
-            {
-                await RetryAsync(
-                    () => _adeHelper.UpdateAdWordsAsync(snapshot, token),
-                    _retryCount,
-                    token).ConfigureAwait(false);
-
-                lock (_adWordLock)
-                {
-                    int removeCount = Math.Min(snapshot.Count, _adWordBuffer.Count);
-                    if (removeCount > 0)
-                        _adWordBuffer.RemoveRange(0, removeCount);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FlushAdWordsAsync failed.");
-            }
-            finally
-            {
-                _flushSemaphore.Release();
-            }
-        }
-        private async Task FlushAdWordStatsAsync(List<AdWordUsageStat> snapshot, CancellationToken token)
-        {
-            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
-            try
-            {
-                await RetryAsync(
-                    () => _adeHelper.UpdateAdWordStatsAsync(snapshot, token),
-                    _retryCount,
-                    token).ConfigureAwait(false);
-
-                lock (_adWordStatLock)
-                {
-                    foreach (var item in snapshot)
-                    {
-                        if (!_adWordStatBuffer.TryGetValue(item.Word, out var acc))
-                            continue;
-
-                        if (item.Extract > 0)
-                            acc.Extract = Math.Max(0, acc.Extract - item.Extract);
-
-                        if (item.Hit > 0)
-                            acc.Hit = Math.Max(0, acc.Hit - item.Hit);
-
-                        if (acc.Extract == 0 && acc.Hit == 0)
-                            _adWordStatBuffer.Remove(item.Word);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FlushAdWordStatsAsync failed.");
-            }
-            finally
-            {
-                _flushSemaphore.Release();
-            }
-        }
-
-
-        private async Task FlushAdKeywordDomainsAsync(
-        List<AdKeywordDomain> snapshot,
-        CancellationToken token)
-        {
-            await _flushSemaphore.WaitAsync(token).ConfigureAwait(false);
-            try
-            {
-                await RetryAsync(
-                    () => _adeHelper.AddKeywordDomainsAsync(snapshot, token),
-                    _retryCount,
-                    token).ConfigureAwait(false);
-
-                lock (_adKeywordDomainLock)
-                {
-                    _adKeywordDomainBuffer.Clear();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "FlushAdKeywordDomainsAsync failed.");
             }
             finally
             {

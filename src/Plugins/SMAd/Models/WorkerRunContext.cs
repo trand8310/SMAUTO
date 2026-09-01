@@ -1,6 +1,7 @@
 ﻿using Microsoft.Playwright;
 using PlaywrightHumanInput;
 using QTP.Plugins;
+using SMAd.HumanInput;
 using SMAd.LandingPolicy;
 
 namespace SMAd.Models
@@ -42,7 +43,7 @@ namespace SMAd.Models
 
         public int PageElementGuardStarted;
 
-        public HumanTouchOperator human { get; set; }
+        public IHumanInputOperator Human { get; set; } = default!;
 
         public void ResetPerPvState()
         {

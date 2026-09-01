@@ -19,10 +19,11 @@ namespace QTP.Common
         public static async Task InitCDPSession(ICDPSession cdpSession, int maxTouchPoints)
         {
             //await SetAutoDarkModeOverride(cdpSession, true);
-            await CDPHelper.SetTouchEmulationEnabled(cdpSession, true, maxTouchPoints);
-            await CDPHelper.SetScrollbarsHidden(cdpSession, true);
+            //await CDPHelper.SetTouchEmulationEnabled(cdpSession, true, maxTouchPoints);
+            //await CDPHelper.SetScrollbarsHidden(cdpSession, true);
             //await CDPHelper.SetEmitTouchEventsForMouse(cdpSession, true);
             //await CDPHelper.ChangeDeviceOrientationAsync(cdpSession);
+            await Task.CompletedTask;
         }
 
         public static async Task SetDeviceMetricsOverride(ICDPSession cdpSession, int width, int height, float deviceScaleFactor, bool mobile = true)

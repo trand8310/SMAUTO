@@ -36,20 +36,14 @@ namespace SMAd.LandingPolicy
         {
             token.ThrowIfCancellationRequested();
             await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
-            if (_owner._appSettings.p4psearch && _owner._appSettings.p4psearchRate > 0 && ctx.Page!.Url.Contains("m.1688.com"))
-            {
-                await _owner.TryHandle1688RecommendWordsAsync(ctx, token);
-            }
             await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
             var offerItems = await _owner.ResolveOfferItemsAsync(ctx, token);
-
-
             if (offerItems != null && await offerItems.CountAsync() > 0)
             {
                 int count = await offerItems.CountAsync();
                 var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                await ctx.human!.MoveToElementAsync(
+                await ctx.Human.MoveToElementAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
                     item,
@@ -120,7 +114,7 @@ namespace SMAd.LandingPolicy
                             .First;
                             if (await locator.CountAsync() > 0)
                             {
-                                await ctx.human!.MoveToElementAsync(
+                                await ctx.Human.MoveToElementAsync(
                                     ctx.Page!,
                                     ctx.CdpSession!,
                                     locator.First,

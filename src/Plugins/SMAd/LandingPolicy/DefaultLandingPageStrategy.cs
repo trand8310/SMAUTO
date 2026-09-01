@@ -24,43 +24,35 @@ namespace SMAd.LandingPolicy
             token.ThrowIfCancellationRequested();
             await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
             var offerItems = await _owner.ResolveOfferItemsAsync(ctx, token);
-
-            if (!ctx.Page!.Url.StartsWith("https://plogin.m.jd.com/"))
+            if (offerItems != null && await offerItems.CountAsync() > 0)
             {
-                if (offerItems != null && await offerItems.CountAsync() > 0)
+                int count = await offerItems.CountAsync();
+                var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
+
+                await ctx.Human.MoveToElementAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    item,
+                    maxSwipes: 10,
+                    cancellationToken: token);
+
+                await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
+
+                var text = await item.InnerTextAsync();
+                var box = await item.BoundingBoxAsync();
+
+                if (box != null)
+                    _owner.LogWriteLine($"触发点击:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
+                else
+                    _owner.LogWriteLine($"触发点击:{text}");
+
+
+                var click = await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
+                if (click.Navigated)
                 {
-                    int count = await offerItems.CountAsync();
-                    var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                    await ctx.human!.MoveToElementAsync(
-                        ctx.Page!,
-                        ctx.CdpSession!,
-                        item,
-                        maxSwipes: 10,
-                        cancellationToken: token);
-
-                    await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
-
-                    var text = await item.InnerTextAsync();
-                    var box = await item.BoundingBoxAsync();
-
-                    if (box != null)
-                        _owner.LogWriteLine($"触发点击:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
-                    else
-                        _owner.LogWriteLine($"触发点击:{text}");
-
-
-                    var click = await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
-                    if (click.Navigated)
-                    {
-
-                    }
                 }
             }
-
-
-
-
 
 
             return FlowControl.Continue;
