@@ -20,7 +20,7 @@ namespace SMAd.LandingPolicy
         {
             token.ThrowIfCancellationRequested();
 
-            await _owner.HumanBrowseForAsync(ctx, 5000, 8000, token, maxContinuousNoMove: 3);
+            await _owner.BrowseForAsync(ctx, 3, 5, token);
 
             var tagItems = ctx.Page!.Locator(".tag-panel .tag-item");
             var count = await tagItems.CountAsync();
@@ -36,7 +36,7 @@ namespace SMAd.LandingPolicy
                 {
                     token.ThrowIfCancellationRequested();
                     await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, tagItems.Nth(i));
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                    await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
                 }
             }
 
@@ -48,7 +48,7 @@ namespace SMAd.LandingPolicy
                     if (new[] { 1, 3, 5, 7, 9 }.Contains(CommonHelper.RandomRange(0, 10)))
                     {
                         await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, button.First);
-                        await Task.Delay(CommonHelper.RandomRange(1500, 2500), token);
+                        await Task.Delay(CommonHelper.RandomRange(2000, 3500), token);
                     }
                 }
             }

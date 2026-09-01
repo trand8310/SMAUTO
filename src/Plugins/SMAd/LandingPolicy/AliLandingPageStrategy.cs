@@ -35,30 +35,28 @@ namespace SMAd.LandingPolicy
         public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+            await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
             if (_owner._appSettings.p4psearch && _owner._appSettings.p4psearchRate > 0 && ctx.Page!.Url.Contains("m.1688.com"))
             {
                 await _owner.TryHandle1688RecommendWordsAsync(ctx, token);
             }
-            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+            await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
             var offerItems = await _owner.ResolveOfferItemsAsync(ctx, token);
 
-            var humanSwipeOptions = _owner.GetHumanSwipeOptions(ctx);
 
             if (offerItems != null && await offerItems.CountAsync() > 0)
             {
                 int count = await offerItems.CountAsync();
                 var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                await HumanSwipeOperator.MoveToElementAsync(
+                await ctx.human!.MoveToElementAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
                     item,
                     maxSwipes: 10,
-                    options: humanSwipeOptions,
                     cancellationToken: token);
 
-                await Task.Delay(CommonHelper.RandomRange(800, 1400), token);
+                await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
 
                 var text = await item.InnerTextAsync();
                 var box = await item.BoundingBoxAsync();
@@ -74,12 +72,12 @@ namespace SMAd.LandingPolicy
                 {
                     if (ctx.Page!.Url.Contains("1688.com") && ctx.Page.Url.Contains("_tmd_") && ctx.Page!.Url.Contains("punish?x5secdata"))
                     {
-                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                        await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
                         if (await TouchDragHelper.WaitAllVisibleWithTextsAsync(ctx.Page!, 5000))
                         {
                             if (await TouchDragHelper.DragSliderAsync(ctx.Page!, ctx.CdpSession!, ".btn_slide", ".slidetounlock", token))
                             {
-                                await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
+                                await Task.Delay(CommonHelper.RandomRange(3500, 5500), token);
                             }
                         }
                         else
@@ -93,7 +91,7 @@ namespace SMAd.LandingPolicy
 
                     if (ctx.Page.Url.StartsWith("https://re.1688.com/"))
                     {
-                        await _owner.HumanBrowseForAsync(ctx, 5000, 8000, token, maxContinuousNoMove: 3);
+                        await _owner.BrowseForAsync(ctx, 3, 5, token);
 
 
                         count = await CenterClickableFinder.MarkCandidatesAsync(ctx.Page);
@@ -122,12 +120,11 @@ namespace SMAd.LandingPolicy
                             .First;
                             if (await locator.CountAsync() > 0)
                             {
-                                await HumanSwipeOperator.MoveToElementAsync(
+                                await ctx.human!.MoveToElementAsync(
                                     ctx.Page!,
                                     ctx.CdpSession!,
                                     locator.First,
                                     maxSwipes: 10,
-                                    options: humanSwipeOptions,
                                     cancellationToken: token);
 
                                 if (!await _owner.IsElementPartiallyVisibleAsync(locator.First))
@@ -139,7 +136,7 @@ namespace SMAd.LandingPolicy
                         }
                     }
 
-                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
                 }
             }
 

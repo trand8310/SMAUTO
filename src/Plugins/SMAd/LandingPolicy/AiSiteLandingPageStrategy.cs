@@ -19,7 +19,7 @@ namespace SMAd.LandingPolicy
         public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
+            await Task.Delay(CommonHelper.RandomRange(3500, 5500), token);
             var no_result_title = ctx.Page!.GetByText("抱歉，未能匹配到合适的课程");
             if (await no_result_title.CountAsync() > 0)
             {
@@ -42,7 +42,7 @@ namespace SMAd.LandingPolicy
 
                 int imageCount = await openBtn.CountAsync();
                 await _owner.ClickAndDetectNavigationAsync(ctx, openBtn.Nth(imageCount - 1), token);
-                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
             }
 
             openBtn = ctx.Page.Locator(".welcome-popup-open-button");
@@ -61,34 +61,34 @@ namespace SMAd.LandingPolicy
             if (await closeBtn.CountAsync() > 0)
             {
                 await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, closeBtn.First);
-                await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
+                await Task.Delay(CommonHelper.RandomRange(3500, 5500), token);
             }
 
 
-            await _owner.HumanBrowseForAsync(ctx, 5000, 8000, token, maxContinuousNoMove: 3);
+            await _owner.BrowseForAsync(ctx, 5, 8, token);
 
 
 
-            var humanSwipeOptions = _owner.GetHumanSwipeOptions(ctx);
             var offerItems = ctx.Page.Locator(".ad-card-title,.ad-card-image,.ad-card-conv-btn");
             if (await offerItems.CountAsync() > 0)
             {
                 int count = await offerItems.CountAsync();
                 var offer = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                await HumanSwipeOperator.MoveToElementVisibleAsync(
-                    ctx.Page,
+
+                await ctx.human!.MoveToElementAsync(
+                    ctx.Page!,
                     ctx.CdpSession!,
                     offer,
                     maxSwipes: 10,
-                    options: humanSwipeOptions,
                     cancellationToken: token);
 
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
                 var click = await _owner.ClickAndDetectNavigationAsync(ctx, offer, token);
                 if (click.Navigated)
                 {
-                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
                 }
 
                 return FlowControl.Continue;

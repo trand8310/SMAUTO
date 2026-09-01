@@ -11,9 +11,7 @@ namespace SMAd.Models
         {
             Config = config;
             StartTime = DateTime.Now;
-            SwipeStyleProfile = HumanSwipeStyleProfile.CreateRandom();
         }
-        public HumanSwipeStyleProfile SwipeStyleProfile { get; }
         public TaskConfig Config { get; }
         public DateTime StartTime { get; }
 
@@ -43,6 +41,8 @@ namespace SMAd.Models
         public string? LastFailureReason { get; set; }
 
         public int PageElementGuardStarted;
+
+        public HumanTouchOperator human { get; set; }
 
         public void ResetPerPvState()
         {

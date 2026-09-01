@@ -19,7 +19,7 @@ namespace SMAd.LandingPolicy
         public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+            await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
 
             var recommend = ctx.Page!.Locator(".recommend-adlist .waterfall-column");
             var count = await recommend.CountAsync();
@@ -60,15 +60,15 @@ namespace SMAd.LandingPolicy
             if (count > 0)
             {
                 var item = recommend.Nth(CommonHelper.RandomRange(0, count));
-                var humanSwipeOptions = _owner.GetHumanSwipeOptions(ctx);
-                await HumanSwipeOperator.MoveToElementVisibleAsync(
-                  ctx.Page!,
-                  ctx.CdpSession!,
-                  item,
-                  maxSwipes: 10,
-                  options: humanSwipeOptions,
-                  cancellationToken: token);
-                await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                await ctx.human!.MoveToElementAsync(
+                    ctx.Page!,
+                    ctx.CdpSession!,
+                    item,
+                    maxSwipes: 10,
+                    cancellationToken: token);
+
+                await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
                 await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
             }
 
