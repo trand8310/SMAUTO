@@ -71,6 +71,8 @@
             label25 = new Label();
             tabControl1 = new TabControl();
             tabPage1 = new TabPage();
+            label34 = new Label();
+            numericUpDown_HompageTrigger = new NumericUpDown();
             checkBox_BlockMedia = new CheckBox();
             checkBox_BlockImage = new CheckBox();
             label17 = new Label();
@@ -115,8 +117,6 @@
             label12 = new Label();
             label11 = new Label();
             label10 = new Label();
-            label34 = new Label();
-            numericUpDown_HompageTrigger = new NumericUpDown();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_MainResetTimeout).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Multiple).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_FetchTaskInterval).BeginInit();
@@ -125,10 +125,10 @@
             statusStrip1.SuspendLayout();
             tabControl1.SuspendLayout();
             tabPage1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).BeginInit();
             groupBox9.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).BeginInit();
             SuspendLayout();
             // 
             // comboBox_QTPName
@@ -221,7 +221,7 @@
             textBox_DevApiUrl.Name = "textBox_DevApiUrl";
             textBox_DevApiUrl.Size = new Size(495, 27);
             textBox_DevApiUrl.TabIndex = 74;
-            textBox_DevApiUrl.Text = "http://117.21.200.18:9000/api/fingerprint.php";
+            textBox_DevApiUrl.Text = "http://117.21.200.18:9000/api/fp-win.php";
             // 
             // label14
             // 
@@ -616,6 +616,24 @@
             tabPage1.TabIndex = 0;
             tabPage1.Text = "信息";
             tabPage1.UseVisualStyleBackColor = true;
+            // 
+            // label34
+            // 
+            label34.AutoSize = true;
+            label34.Location = new Point(385, 170);
+            label34.Margin = new Padding(6, 0, 6, 0);
+            label34.Name = "label34";
+            label34.Size = new Size(126, 20);
+            label34.TabIndex = 205;
+            label34.Text = "首页触发机率(%):";
+            // 
+            // numericUpDown_HompageTrigger
+            // 
+            numericUpDown_HompageTrigger.Location = new Point(515, 166);
+            numericUpDown_HompageTrigger.Margin = new Padding(6, 5, 6, 5);
+            numericUpDown_HompageTrigger.Name = "numericUpDown_HompageTrigger";
+            numericUpDown_HompageTrigger.Size = new Size(104, 27);
+            numericUpDown_HompageTrigger.TabIndex = 206;
             // 
             // checkBox_BlockMedia
             // 
@@ -1079,24 +1097,6 @@
             label10.TabIndex = 86;
             label10.Text = "失败数量:0";
             // 
-            // label34
-            // 
-            label34.AutoSize = true;
-            label34.Location = new Point(385, 170);
-            label34.Margin = new Padding(6, 0, 6, 0);
-            label34.Name = "label34";
-            label34.Size = new Size(126, 20);
-            label34.TabIndex = 205;
-            label34.Text = "首页触发机率(%):";
-            // 
-            // numericUpDown_HompageTrigger
-            // 
-            numericUpDown_HompageTrigger.Location = new Point(515, 166);
-            numericUpDown_HompageTrigger.Margin = new Padding(6, 5, 6, 5);
-            numericUpDown_HompageTrigger.Name = "numericUpDown_HompageTrigger";
-            numericUpDown_HompageTrigger.Size = new Size(104, 27);
-            numericUpDown_HompageTrigger.TabIndex = 206;
-            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(120F, 120F);
@@ -1108,7 +1108,7 @@
             Margin = new Padding(6, 5, 6, 5);
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "百度搜索-";
+            Text = "PC1688-";
             Load += MainForm_Load;
             ((System.ComponentModel.ISupportInitialize)numericUpDown_MainResetTimeout).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Multiple).EndInit();
@@ -1121,11 +1121,11 @@
             tabControl1.ResumeLayout(false);
             tabPage1.ResumeLayout(false);
             tabPage1.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_IpTtl).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_PageLoadingTimeout).EndInit();
             groupBox9.ResumeLayout(false);
             groupBox9.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)numericUpDown_HompageTrigger).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }

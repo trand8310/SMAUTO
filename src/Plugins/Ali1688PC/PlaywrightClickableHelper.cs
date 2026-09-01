@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 
 
-namespace BDAd
+namespace QTP.Plugins
 {
 
  

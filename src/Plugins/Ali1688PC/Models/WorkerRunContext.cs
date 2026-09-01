@@ -1,10 +1,9 @@
-using BDAd.LandingPolicy;
+
 using Microsoft.Playwright;
 using PlaywrightHumanInput;
-using QTP.Plugins;
+using QTP.Plugins.LandingPolicy;
 
-namespace BDAd.Models;
-
+namespace QTP.Plugins.Models;
 
 
 public sealed class WorkerRunContext

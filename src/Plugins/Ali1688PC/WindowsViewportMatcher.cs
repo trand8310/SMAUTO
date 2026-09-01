@@ -1,4 +1,4 @@
-﻿namespace BDAd
+﻿namespace QTP.Plugins
 {
     using System;
     using System.Linq;

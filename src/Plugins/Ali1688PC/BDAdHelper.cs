@@ -1,7 +1,7 @@
 ﻿using Microsoft.Playwright;
 using System.Diagnostics;
 
-namespace BDAd
+namespace QTP.Plugins
 {
     public class BDAdHelper
     {

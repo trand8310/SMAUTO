@@ -1,18 +1,16 @@
-﻿using BDAd.Models;
-using PlaywrightHumanInput;
-using QTP.Common;
-using QTP.Plugins;
+﻿using QTP.Common;
+using QTP.Plugins.Models;
 
-namespace BDAd.LandingPolicy
+namespace QTP.Plugins.LandingPolicy
 {
     /// <summary>
     /// 默认的落地页处理策略
     /// </summary>
     public sealed class DefaultLandingPageStrategy : ILandingPageStrategy
     {
-        private readonly BDAdTask _owner;
+        private readonly Ali1688PCTask _owner;
 
-        public DefaultLandingPageStrategy(BDAdTask owner)
+        public DefaultLandingPageStrategy(Ali1688PCTask owner)
         {
             _owner = owner;
         }

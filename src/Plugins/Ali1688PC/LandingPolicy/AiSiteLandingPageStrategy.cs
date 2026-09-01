@@ -1,15 +1,13 @@
-﻿using PlaywrightHumanInput;
-using QTP.Common;
-using QTP.Plugins;
-using BDAd.Models;
+﻿using QTP.Common;
+using QTP.Plugins.Models;
 
-namespace BDAd.LandingPolicy
+namespace QTP.Plugins.LandingPolicy
 {
     public sealed class AiSiteLandingPageStrategy : ILandingPageStrategy
     {
-        private readonly BDAdTask _owner;
+        private readonly Ali1688PCTask _owner;
 
-        public AiSiteLandingPageStrategy(BDAdTask owner)
+        public AiSiteLandingPageStrategy(Ali1688PCTask owner)
         {
             _owner = owner;
         }

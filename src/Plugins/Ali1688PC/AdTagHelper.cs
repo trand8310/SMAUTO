@@ -1,5 +1,5 @@
 ﻿
-namespace BDAd
+namespace QTP.Plugins
 {
     using Microsoft.Playwright;
 

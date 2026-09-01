@@ -1,6 +1,6 @@
 ﻿using QTP.Common;
 
-namespace BDAd
+namespace QTP.Plugins
 {
     public static class ChatTextHelper
     {

@@ -1,6 +1,6 @@
 ﻿
 
-namespace BDAd.Models
+namespace QTP.Plugins.Models
 {
     public sealed class EntryPreparationResult
     {

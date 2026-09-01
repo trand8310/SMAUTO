@@ -1,7 +1,7 @@
-﻿using BDAd.Models;
+﻿
+using QTP.Plugins.Models;
 
-
-namespace BDAd.LandingPolicy
+namespace QTP.Plugins.LandingPolicy
 {
     public interface ILandingPageStrategy
     {

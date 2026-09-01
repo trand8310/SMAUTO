@@ -1,20 +1,17 @@
-﻿using BDAd.Models;
+﻿
 using QTP.Common;
-using QTP.Plugins;
-using System.Security.Cryptography;
-using System.Text.RegularExpressions;
+using QTP.Plugins.Models;
 
-
-namespace BDAd.LandingPolicy
+namespace QTP.Plugins.LandingPolicy
 {
     /// <summary>
     ///淘宝落地页处理策略
     /// </summary>
     public sealed class TobaoPageStrategy : ILandingPageStrategy
     {
-        private readonly BDAdTask _owner;
+        private readonly Ali1688PCTask _owner;
 
-        public TobaoPageStrategy(BDAdTask owner)
+        public TobaoPageStrategy(Ali1688PCTask owner)
         {
             _owner = owner;
         }

@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 
 
-namespace BDAd.Models
+namespace QTP.Plugins.Models
 {
     public sealed class TaskConfig
     {
