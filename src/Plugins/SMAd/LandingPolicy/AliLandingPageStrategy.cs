@@ -35,105 +35,29 @@ namespace SMAd.LandingPolicy
         public async Task<FlowControl> HandleAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
-            await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
-            var offerItems = await _owner.ResolveOfferItemsAsync(ctx, token);
-            if (offerItems != null && await offerItems.CountAsync() > 0)
+            await ctx.Human.BrowseForAsync(ctx.Page!, ctx.CdpSession!, TimeSpan.FromSeconds(CommonHelper.RandomRange(5, 10)), token);
+            var offer_items = ctx.Page!.Locator("#offerList .offer_item");
+            int offer_count = await offer_items.CountAsync();
+            if (offer_count > 0)
             {
-                int count = await offerItems.CountAsync();
-                var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
-
-                await ctx.Human.MoveToElementAsync(
-                    ctx.Page!,
-                    ctx.CdpSession!,
-                    item,
-                    maxSwipes: 10,
-                    cancellationToken: token);
-
-                await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
-
-                var text = await item.InnerTextAsync();
-                var box = await item.BoundingBoxAsync();
-
-                if (box != null)
-                    _owner.LogWriteLine($"触发点击:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
-                else
-                    _owner.LogWriteLine($"触发点击:{text}");
-
-
-                var click = await _owner.ClickAndDetectNavigationAsync(ctx, item, token);
-                if (click.Navigated)
+                var offer_indexes = Enumerable.Range(0, offer_count).ToList();
+                CommonHelper.Shuffle(offer_indexes);
+                foreach (var offer_index in offer_indexes)
                 {
-                    if (ctx.Page!.Url.Contains("1688.com") && ctx.Page.Url.Contains("_tmd_") && ctx.Page!.Url.Contains("punish?x5secdata"))
+                    var offer_item = offer_items.Nth(offer_index);
+                    if (!await offer_item.IsVisibleAsync())
+                        continue;
+                    if (!await offer_item.IsEnabledAsync())
+                        continue;
+                    await ctx.Human.MoveToElementAsync(ctx.Page!, ctx.CdpSession!, offer_item, 10, token);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000));
+                    var offer_clicked = await _owner.ClickAndDetectNavigationAsync(ctx, offer_item, token);
+                    if (offer_clicked.Navigated)
                     {
-                        await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
-                        if (await TouchDragHelper.WaitAllVisibleWithTextsAsync(ctx.Page!, 5000))
-                        {
-                            if (await TouchDragHelper.DragSliderAsync(ctx.Page!, ctx.CdpSession!, ".btn_slide", ".slidetounlock", token))
-                            {
-                                await Task.Delay(CommonHelper.RandomRange(3500, 5500), token);
-                            }
-                        }
-                        else
-                        {
-                            return FlowControl.Continue;
-                        }
+                        return FlowControl.Continue;
                     }
-
-
-                    _owner.ProcessingPageElementTask(ctx, token);
-
-                    if (ctx.Page.Url.StartsWith("https://re.1688.com/"))
-                    {
-                        await _owner.BrowseForAsync(ctx, 3, 5, token);
-
-
-                        count = await CenterClickableFinder.MarkCandidatesAsync(ctx.Page);
-                        if (count > 0)
-                        {
-                            var locator_list = CenterClickableFinder.GetMarkedLocator(ctx.Page);
-                            var locator_count = await locator_list.CountAsync();
-                            if (locator_count > 0)
-                            {
-                                foreach (var target_index in Enumerable.Range(0, locator_count).OrderBy(o => Guid.NewGuid()))
-                                {
-                                    var target = locator_list.Nth(target_index);
-                                    var result = await _owner.ClickAndDetectNavigationAsync(ctx, target, token);
-                                    if (result.Navigated)
-                                    {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            var locator = ctx.Page
-                            .Locator("body,iframe")
-                            .Filter(new() { Visible = true })
-                            .First;
-                            if (await locator.CountAsync() > 0)
-                            {
-                                await ctx.Human.MoveToElementAsync(
-                                    ctx.Page!,
-                                    ctx.CdpSession!,
-                                    locator.First,
-                                    maxSwipes: 10,
-                                    cancellationToken: token);
-
-                                if (!await _owner.IsElementPartiallyVisibleAsync(locator.First))
-                                {
-                                    await locator.First.ScrollIntoViewIfNeededAsync();
-                                }
-                                await _owner.ClickAndDetectNavigationAsync(ctx, locator.First, token);
-                            }
-                        }
-                    }
-
-                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
                 }
             }
-
             return FlowControl.Continue;
         }
     }

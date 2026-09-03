@@ -13,6 +13,7 @@ using SMAd.Models;
 using SMAd.PlaywrightHumanInput;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -106,7 +107,7 @@ namespace QTP.Plugins
                 FileName = "SMAd.dll",
             };
         }
-        public override string Title => "神马搜索";
+        public override string Title => "PC1688";
         private readonly TaskStatsAggregator _aggregator;
         private readonly AdeHelper _adeHelper;
         private ChromiumSessionManager _processManager;
@@ -147,6 +148,14 @@ namespace QTP.Plugins
                 ctx.Page!,
                 ctx.CdpSession!,
                 duration: duration,
+                cancellationToken: token);
+        }
+
+        public async Task ScrollToTopAsync(WorkerRunContext ctx, CancellationToken token = default)
+        {
+            await ctx.Human.ScrollToTopAsync(
+                ctx.Page!,
+                ctx.CdpSession!,
                 cancellationToken: token);
         }
 
@@ -225,76 +234,67 @@ namespace QTP.Plugins
         }
 
         /// <summary>
-        /// 处理页面元素
+        /// 启动可追踪的页面弹窗守护。任务使用 Worker token，并在浏览器释放前被等待。
         /// </summary>
-        /// <param name="page"></param>
-        /// <param name="cdpSession"></param>
-        /// <param name="token"></param>
-
         public void ProcessingPageElementTask(WorkerRunContext ctx, CancellationToken token)
         {
-            if (Interlocked.Exchange(ref ctx.PageElementGuardStarted, 1) == 1)
-                return;
+            lock (ctx.PageElementGuardSync)
+            {
+                if (ctx.PageElementGuardTask is { IsCompleted: false })
+                    return;
 
-            _ = Task.Run(async () =>
+                ctx.PageElementGuardTask = ProcessPageElementsAsync(ctx, token);
+            }
+        }
+
+        private async Task ProcessPageElementsAsync(WorkerRunContext ctx, CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    while (!token.IsCancellationRequested)
+                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+
+                    var page = ctx.Page;
+                    var cdpSession = ctx.CdpSession;
+                    if (page == null || cdpSession == null)
+                        continue;
+
+                    if (page.IsClosed)
+                        return;
+
+                    var closeBtn = page.Locator(AliAppDownloadModalCloseSelector);
+                    var closeBtnCount = await closeBtn.CountAsync();
+                    for (var index = 0; index < closeBtnCount; index++)
                     {
-                        try
-                        {
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
+                        token.ThrowIfCancellationRequested();
+                        if (page.IsClosed)
+                            return;
 
-                            var page = ctx.Page;
-                            var cdpSession = ctx.CdpSession;
-                            if (page == null || cdpSession == null)
-                                continue;
+                        var target = closeBtn.Nth(index);
+                        if (!await target.IsVisibleAsync())
+                            continue;
 
-                            if (page.IsClosed)
-                                break;
-
-                            var closeBtn = page.Locator(AliAppDownloadModalCloseSelector);
-                            var closeBtnCount = await closeBtn.CountAsync();
-                            if (closeBtnCount <= 0)
-                                continue;
-
-                            for (var index = 0; index < closeBtnCount; index++)
-                            {
-                                if (token.IsCancellationRequested || page.IsClosed)
-                                    break;
-
-                                var target = closeBtn.Nth(index);
-                                if (!await target.IsVisibleAsync())
-                                    continue;
-
-                                await CDPHelper.MouseClickAsync(page, cdpSession, target);
-                                LogWriteLine($"{this.Title}:ProcessingPageElementTask 已关闭1688弹框");
-                                await Task.Delay(CommonHelper.RandomRange(300, 600), token);
-                                break;
-                            }
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            break;
-                        }
-                        catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
-                        {
-                            LogWriteLine($"{this.Title}:ProcessingPageElementTask 页面已关闭: {ex.Message}");
-                            break;
-                        }
-                        catch (Exception ex)
-                        {
-                            LogWriteLine($"{this.Title}:ProcessingPageElementTask异常: {ex.Message}");
-                            await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                        }
+                        await ctx.Human.ClickAsync(page, cdpSession, target, token);
+                        LogWriteLine($"{this.Title}:ProcessPageElements 已关闭1688弹框");
+                        await Task.Delay(CommonHelper.RandomRange(300, 600), token);
+                        break;
                     }
                 }
-                finally
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
-                    Interlocked.Exchange(ref ctx.PageElementGuardStarted, 0);
+                    return;
                 }
-            }, token);
+                catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
+                {
+                    LogWriteLine($"{this.Title}:ProcessPageElements 页面已关闭: {ex.Message}");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    LogWriteLine($"{this.Title}:ProcessPageElements 异常: {ex.Message}");
+                }
+            }
         }
 
         /// <summary>
@@ -761,6 +761,7 @@ namespace QTP.Plugins
                 };
 
                 this.QTPExecuteStart(config.TaskId);
+                ctx.ExecutionStarted = true;
                 LogWriteLine($"{this.Title}:ExecuteWorker:Start");
 
                 ctx.Playwright = await _playwrightProvider.GetAsync();
@@ -901,6 +902,13 @@ namespace QTP.Plugins
             }
             finally
             {
+                if (ctx?.ExecutionStarted == true && !ctx.CompletionReported)
+                {
+                    CompleteFailure(
+                        ctx,
+                        ctx.LastFailureReason ?? "任务在产生有效 PV 前结束");
+                }
+
                 try
                 {
                     if (!linkedCts.IsCancellationRequested)
@@ -912,6 +920,22 @@ namespace QTP.Plugins
 
                 if (ctx != null)
                 {
+                    var guardTask = ctx.PageElementGuardTask;
+                    if (guardTask != null)
+                    {
+                        try
+                        {
+                            await guardTask;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                        catch (Exception ex)
+                        {
+                            LogWriteLine($"{this.Title}:等待页面弹窗守护退出失败: {ex.Message}");
+                        }
+                    }
+
                     try
                     {
                         if (ctx.CdpManager != null)
@@ -967,12 +991,14 @@ namespace QTP.Plugins
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
+                    ctx.LastFailureReason = "EnsureSinglePage 后页面为空或已关闭";
                     LogWriteLine($"{this.Title}:RunMainFlow: EnsureSinglePage后 Page为空或已关闭");
                     return false;
                 }
 
                 if (ctx.Browser == null || !ctx.Browser.IsConnected)
                 {
+                    ctx.LastFailureReason = "EnsureSinglePage 后浏览器为空或已断开";
                     LogWriteLine($"{this.Title}:RunMainFlow: EnsureSinglePage后 Browser为空或已断开");
                     return false;
                 }
@@ -981,8 +1007,9 @@ namespace QTP.Plugins
                 if (!entry.Success)
                 {
                     if (entry.EndTask)
-                        return CompleteSuccess(ctx);
+                        return CompleteFromOutcome(ctx);
 
+                    ctx.LastFailureReason = "入口准备失败";
                     continue;
                 }
 
@@ -990,21 +1017,23 @@ namespace QTP.Plugins
                 {
                     entry.FirstPageUrl = "https://xdssp.mediav.com/s?type=22&r=20&showid=MJ7NJn&url=https%3A%2F%2Fp4psearch.1688.com%2Fhamlet.html%3Fscene%3D6%26cosite%3D360PMP%26_force_strategy_%3D273%26trackid%3D1289273_4648165_35243290_%7Bcreativeid%7D%26qhclickid%3D%7Bsource_id%7D%26m_ac%3D1289273%26mvosr%3D%7Bsource_id%7D%26mvaid%3D1289273";
                 }
-
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
+                    ctx.LastFailureReason = "入口 URL 为空";
                     LogWriteLine($"{this.Title}:RunMainFlow: FirstPageUrl为空");
                     continue;
                 }
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
+                    ctx.LastFailureReason = "导航前页面为空或已关闭";
                     LogWriteLine($"{this.Title}:RunMainFlow: Navigate前 Page为空或已关闭");
                     continue;
                 }
 
                 if (ctx.Browser == null || !ctx.Browser.IsConnected)
                 {
+                    ctx.LastFailureReason = "导航前浏览器为空或已断开";
                     LogWriteLine($"{this.Title}:RunMainFlow: Navigate前 Browser为空或已断开");
                     continue;
                 }
@@ -1020,17 +1049,22 @@ namespace QTP.Plugins
                 }
                 catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
                 {
+                    ctx.LastFailureReason = ex.Message;
                     LogWriteLine($"{this.Title}:RunMainFlow: NavigateToEntryAsync 页面已关闭: {ex.Message}");
                     continue;
                 }
 
                 if (!gotoOk)
+                {
+                    ctx.LastFailureReason = $"入口导航失败: {entry.FirstPageUrl}";
                     continue;
+                }
 
 
                 if (ctx.Config.IsTest)
                 {
                     await RunTestBranchAsync(ctx, entry, token);
+                    RecordPvSuccess(ctx);
                     return CompleteSuccess(ctx);
                 }
 
@@ -1038,6 +1072,7 @@ namespace QTP.Plugins
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
+                    ctx.LastFailureReason = "导航后页面为空或已关闭";
                     LogWriteLine($"{this.Title}:RunMainFlow: 导航后 Page为空或已关闭");
                     continue;
                 }
@@ -1045,76 +1080,104 @@ namespace QTP.Plugins
                 if (ctx.Page.Url.Contains("punish?x5secdata"))
                 {
                     this.X5Secdata(ctx.Config.TaskId, 1, ctx.Page.Url);
-                    return CompleteSuccess(ctx);
+                    ctx.LastFailureReason = $"入口页面触发 x5secdata: {ctx.Page.Url}";
+                    return CompleteFromOutcome(ctx);
                 }
-
 
                 LogWriteLine($"{this.Title}:ExecuteWorker: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}");
 
                 var delayMs = CommonHelper.RandomRange(3000, 10000);
                 await Task.Delay(delayMs, token);
-                // 不要用 Math.Abs，避免配置时间比 delayMs 小时反而多等
                 var restMs = Math.Max(0, ctx.Config.PageLoadedDelayMs - delayMs);
                 if (restMs > 500)
                 {
                     await BrowseForAsync(ctx, duration: TimeSpan.FromMilliseconds(restMs), token);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000));
+                    await ScrollToTopAsync(ctx, token);
                 }
-
 
                 token.ThrowIfCancellationRequested();
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
+                    ctx.LastFailureReason = "广告检测前页面为空或已关闭";
                     LogWriteLine($"{this.Title}:RunMainFlow: 广告检测前 Page为空或已关闭");
                     continue;
                 }
 
                 if (ctx.Browser == null || !ctx.Browser.IsConnected)
                 {
+                    ctx.LastFailureReason = "广告检测前浏览器已断开";
                     LogWriteLine($"{this.Title}:RunMainFlow: 广告检测前 Browser已断开");
                     continue;
                 }
-
-                await BrowseForAsync(ctx, 5, 8, token);
-
-                await Task.Delay(CommonHelper.RandomRange(3500, 8500), token);
-
-
-
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
-
-                    await ctx.Human.ScrollByIntentAsync(
-                        ctx.Page!,
-                        ctx.CdpSession!,
-                        HumanActionIntent.Reading,
-                        token);
-
                     var clickFlow = await TryExecuteJumpClickAsync(ctx, token);
                     if (clickFlow == FlowControl.EndTask)
+                    {
+                        RecordPvSuccess(ctx);
                         return CompleteSuccess(ctx);
+                    }
                 }
 
                 var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
                 if (sleepFlow == FlowControl.EndTask)
-                    return CompleteSuccess(ctx);
+                    return CompleteFromOutcome(ctx);
 
                 if (sleepFlow == FlowControl.NextPv)
                 {
                     continue;
                 }
-                return CompleteSuccess(ctx);
+                return CompleteFromOutcome(ctx);
             }
 
-            return CompleteSuccess(ctx);
+            return CompleteFromOutcome(ctx);
         }
 
+        private bool CompleteFromOutcome(WorkerRunContext ctx)
+        {
+            return ctx.SuccessfulPvCount > 0
+                ? CompleteSuccess(ctx)
+                : CompleteFailure(ctx, ctx.LastFailureReason ?? "没有完成任何有效 PV");
+        }
+
+        private void RecordPvSuccess(WorkerRunContext ctx)
+        {
+            if (ctx.LastSuccessfulPvIndex == ctx.PvIndex)
+                return;
+
+            ctx.LastSuccessfulPvIndex = ctx.PvIndex;
+            ctx.SuccessfulPvCount++;
+            this.QTPExecuteSuccess(ctx.Config.TaskId);
+            LogWriteLine($"{this.Title}:ExecuteWorker:Success pv={ctx.PvIndex}");
+        }
 
         private bool CompleteSuccess(WorkerRunContext ctx)
         {
-            this.QTPExecuteComplete(ctx.Config.TaskId);
-            LogWriteLine($"{this.Title}:ExecuteWorker:Complete");
+            if (!ctx.CompletionReported)
+            {
+                ctx.CompletionReported = true;
+                this.QTPExecuteComplete(ctx.Config.TaskId);
+                LogWriteLine($"{this.Title}:ExecuteWorker:Complete successPv={ctx.SuccessfulPvCount}");
+            }
+
             return true;
+        }
+
+        private bool CompleteFailure(WorkerRunContext ctx, string reason)
+        {
+            if (!ctx.CompletionReported)
+            {
+                ctx.CompletionReported = true;
+                ctx.LastFailureReason = reason;
+                this.QTPExecuteFailure(ctx.Config.TaskId, data: reason);
+                this.QTPExecuteComplete(ctx.Config.TaskId);
+                LogWriteLine($"{this.Title}:ExecuteWorker:Failure reason={reason}");
+                LogWriteLine($"{this.Title}:ExecuteWorker:Complete successPv={ctx.SuccessfulPvCount}");
+            }
+
+            return false;
         }
 
         #endregion
@@ -1126,8 +1189,8 @@ namespace QTP.Plugins
 
             var os = taskArgs.SelectToken("os")!.Value<int>();
 
-            var sw1 = taskArgs.SelectToken("dev.sw")?.Value<int>() ?? 1080;
-            var sh1 = taskArgs.SelectToken("dev.sh")?.Value<int>() ?? 1920;
+            var sw1 = taskArgs.SelectToken("dev.sw")?.Value<int>() ?? 1920;
+            var sh1 = taskArgs.SelectToken("dev.sh")?.Value<int>() ?? 1080;
             float deviceScale = 1.0f;
             int sw = 0;
             int sh = 0;
@@ -1145,11 +1208,19 @@ namespace QTP.Plugins
                 deviceScale = profileResult.DeviceScaleFactor;
                 sw = profileResult.CssWidth;
                 sh = profileResult.CssHeight;
+                if (sw < 1920)
+                {
+                    sw = 1920;
+                    sh = 1080;
+                    deviceScale = 1.0f;
+                }
+
+
+
             }
 
 
 
-            var maxTouchPoints = os == 1 || os == 2 ? CommonHelper.RandomRange(4, 6) : 0;
 
 
 
@@ -1702,185 +1773,72 @@ namespace QTP.Plugins
         private async Task<FlowControl> TryExecuteJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var sponsoreds = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
-            var sponsoredCount = await sponsoreds.CountAsync();
-            if (sponsoredCount <= 0)
+            var items = ctx.Page!.Locator(".menu-column .layer-item");
+            int count = await items.CountAsync();
+            if (count <= 0)
             {
                 return FlowControl.Continue;
             }
-
             await Task.Delay(CommonHelper.RandomRange(3500, 8500), token);
-
-            var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
-
-            foreach (var sponsored in candidates)
+            var indexes = Enumerable.Range(0, count).ToList();
+            CommonHelper.Shuffle(indexes);
+            foreach (var index in indexes)
             {
                 token.ThrowIfCancellationRequested();
-
-                await ctx.Human.MoveToElementAsync(
-                    ctx.Page!,
-                    ctx.CdpSession!,
-                    sponsored,
-                    maxSwipes: 10,
-                    cancellationToken: token);
-
-
-                if (!await IsElementPartiallyVisibleAsync(sponsored))
+                var item = items.Nth(index);
+                try
                 {
-                    LogWriteLine($"{this.Title}:广告位滑动后仍不可见，跳过");
-                    continue;
+                    if (!await item.IsVisibleAsync())
+                        continue;
+                    if (!await item.IsEnabledAsync())
+                        continue;
+
+                    await ctx.Human.MoveToElementAsync(ctx.Page!, ctx.CdpSession!, item, 10, token);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000));
+                    var opened_items = ctx.Page!.Locator(".next-overlay-wrapper.opened li");
+                    int opened_count = await opened_items.CountAsync();
+                    if (opened_count > 0)
+                    {
+                        var opened_indexes = Enumerable.Range(0, opened_count).ToList();
+                        CommonHelper.Shuffle(opened_indexes);
+                        foreach (var opened_index in opened_indexes)
+                        {
+                            var opened_item = opened_items.Nth(opened_index);
+                            if (!await opened_item.IsVisibleAsync())
+                                continue;
+                            if (!await opened_item.IsEnabledAsync())
+                                continue;
+
+                            await ctx.Human.MoveToElementAsync(ctx.Page!, ctx.CdpSession!, opened_item, 10, token);
+                            await Task.Delay(CommonHelper.RandomRange(1000, 3000));
+
+                            var text = await opened_item.InnerTextAsync();
+                            var box = await opened_item.BoundingBoxAsync();
+                            if (box != null)
+                                LogWriteLine($"触发:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
+                            else
+                                continue;
+
+                            var opened_clicked = await ClickAndDetectNavigationAsync(ctx, opened_item, token);
+                            if (opened_clicked.Navigated)
+                            {
+                                this.QTPExecuteClickthrough(ctx.Config.TaskId);
+                                LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
+                                ctx.PageTriggerClick = true;
+                                await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
+                                return await HandleLandingPageAsync(ctx, token);
+                            }
+
+                        }
+
+                    }
                 }
-
-                await Task.Delay(CommonHelper.RandomRange(500, 1500), token);
-
-                var target = await PickSponsoredTargetAsync(sponsored, token);
-                if (target == null)
-                    continue;
-
-                var dataUrl = await target.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
-                    continue;
-
-                var text = await target.InnerTextAsync();
-                var box = await target.BoundingBoxAsync();
-
-                if (box != null)
-                    LogWriteLine($"触发广告位:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
-                else
-                    LogWriteLine($"触发广告位:{text}");
-
-                var click = await ClickAndDetectNavigationAsync(ctx, target, token);
-                if (!click.Attempted)
-                    continue;
-
-                if (ctx.TriggerDownloadSign > 0)
+                catch (PlaywrightException)
                 {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
-                    return FlowControl.EndTask;
-                }
-
-                if (click.Navigated)
-                {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
-                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
-                    return await HandleLandingPageAsync(ctx, token);
+                    // 当前节点点击失败，换下一个
                 }
             }
             return FlowControl.Continue;
-        }
-
-
-
-
-        /// <summary>
-        /// 获取候选的广告
-        /// </summary>
-        /// <param name="ctx"></param>
-        /// <param name="sponsoreds"></param>
-        /// <param name="count"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        private async Task<List<ILocator>> BuildSponsoredCandidatesAsync(WorkerRunContext ctx, ILocator sponsoreds, int count, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            var scored = new List<(int Score, ILocator Locator)>();
-
-            foreach (var i in Enumerable.Range(0, count))
-            {
-                token.ThrowIfCancellationRequested();
-
-                var sponsored = sponsoreds.Nth(i);
-                var alis = sponsored.Locator("a.c-title,a.ad-desc,a.img-item,a[data-url^='http']");
-                var alisCount = await alis.CountAsync();
-
-                if (alisCount == 0)
-                {
-                    scored.Add((1000 + i, sponsored));
-                    continue;
-                }
-
-                var dataUrl = await alis.First.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
-                {
-                    scored.Add((1000 + i, sponsored));
-                    continue;
-                }
-
-                int score = 0;
-                if (dataUrl.Contains("baidu.com")) score = 50;
-                else if (dataUrl.Contains("jd.com")) score = 60;
-                else if (dataUrl.Contains("qq.com")) score = 70;
-                else if (dataUrl.Contains("pinduoduo.com")) score = 80;
-                else if (dataUrl.Contains("1688.com")) score = 800;
-                else if (dataUrl.Contains("taobao.com")) score = 900;
-
-
-
-
-
-                scored.Add((score * 1000 + i, sponsored));
-            }
-
-            return scored.OrderBy(x => x.Score).Select(x => x.Locator).ToList();
-        }
-
-        private async Task<ILocator?> PickSponsoredTargetAsync(ILocator sponsored, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            var alis = sponsored.Locator("a.c-title,a[data-url^='http']");
-            var visible = await GetVisibleElementsAsync(alis);
-            if (visible.Count == 0)
-                return null;
-
-            var urls = new List<(ILocator Locator, string Url)>();
-            foreach (var el in visible)
-            {
-                token.ThrowIfCancellationRequested();
-
-                var dataUrl = await el.GetAttributeAsync("data-url");
-                if (!string.IsNullOrWhiteSpace(dataUrl))
-                    urls.Add((el, dataUrl));
-            }
-
-            if (urls.Count == 0)
-                return null;
-
-            var exts = new[] { ".apk", ".zip", ".exe", ".7z", ".rar" };
-            var filtered = urls
-                .Where(x => !exts.Any(ext => x.Url.Contains(ext, StringComparison.OrdinalIgnoreCase)))
-                .OrderByDescending(x => x.Url.Length)
-                .ToList();
-
-            if (filtered.Count > 0)
-            {
-                var groups = filtered
-                       .GroupBy(x => new Uri(x.Url).Host, StringComparer.OrdinalIgnoreCase)
-                       .OrderByDescending(g => g.Count())
-                       .ToList();
-
-                foreach (var g in groups)
-                {
-                    var list = g.ToList();
-
-                    var uMob = list
-                        .Where(x => x.Url.Contains(".u-mob.", StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    if (uMob.Count > 0)
-                        return uMob[Random.Shared.Next(uMob.Count)].Locator;
-
-                    if (list.Count > 0)
-                        return list[Random.Shared.Next(list.Count)].Locator;
-                }
-            }
-
-            return urls.OrderByDescending(x => x.Url.Length).First().Locator;
         }
 
         #endregion
@@ -1967,19 +1925,16 @@ namespace QTP.Plugins
         {
             token.ThrowIfCancellationRequested();
 
-
             if (ctx.Page!.Url.Contains("1688.com") && ctx.Page.Url.Contains("_tmd_") && ctx.Page!.Url.Contains("punish?x5secdata"))
             {
                 return FlowControl.EndTask;
             }
 
-
             if (ctx.JumpClick && ctx.PageTriggerClick)
             {
-                await TryHandleRfq1688Async(ctx, token);
+                //await TryHandleRfq1688Async(ctx, token);
             }
-            this.QTPExecuteSuccess(ctx.Config.TaskId);
-            LogWriteLine($"{this.Title}:ExecuteWorker:Success");
+            RecordPvSuccess(ctx);
 
             if (ctx.Config.TotalPV > 1)
             {
@@ -2018,7 +1973,7 @@ namespace QTP.Plugins
 
             if (ctx.JumpClick && ctx.PageTriggerClick)
             {
-                await TryHandleAllAsync(ctx, token);
+                //await TryHandleAllAsync(ctx, token);
             }
 
             LogWriteLine("延时停留");
@@ -2027,7 +1982,6 @@ namespace QTP.Plugins
             {
                 token.ThrowIfCancellationRequested();
                 loop++;
-
                 try
                 {
                     LogWriteLine("滑动操作");
@@ -2608,6 +2562,81 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+            var items = ctx.Page!.Locator(".menu-column .layer-item");
+            int count = await items.CountAsync();
+            if (count > 0)
+            {
+                var indexes = Enumerable.Range(0, count).ToList();
+                CommonHelper.Shuffle(indexes);
+                foreach (var index in indexes)
+                {
+                    var item = items.Nth(index);
+                    try
+                    {
+                        if (!await item.IsVisibleAsync())
+                            continue;
+                        if (!await item.IsEnabledAsync())
+                            continue;
+
+                        await ctx.Human.MoveToElementAsync(ctx.Page!, ctx.CdpSession!, item, 10, token);
+                        await Task.Delay(CommonHelper.RandomRange(2000, 3000));
+                        var opened_items = ctx.Page!.Locator(".next-overlay-wrapper.opened li");
+                        int opened_count = await opened_items.CountAsync();
+                        if (opened_count > 0)
+                        {
+                            var opened_indexes = Enumerable.Range(0, opened_count).ToList();
+                            CommonHelper.Shuffle(opened_indexes);
+                            foreach (var opened_index in opened_indexes)
+                            {
+                                var opened_item = opened_items.Nth(opened_index);
+                                if (!await opened_item.IsVisibleAsync())
+                                    continue;
+                                if (!await opened_item.IsEnabledAsync())
+                                    continue;
+
+                                await ctx.Human.MoveToElementAsync(ctx.Page!, ctx.CdpSession!, opened_item, 10, token);
+                                await Task.Delay(CommonHelper.RandomRange(1000, 3000));
+                                var opened_clicked = await ClickAndDetectNavigationAsync(ctx, opened_item, token);
+                                if (opened_clicked.Navigated)
+                                {
+                                    var url = ctx.Page.Url;
+                                    await ctx.Human.BrowseForAsync(ctx.Page!, ctx.CdpSession!, TimeSpan.FromSeconds(CommonHelper.RandomRange(5, 10)), token);
+                                    var offer_items = ctx.Page!.Locator("#offerList .offer_item");
+                                    int offer_count = await offer_items.CountAsync();
+                                    if (offer_count > 0)
+                                    {
+                                        var offer_indexes = Enumerable.Range(0, offer_count).ToList();
+                                        CommonHelper.Shuffle(offer_indexes);
+                                        foreach (var offer_index in offer_indexes)
+                                        {
+                                            var offer_item = offer_items.Nth(offer_index);
+                                            if (!await offer_item.IsVisibleAsync())
+                                                continue;
+                                            if (!await offer_item.IsEnabledAsync())
+                                                continue;
+                                            await ctx.Human.MoveToElementAsync(ctx.Page!, ctx.CdpSession!, offer_item, 10, token);
+                                            await Task.Delay(CommonHelper.RandomRange(2000, 3000));
+                                            var offer_clicked = await ClickAndDetectNavigationAsync(ctx, offer_item, token);
+                                            if (offer_clicked.Navigated)
+                                            {
+                                                await ctx.Human.BrowseForAsync(ctx.Page!, ctx.CdpSession!, TimeSpan.FromSeconds(CommonHelper.RandomRange(5, 10)), token);
+                                            }
+
+                                        }
+                                    }
+                                }
+
+                            }
+
+                        }
+                    }
+                    catch (PlaywrightException)
+                    {
+                        // 当前节点点击失败，换下一个
+                    }
+                }
+            }
+
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 
         }
@@ -2654,7 +2683,7 @@ namespace QTP.Plugins
                     return ClickResult.SuccessNewPage();
                 }
 
-                if (!ctx.Page.Url.StartsWith(ctx.CurrentPageUrl))
+                if (!string.Equals(ctx.Page.Url, ctx.CurrentPageUrl, StringComparison.Ordinal))
                     return ClickResult.SuccessSamePage();
 
                 return ClickResult.NoNavigation();
@@ -2698,7 +2727,7 @@ namespace QTP.Plugins
                     return ClickResult.SuccessNewPage();
                 }
 
-                if (!ctx.Page.Url.StartsWith(ctx.CurrentPageUrl))
+                if (!string.Equals(ctx.Page.Url, ctx.CurrentPageUrl, StringComparison.Ordinal))
                     return ClickResult.SuccessSamePage();
 
                 return ClickResult.NoNavigation();

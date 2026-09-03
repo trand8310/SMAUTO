@@ -44,6 +44,29 @@ namespace SMAd.HumanInput
             await _touch.SwipeByIntentAsync(page, cdp, MapIntent(intent), cancellationToken);
         }
 
+        public async Task ScrollToTopAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default)
+        {
+            const int maxAttempts = 24;
+            for (int attempt = 0; attempt < maxAttempts && !page.IsClosed; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // 手指向下滑动，页面内容向下移动，也就是逐步返回页头。
+                var trace = await _touch.SwipeByIntentAsync(
+                    page,
+                    cdp,
+                    SwipeIntent.BackReview,
+                    cancellationToken);
+                if (trace == null)
+                    break;
+
+                await Task.Delay(Random.Shared.Next(120, 360), cancellationToken);
+            }
+        }
+
         public async Task MoveToElementAsync(
             IPage page,
             ICDPSession cdp,

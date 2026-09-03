@@ -22,23 +22,27 @@ namespace QTP.Common
 
         // 0 = 未关闭，1 = 关闭中/已关闭
         public int CloseStarted;
+        public TaskCompletionSource<bool> CloseCompletion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     public sealed class ChromiumSessionManager : IAsyncDisposable
     {
         private readonly ConcurrentDictionary<string, ChromiumSession> _sessions = new();
 
-        // 启动并发建议先保守一点，避免页面文件和系统资源被瞬间打爆
-        private readonly SemaphoreSlim _launchLimiter = new(4, 4);
+        private const int LaunchConcurrency = 4;
 
-        private readonly Channel<ChromiumSession> _cleanupQueue = Channel.CreateUnbounded<ChromiumSession>(
+        // 启动并发建议先保守一点，避免页面文件和系统资源被瞬间打爆
+        private readonly SemaphoreSlim _launchLimiter = new(LaunchConcurrency, LaunchConcurrency);
+
+        private readonly Channel<string> _cleanupQueue = Channel.CreateUnbounded<string>(
             new UnboundedChannelOptions
             {
                 SingleReader = true,
                 SingleWriter = false
             });
 
-        private readonly CancellationTokenSource _cts = new();
+        private readonly CancellationTokenSource _expireCts = new();
         private readonly Task _cleanupLoopTask;
         private readonly Task _expireLoopTask;
 
@@ -46,8 +50,8 @@ namespace QTP.Common
 
         public ChromiumSessionManager()
         {
-            _cleanupLoopTask = CleanupLoopAsync(_cts.Token);
-            _expireLoopTask = ExpireScanLoopAsync(_cts.Token);
+            _cleanupLoopTask = CleanupLoopAsync();
+            _expireLoopTask = ExpireScanLoopAsync(_expireCts.Token);
         }
 
         public int Count => _sessions.Count;
@@ -134,6 +138,9 @@ namespace QTP.Common
                 catch (Win32Exception ex) when (ex.NativeErrorCode == 1455)
                 {
                     SafeRestartHelper.RequestSystemRestart("连续 1455，系统资源不足");
+                    throw new InvalidOperationException(
+                        $"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}",
+                        ex);
 
                     //if (ShouldRestartFor1455())
                     //{
@@ -214,7 +221,7 @@ namespace QTP.Common
 
                 if (started)
                 {
-                    _ = CleanupUserDirLaterAsync(userDataDir);
+                    await QueueCleanupAsync(userDataDir).ConfigureAwait(false);
                 }
 
                 throw;
@@ -238,7 +245,10 @@ namespace QTP.Common
                 return;
 
             if (Interlocked.Exchange(ref session.CloseStarted, 1) == 1)
+            {
+                await session.CloseCompletion.Task.ConfigureAwait(false);
                 return;
+            }
 
             try
             {
@@ -247,6 +257,7 @@ namespace QTP.Common
             finally
             {
                 _sessions.TryRemove(uniqueId, out _);
+                session.CloseCompletion.TrySetResult(true);
             }
         }
 
@@ -319,12 +330,11 @@ namespace QTP.Common
 
                 try
                 {
-                    using var writeCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                    await _cleanupQueue.Writer.WriteAsync(session, writeCts.Token).ConfigureAwait(false);
+                    await QueueCleanupAsync(session.UserDir).ConfigureAwait(false);
                 }
                 catch
                 {
-                    _ = CleanupUserDirLaterAsync(session.UserDir);
+                    await TryDeleteDirectoryWithRetryAsync(session.UserDir).ConfigureAwait(false);
                 }
             }
         }
@@ -503,32 +513,27 @@ namespace QTP.Common
             }
         }
 
-        private async Task CleanupLoopAsync(CancellationToken token)
+        private async Task CleanupLoopAsync()
         {
             try
             {
-                await foreach (var session in _cleanupQueue.Reader.ReadAllAsync(token).ConfigureAwait(false))
+                await foreach (var userDir in _cleanupQueue.Reader.ReadAllAsync().ConfigureAwait(false))
                 {
-                    await TryDeleteDirectoryWithRetryAsync(session.UserDir).ConfigureAwait(false);
+                    await TryDeleteDirectoryWithRetryAsync(userDir).ConfigureAwait(false);
                 }
-            }
-            catch (OperationCanceledException)
-            {
             }
             catch
             {
             }
         }
 
-        private async Task CleanupUserDirLaterAsync(string userDir)
+        private async Task QueueCleanupAsync(string userDir)
         {
-            try
-            {
+            if (string.IsNullOrWhiteSpace(userDir))
+                return;
+
+            if (!_cleanupQueue.Writer.TryWrite(userDir))
                 await TryDeleteDirectoryWithRetryAsync(userDir).ConfigureAwait(false);
-            }
-            catch
-            {
-            }
         }
 
         /// <summary>
@@ -647,25 +652,7 @@ namespace QTP.Common
 
             try
             {
-                _cts.Cancel();
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                await CloseAllAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-            }
-
-            _cleanupQueue.Writer.TryComplete();
-
-            try
-            {
-                await _cleanupLoopTask.ConfigureAwait(false);
+                _expireCts.Cancel();
             }
             catch
             {
@@ -679,8 +666,32 @@ namespace QTP.Common
             {
             }
 
+            var acquiredLaunchSlots = 0;
+            try
+            {
+                // 等所有启动操作退出临界区，防止 CloseAll 快照后又注册新会话。
+                for (; acquiredLaunchSlots < LaunchConcurrency; acquiredLaunchSlots++)
+                    await _launchLimiter.WaitAsync().ConfigureAwait(false);
+
+                await CloseAllAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+
+            _cleanupQueue.Writer.TryComplete();
+
+            try
+            {
+                // 清理循环不提前取消，保证 CloseAll 写入的目录全部被消费。
+                await _cleanupLoopTask.ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+
             _launchLimiter.Dispose();
-            _cts.Dispose();
+            _expireCts.Dispose();
         }
     }
 }

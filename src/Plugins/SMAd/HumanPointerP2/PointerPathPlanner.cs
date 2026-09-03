@@ -6,7 +6,9 @@ namespace SMAd.HumanPointerP2
             HumanPointerSession session,
             PointerPosition start,
             PointerPosition end,
-            double targetWidth)
+            double targetWidth,
+            double viewportWidth = double.PositiveInfinity,
+            double viewportHeight = double.PositiveInfinity)
         {
             var random = session.Random;
             var profile = session.Profile;
@@ -29,25 +31,33 @@ namespace SMAd.HumanPointerP2
             // 使用 Fitts 定律估计移动时间，再叠加个人速度偏差。
             double effectiveWidth = Math.Max(6, targetWidth * profile.PrecisionBias);
             double indexOfDifficulty = Math.Log2((distance / effectiveWidth) + 1.0);
-            double duration = (135 + (105 * indexOfDifficulty)) / profile.SpeedBias;
-            duration *= Next(random, 0.88, 1.14);
-            duration = Math.Clamp(duration, 150, 1150);
+            double duration = (92 + (118 * indexOfDifficulty)) / profile.SpeedBias;
+            duration *= Math.Exp(Normal(random) * 0.075);
+            if (distance < 18)
+                duration *= 0.78;
+            duration = Math.Clamp(duration, 95, 1050);
 
             var points = new List<PointerTracePoint>();
-            if (distance > 90 && random.NextDouble() < profile.OvershootChance)
+            double overshootProbability = profile.OvershootChance *
+                Math.Clamp((distance - effectiveWidth) / 180.0, 0.20, 1.0);
+            if (distance > 70 && random.NextDouble() < overshootProbability)
             {
-                double overshootDistance = Math.Clamp(distance * Next(random, 0.015, 0.045), 3, 18);
+                double overshootDistance = Math.Clamp(distance * Next(random, 0.012, 0.038), 2.5, 16);
                 var direction = Normalize(new PointerPosition(end.X - start.X, end.Y - start.Y));
+                var perpendicular = new PointerPosition(-direction.Y, direction.X);
+                double sideCorrection = Normal(random) * Math.Min(3.5, overshootDistance * 0.22);
                 var overshoot = new PointerPosition(
-                    end.X + (direction.X * overshootDistance),
-                    end.Y + (direction.Y * overshootDistance));
+                    end.X + (direction.X * overshootDistance) + (perpendicular.X * sideCorrection),
+                    end.Y + (direction.Y * overshootDistance) + (perpendicular.Y * sideCorrection));
+                overshoot = ClampToViewport(overshoot, viewportWidth, viewportHeight);
 
-                AddSegment(session, points, start, overshoot, duration * 0.82, includeStart: false);
-                AddSegment(session, points, overshoot, end, duration * 0.18, includeStart: false);
+                AddSegment(session, points, start, overshoot, duration * Next(random, 0.78, 0.86), includeStart: false, viewportWidth, viewportHeight);
+                double usedDuration = points.Sum(point => point.DelayMs);
+                AddSegment(session, points, overshoot, end, Math.Max(35, duration - usedDuration), includeStart: false, viewportWidth, viewportHeight);
             }
             else
             {
-                AddSegment(session, points, start, end, duration, includeStart: false);
+                AddSegment(session, points, start, end, duration, includeStart: false, viewportWidth, viewportHeight);
             }
 
             if (points.Count == 0 || points[^1].X != end.X || points[^1].Y != end.Y)
@@ -76,12 +86,14 @@ namespace SMAd.HumanPointerP2
             PointerPosition start,
             PointerPosition end,
             double durationMs,
-            bool includeStart)
+            bool includeStart,
+            double viewportWidth,
+            double viewportHeight)
         {
             var random = session.Random;
             var profile = session.Profile;
             double distance = Distance(start, end);
-            int samplingHz = random.Next(72, 121);
+            int samplingHz = (int)Math.Round(84 + (((random.NextDouble() + random.NextDouble()) * 0.5) * 62));
             int steps = Math.Clamp((int)Math.Ceiling(durationMs / (1000.0 / samplingHz)), 5, 96);
             double baseDelay = durationMs / steps;
 
@@ -90,18 +102,24 @@ namespace SMAd.HumanPointerP2
             double length = Math.Max(1, Math.Sqrt((dx * dx) + (dy * dy)));
             double px = -dy / length;
             double py = dx / length;
-            double bend = Math.Clamp(distance * Next(random, 0.035, 0.12), 2, 70);
+            double bend = Math.Clamp(Math.Sqrt(distance) * Next(random, 0.75, 2.15), 1.5, 42);
             bend *= profile.CurveBias * (random.NextDouble() < 0.5 ? -1 : 1);
 
-            var c1 = new PointerPosition(
-                start.X + (dx * Next(random, 0.20, 0.36)) + (px * bend),
-                start.Y + (dy * Next(random, 0.20, 0.36)) + (py * bend));
-            var c2 = new PointerPosition(
-                start.X + (dx * Next(random, 0.64, 0.82)) - (px * bend * Next(random, 0.20, 0.65)),
-                start.Y + (dy * Next(random, 0.64, 0.82)) - (py * bend * Next(random, 0.20, 0.65)));
+            double c1Progress = Next(random, 0.20, 0.36);
+            double c2Progress = Next(random, 0.64, 0.82);
+            double c2BendScale = Next(random, 0.18, 0.55);
+            var c1 = ClampToViewport(new PointerPosition(
+                start.X + (dx * c1Progress) + (px * bend),
+                start.Y + (dy * c1Progress) + (py * bend)), viewportWidth, viewportHeight);
+            var c2 = ClampToViewport(new PointerPosition(
+                start.X + (dx * c2Progress) + (px * bend * c2BendScale),
+                start.Y + (dy * c2Progress) + (py * bend * c2BendScale)), viewportWidth, viewportHeight);
 
             double noiseX = 0;
             double noiseY = 0;
+            double timingNoise = 0;
+            double noiseScale = Math.Clamp(Math.Sqrt(distance) / 17.0, 0.20, 1.35) *
+                profile.TremorBias / profile.PrecisionBias;
             int first = includeStart ? 0 : 1;
             double elapsed = output.Count == 0 ? 0 : output[^1].TimeMs;
 
@@ -112,16 +130,17 @@ namespace SMAd.HumanPointerP2
                 var point = CubicBezier(start, c1, c2, end, t);
 
                 // 相关噪声只作用在轨迹中段，确保起点和终点准确。
-                noiseX = (noiseX * 0.72) + (Normal(random) * 0.32 * profile.TremorBias);
-                noiseY = (noiseY * 0.72) + (Normal(random) * 0.32 * profile.TremorBias);
+                noiseX = (noiseX * 0.76) + (Normal(random) * 0.18 * noiseScale);
+                noiseY = (noiseY * 0.76) + (Normal(random) * 0.18 * noiseScale);
                 double envelope = Math.Sin(Math.PI * linearT);
-                point = new PointerPosition(
+                point = ClampToViewport(new PointerPosition(
                     point.X + (noiseX * envelope),
-                    point.Y + (noiseY * envelope));
+                    point.Y + (noiseY * envelope)), viewportWidth, viewportHeight);
 
+                timingNoise = (timingNoise * 0.66) + (Normal(random) * 0.055);
                 int delay = i == first && includeStart
                     ? 0
-                    : Math.Max(1, (int)Math.Round(baseDelay * Next(random, 0.84, 1.18)));
+                    : Math.Max(1, (int)Math.Round(baseDelay * Math.Exp(timingNoise)));
                 elapsed += delay;
 
                 if (i == steps)
@@ -170,6 +189,20 @@ namespace SMAd.HumanPointerP2
             return length < 0.0001
                 ? new PointerPosition(1, 0)
                 : new PointerPosition(value.X / length, value.Y / length);
+        }
+
+        private static PointerPosition ClampToViewport(
+            PointerPosition point,
+            double viewportWidth,
+            double viewportHeight)
+        {
+            double x = double.IsFinite(viewportWidth)
+                ? Math.Clamp(point.X, 1, Math.Max(1, viewportWidth - 1))
+                : point.X;
+            double y = double.IsFinite(viewportHeight)
+                ? Math.Clamp(point.Y, 1, Math.Max(1, viewportHeight - 1))
+                : point.Y;
+            return new PointerPosition(x, y);
         }
 
         private static double Normal(Random random)

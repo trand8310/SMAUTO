@@ -26,6 +26,14 @@ namespace SMAd.HumanInput
             HumanActionIntent intent,
             CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// 使用当前设备对应的人类输入方式，逐步返回页面顶部。
+        /// </summary>
+        Task ScrollToTopAsync(
+            IPage page,
+            ICDPSession cdp,
+            CancellationToken cancellationToken = default);
+
         Task MoveToElementAsync(
             IPage page,
             ICDPSession cdp,

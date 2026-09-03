@@ -12,13 +12,14 @@ namespace SMAd.HumanInput
             string? model,
             Action<string>? log = null)
         {
+            IHumanInputOperator input;
             if (os is 1 or 2)
             {
                 var user = HumanUserProfile.CreateRandom(seed, HumanHandedness.Right);
                 var device = TouchDeviceProfiles.ResolveForDesktopCdp(brand, model);
                 var session = new HumanTouchSession(user, device);
 
-                return new TouchInputAdapter(new HumanTouchOperator(
+                input = new TouchInputAdapter(new HumanTouchOperator(
                     new HumanTouchOperatorOptions
                     {
                         Session = session,
@@ -27,12 +28,16 @@ namespace SMAd.HumanInput
                         Log = log
                     }));
             }
-
-            return new HumanPointerOperator(new HumanPointerOperatorOptions
+            else
             {
-                Session = new HumanPointerSession(PointerUserProfile.Create(seed)),
-                Log = log
-            });
+                input = new HumanPointerOperator(new HumanPointerOperatorOptions
+                {
+                    Session = new HumanPointerSession(PointerUserProfile.Create(seed)),
+                    Log = log
+                });
+            }
+
+            return new SerializedHumanInputOperator(input);
         }
     }
 }

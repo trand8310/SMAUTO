@@ -12,7 +12,10 @@ PC 输入实现使用 Playwright `IPage.Mouse` 派发事件，并由本模块生
 - 元素可见区域内的非固定点击点
 - Hover、按下、抬起和点击后停顿
 - Reading、Preview、FastScan、MicroAdjust、BackReview 滚轮意图
-- 点击前 `elementFromPoint` 命中检查
+- 主视口与嵌套/跨域 iframe 坐标转换
+- 鼠标下方滚动容器解析和滚动后实际位移验证
+- 点击前 frame-aware `elementFromPoint` 命中检查
+- 每个 Worker 的输入串行协调，避免主流程与弹窗守护交叉派发事件
 
 ## 在 SMAd 中的选择规则
 

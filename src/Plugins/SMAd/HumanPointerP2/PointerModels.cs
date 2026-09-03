@@ -40,21 +40,27 @@ namespace SMAd.HumanPointerP2
         public static PointerUserProfile Create(int seed)
         {
             var random = new Random(seed);
+            double speedBias = Around(random, 1.0, 0.085, 0.84, 1.18);
             return new PointerUserProfile
             {
                 Seed = seed,
-                SpeedBias = Next(random, 0.86, 1.18),
-                PrecisionBias = Next(random, 0.82, 1.20),
-                CurveBias = Next(random, 0.72, 1.30),
-                TremorBias = Next(random, 0.70, 1.25),
-                ReactionBias = Next(random, 0.82, 1.24),
-                WheelBias = Next(random, 0.84, 1.18),
-                OvershootChance = Next(random, 0.06, 0.19)
+                SpeedBias = speedBias,
+                PrecisionBias = Around(random, 1.0, 0.09, 0.82, 1.20),
+                CurveBias = Around(random, 1.0, 0.14, 0.72, 1.28),
+                TremorBias = Around(random, 1.0, 0.12, 0.72, 1.25),
+                ReactionBias = Math.Clamp((2.0 - speedBias) + Around(random, 0, 0.055, -0.11, 0.11), 0.82, 1.22),
+                WheelBias = Around(random, 1.0, 0.09, 0.84, 1.18),
+                OvershootChance = Around(random, 0.10, 0.035, 0.045, 0.18)
             };
         }
 
-        private static double Next(Random random, double min, double max) =>
-            min + (random.NextDouble() * (max - min));
+        private static double Around(Random random, double mean, double deviation, double min, double max)
+        {
+            double u1 = Math.Max(double.Epsilon, random.NextDouble());
+            double u2 = random.NextDouble();
+            double normal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+            return Math.Clamp(mean + (normal * deviation), min, max);
+        }
     }
 
     public sealed class HumanPointerSession

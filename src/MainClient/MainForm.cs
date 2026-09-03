@@ -983,7 +983,7 @@ namespace MainClient
             foreach (System.IO.FileInfo file in dir.GetFiles())
                 file.Delete();
             Process.Start(new ProcessStartInfo { FileName = Environment.GetFolderPath(Environment.SpecialFolder.Startup), UseShellExecute = true });
-            AppHelper.CreateShortcut("神马广告");
+            AppHelper.CreateShortcut("PC1688");
         }
 
 
@@ -1680,7 +1680,6 @@ namespace MainClient
 
             EventHandler<PluginLogEventArgs>? logHandler = null;
             EventHandler<TaskStateChangedEventArgs>? stateChangedHandler = null;
-            EventHandler<TaskAdWordEventArgs>? adWordHandler = null;
 
             try
             {
@@ -1689,14 +1688,9 @@ namespace MainClient
                 {
                     _aggregator.Enqueue(new TaskEvent(e.Id, e.Type, e.Count, e.Data));
                 };
-                adWordHandler = (s, e) =>
-                {
-                    _aggregator.EnqueueAdWord(e.Type, e.Word);
-                };
 
                 pluginService.OnLogEventHandler += logHandler;
                 pluginService.OnStateChangedEventHandler += stateChangedHandler;
-                pluginService.OnTaskAdWordEventHandler += adWordHandler;
 
                 LogWriteLine(
                     $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
@@ -1727,7 +1721,6 @@ namespace MainClient
             {
                 if (logHandler != null) pluginService.OnLogEventHandler -= logHandler;
                 if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
-                if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
 
                 try
                 {
