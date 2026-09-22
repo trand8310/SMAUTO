@@ -1384,13 +1384,6 @@ namespace QTP.Plugins
             catch (TimeoutException ex)
             {
                 LogWriteLine($"加载超时:{ex.Message}");
-                if (ctx.Page!.Url.Contains("sm.cn"))
-                {
-                    var title = await ctx.Page!.TitleAsync();
-                    if (!title.StartsWith("网页搜索") && !title.StartsWith("搜索"))
-                        return false;
-                }
-
             }
 
             ctx.CurrentPageUrl = ctx.Page!.Url;
@@ -1437,85 +1430,42 @@ namespace QTP.Plugins
         private async Task<FlowControl> TryExecuteJumpClickAsync(WorkerRunContext ctx, string firstPageUrl, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            if (firstPageUrl.StartsWith("https://visa-h5.offerpluscn.com/travel?"))
+            //https://visa-h5.offerpluscn.com/travel?h0=__OS__&h1=__IMEI__&h2=__ANDROIDID__&h5=__MAC__&h7=__IDFA__&h8=__OPENUDID__&h49=__OAID__&hat_id=NDgyMTgmNjIxMzU2MSZ8XQ&_inst=saas
+
+            var acceptButton = ctx.Page!.GetByRole(AriaRole.Button, new()
             {
-                var acceptButton = ctx.Page!.GetByRole(AriaRole.Button, new()
-                {
-                    Name = "接受"
-                });
-                if (await CDPHelper.WaitForAsync(acceptButton, 5000))
-                {
-                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptButton);
-                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                    var sectionTitle = ctx.Page!
-                    .Locator(".section-title-row")
+                Name = "接受"
+            });
+            if (!await CDPHelper.WaitForAsync(acceptButton, 5000))
+            {
+                return FlowControl.EndTask;
+            }
+            await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptButton);
+            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+
+            var sectionTitle = ctx.Page!
+            .Locator(".section-title-row")
+            .Filter(new()
+            {
+                Has = ctx.Page!
+                    .Locator(".section-title-main")
                     .Filter(new()
                     {
-                        Has = ctx.Page!
-                            .Locator(".section-title-main")
-                            .Filter(new()
-                            {
-                                HasTextRegex = new Regex(@"^机票$")
-                            })
-                    });
-
-                    var firstCard = sectionTitle
-                        .Locator("xpath=following-sibling::*[1]")
-                        .Locator(".card-half-item")
-                        .First;
-
-                    var resultClicked = await ClickAndDetectNavigationAsync(ctx, firstCard, token);
-                    if (resultClicked.Navigated)
-                    {
-                        await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
-                        // 第二步：立即预订
-                        var reserveButton = ctx.Page!.GetByText(new Regex(@"^立即预[定订]$"));
-                        if (await CDPHelper.WaitForAsync(reserveButton, 5000))
-                        {
-                            await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, reserveButton);
-                            await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
-                            // 第二步：等待二次确认弹窗
-                            var continueButton = ctx.Page!.GetByText("我已知悉，继续前往", new()
-                            {
-                                Exact = true
-                            });
-                            if (await CDPHelper.WaitForAsync(continueButton, 5000))
-                            {
-                                var result = await ClickAndDetectNavigationAsync(ctx, continueButton, token);
-                                if (result.Navigated)
-                                {
-                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                    var acceptCookies = ctx.Page!.GetByRole(
-                                        AriaRole.Button,
-                                        new() { Name = "Accept All Cookies" }
-                                    );
-                                    if (await CDPHelper.WaitForAsync(acceptCookies, 10000))
-                                    {
-                                        await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptCookies);
-                                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                                    }
-                                }
-                            }
-                        }
-
-
-
-                    }
-                }
-            }
-            else
+                        HasTextRegex = new Regex(@"^机票$")
+                    })
+            });
+            var firstCard = sectionTitle
+                .Locator("xpath=following-sibling::*[1]")
+                .Locator(".card-half-item")
+                .First;
+            if ((await firstCard.CountAsync()) > 0)
             {
-                var acceptButton = ctx.Page!.GetByRole(AriaRole.Button, new()
+                var resultClicked = await ClickAndDetectNavigationAsync(ctx, firstCard, token);
+                if (resultClicked.Navigated)
                 {
-                    Name = "接受"
-                });
-                if (await CDPHelper.WaitForAsync(acceptButton, 5000))
-                {
-                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptButton);
-                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
-                    // 第二步：立即预定
+                    await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                    // 第二步：立即预订
                     var reserveButton = ctx.Page!.GetByText(new Regex(@"^立即预[定订]$"));
-
                     if (await CDPHelper.WaitForAsync(reserveButton, 5000))
                     {
                         await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, reserveButton);
@@ -1543,7 +1493,44 @@ namespace QTP.Plugins
                             }
                         }
                     }
+
+
+
                 }
+            }
+            else
+            {
+                // 第二步：立即预定
+                var reserveButton = ctx.Page!.GetByText(new Regex(@"^立即预[定订]$"));
+
+                if (await CDPHelper.WaitForAsync(reserveButton, 5000))
+                {
+                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, reserveButton);
+                    await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                    // 第二步：等待二次确认弹窗
+                    var continueButton = ctx.Page!.GetByText("我已知悉，继续前往", new()
+                    {
+                        Exact = true
+                    });
+                    if (await CDPHelper.WaitForAsync(continueButton, 5000))
+                    {
+                        var result = await ClickAndDetectNavigationAsync(ctx, continueButton, token);
+                        if (result.Navigated)
+                        {
+                            await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                            var acceptCookies = ctx.Page!.GetByRole(
+                                AriaRole.Button,
+                                new() { Name = "Accept All Cookies" }
+                            );
+                            if (await CDPHelper.WaitForAsync(acceptCookies, 10000))
+                            {
+                                await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptCookies);
+                                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                            }
+                        }
+                    }
+                }
+
             }
 
             this.QTPExecuteClickthrough(ctx.Config.TaskId);
@@ -1610,11 +1597,9 @@ namespace QTP.Plugins
             }
             DateTime start = DateTime.Now;
             LogWriteLine("延时停留");
-            var loop = 0;
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                loop++;
                 try
                 {
                     LogWriteLine("滑动操作");
@@ -1628,8 +1613,6 @@ namespace QTP.Plugins
                         break;
 
                     await Task.Delay(CommonHelper.RandomRange(1500, 2500), token);
-                    if (ctx.TriggerDownloadSign > 0)
-                        return FlowControl.EndTask;
                 }
                 catch (OperationCanceledException)
                 {
