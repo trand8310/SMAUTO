@@ -383,6 +383,8 @@ namespace QTP.Plugins
         {
             var result = new List<string>();
             uint fingerprint = 0;
+            var dev_hash = Math.Abs($"{taskArgs.SelectToken("dev")}".GetHashCode());
+
             if (taskArgs.SelectToken("dev.fingerprint") != null)
             {
                 fingerprint = taskArgs.SelectToken("dev.fingerprint").Value<uint>();
@@ -450,85 +452,69 @@ namespace QTP.Plugins
             else
             {
                 result.Add("--platform=\"Android\"");
+                result.Add("--screen-color-depth=24");
             }
             var make = taskArgs.SelectToken("dev.make")?.Value<string>().ToLower();
-
-            result.Add("--fingerprint-config-dir=\"" + System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fingerprint") + "\"");
-
-
 
             var full_version = taskArgs.SelectToken("dev.full_version").Value<string>();
             var full_version_values = full_version.Split(new string[] { "." }, StringSplitOptions.RemoveEmptyEntries);
 
             result.Add($"--platform-version=\"{taskArgs.SelectToken("dev.osv").Value<string>()}\"");
             result.Add($"--full-version={full_version}");
-
+            var brand = "Google Chrome";
             if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand")?.Value<string>()))
             {
-                var brand = taskArgs.SelectToken("dev.brand")?.Value<string>();
+                brand = taskArgs.SelectToken("dev.brand")?.Value<string>();
                 if (!string.IsNullOrWhiteSpace(make))
                 {
-                    result.Add($"--make-name=\"{make}\"");
-
-                    //   "--make-name="huawei" --fingerprint-config-dir="E:\code\fingerprint""
+                    result.Add($"--make=\"{make}\"");
                 }
                 result.Add($"--brand=\"{brand}\"");
                 result.Add($"--brand-name=\"{brand}\"");
-                if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand_version")?.Value<string>()))
-                    result.Add($"--brand-version=\"{taskArgs.SelectToken("dev.brand_version")?.Value<string>()}\"");
-
-                result.Add($"--disable-full-version-list");
-                result.Add($"--disable-brand-version-list");
-
+                if ((make ?? "default").GetHashCode() % 2 == 0)
+                {
+                    result.Add($"--disable-full-version-list");
+                    result.Add($"--disable-brand-version-list");
+                }
+                if(make == "xiaomi")
+                {
+                    if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand_version")?.Value<string>()))
+                        result.Add($"--brand-version=\"{taskArgs.SelectToken("dev.brand_version")?.Value<string>()}\"");
+                }
 
                 if (os == 1 || os == 2)
                 {
-
-                    if (!string.IsNullOrWhiteSpace(make))
+                    if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.model")?.Value<string>()))
                     {
-                        if (make.Contains("xiaomi"))
+                        if (os == 1)
                         {
-                            result.Add($"--def-fontname=\"MiSans\"");
-                        }
-                        else if (make.ToLower().Contains("vivo"))
-                        {
-                            result.Add($"--def-fontname=\"vivo Sans\"");
-                        }
-                        else if (make.ToLower().Contains("oppo"))
-                        {
-                            result.Add($"--def-fontname=\"OPPO Sans 4.0\"");
-                        }
-                        else if (make.ToLower().Contains("huawei"))
-                        {
-                            result.Add($"--def-fontname=\"HarmonyOS Sans\"");
+                            result.Add($"--product-model=\"{taskArgs.SelectToken("dev.model")?.Value<string>()}\"");
                         }
                     }
                 }
-                //def-fontname
             }
-
-            if (os == 1 || os == 2)
+            else
             {
-                if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.model")?.Value<string>()))
-                {
-                    if (os == 1)
-                    {
-                        result.Add($"--product-model=\"{taskArgs.SelectToken("dev.model")?.Value<string>()}\"");
-                    }
-                }
+                result.Add($"--brand=\"{brand}\"");
             }
+
+
+
+
+
 
             result.Add($"--fingerprint={fingerprint}");
             var grease_cipher = Math.Abs(string.Join(".", full_version_values.Take(2)).GetHashCode()) % 65535;
             result.Add($"--ssl-grease-cipher={grease_cipher}");
             if (os == 1 || os == 2)
             {
-                result.Add($"--netinfo-type={new string[] { "wifi", "cellular" }[CommonHelper.RandomRange(0, 2)]}");
+                result.Add($"--netinfo-type={new string[] { "wifi", "4g" }[CommonHelper.RandomRange(0, 2)]}");
                 result.Add($"--netinfo-effective=4g");
-                result.Add($"--netinfo-rtt={CommonHelper.RandomRange(0, 500)}");
+                result.Add($"--netinfo-rtt={CommonHelper.RandomRange(100, 300)}");
             }
 
             result.Add($"--force-webrtc-ip-handling-policy");
+            result.Add($"--webrtc-ip-handling-policy=disable_non_proxied_udp");
             var isProxyMode = taskArgs.SelectToken("isProxyMode")?.Value<bool>() ?? false;
             if (isProxyMode)
             {
@@ -536,40 +522,42 @@ namespace QTP.Plugins
                 if (!string.IsNullOrWhiteSpace(realIp))
                 {
                     result.Add($"--webrtc-ip={realIp}");
-                    if (new bool[] { false, false, true, false, false, true, false, false, true, false }[CommonHelper.RandomRange(0, 10)])
-                    {
-                        result.Add($"--webrtc-ip-handling-policy=disable_non_proxied_udp");
-                    }
-                    else
-                    {
-                        result.Add($"--webrtc-ip-handling-policy=default");
-                    }
                 }
-                else
-                {
-                    result.Add($"--webrtc-ip-handling-policy=disable_non_proxied_udp");
-                }
+            }
+
+
+
+            #region webgl
+            //--webgl-vendor="Google Inc. (Qualcomm)" --webgl-renderer="ANGLE (Qualcomm, Adreno (TM) 750, OpenGL ES 3.2)" ^
+            if (dev_hash % 2 == 0)
+            {
+                result.Add($"--webgl-vendor=\"Google Inc. ({vendor})\"");
+                result.Add($"--webgl-renderer=\"ANGLE ({vendor}, {gpu}, OpenGL ES 3.2)\"");
             }
             else
             {
-                result.Add($"--webrtc-ip-handling-policy=disable_non_proxied_udp");
+                result.Add($"--webgl-vendor=\"{vendor}\"");
+                result.Add($"--webgl-renderer=\"{gpu}\"");
             }
 
-            var dev_hash = Math.Abs(taskArgs.SelectToken("dev").ToString().GetHashCode());
-
-            #region webgl
-            result.Add($"--webgl-vendor=\"{vendor}\"");
-            result.Add($"--webgl-renderer=\"{gpu}\"");
             #endregion
+
+            if (dev_hash % 2 == 0)
+            {
+                result.Add($"--geolocation-permission=allow");
+            }
+            else
+            {
+                result.Add($"--geolocation-permission=block");
+            }
+
 
             result.Add($"--hardware-concurrency={(taskArgs.SelectToken("dev.cpu")?.Value<int>() ?? 8)}");
 
             var ram = taskArgs.SelectToken("dev.ram").Value<string>().Split(',', StringSplitOptions.RemoveEmptyEntries);
             int deviceMemory = Convert.ToInt32(ram[CommonHelper.RandomRange(0, ram.Length)].Trim());
             if (deviceMemory < 4) deviceMemory = 4;
-
             result.Add($"--device-memory={(deviceMemory > 8 ? 8 : deviceMemory)}");
-
             var js_memory_info = new string[] { "10000000|10000000|1136000000", "29400000|31200000|1130000000", "10000000|10000000|1136000000", "29400000|31200000|1130000000", "29400000|31200000|1130000000" };
             result.Add($"--js-memory-info=\"{js_memory_info[(dev_hash % 4)]}\"");
             if (os == 1 || os == 2)
@@ -589,17 +577,12 @@ namespace QTP.Plugins
 
             result.Add("--enable-rects-noise");
             result.Add("--enable-canvas-noise");
-            result.Add("--enable-image-noise");
             result.Add("--enable-text-noise");
-            //result.Add("--enable-font-noise");
             result.Add("--enable-audio-noise");
-
             if (dev_hash % 2 == 0)
             {
                 result.Add("--disable-pdf-viewer");
             }
-
-
             if (os == 1 || os == 2)
             {
                 int level = CommonHelper.RandomRange(10, 101);
@@ -1228,7 +1211,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r2/";
+                    //entry.FirstPageUrl = "https://www.121o.com/fp/";
+                    entry.FirstPageUrl = "https://so.m.sm.cn/s?q=%E9%B1%BF%E9%B1%BC%E6%B8%B8%E6%88%8F&from=751111&safe=1&by=suggest&snum=6";
                 }
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1413,7 +1397,7 @@ namespace QTP.Plugins
 
 
 
-            var maxTouchPoints = os == 1 || os == 2 ? CommonHelper.RandomRange(4, 6) : 0;
+            var maxTouchPoints = os == 1 || os == 2 ? 5 : 0;
 
 
 
@@ -1530,49 +1514,29 @@ namespace QTP.Plugins
 
             var args = new List<string>
             {
-                "--disable-field-trial-config",
-                "--disable-background-networking",
-                "--disable-background-timer-throttling",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-breakpad",
-                "--no-default-browser-check",
-                "--disable-dev-shm-usage",
-                "--disable-edgeupdater",
-                "--disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion,DnsOverHttps,UseDnsHttpsSvcbAlpn",
-                "--enable-features=CDPScreenshotNewSurface",
-                "--disable-hang-monitor",
-                "--disable-prompt-on-repost",
-                "--disable-renderer-backgrounding",
-                "--force-color-profile=srgb",
                 "--no-first-run",
-                "--password-store=basic",
-                "--use-mock-keychain",
-                "--no-service-autorun",
-                "--export-tagged-pdf",
-                "--disable-search-engine-choice-screen",
-                "--edge-skip-compat-layer-relaunch",
-                "--disable-infobars",
-                "--disable-sync",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-logging",
-                "--disable-quic",
-                "--use-fake-ui-for-media-stream",
-                "--use-fake-device-for-media-stream",
-                "--enable-unsafe-swiftshader",
+                "--no-default-browser-check",
                 "--show-avatar-button=never",
-                "--disable-http2-grease-settings",
+                "--force-prefers-no-reduced-motion",
+                "--enable-unsafe-swiftshader",
                 "--hide-bad-flags",
                 "--hide-crashed-bubble",
-                "--force-prefers-no-reduced-motion",
-                "--virtual-clipboard",
-                "--mouse-as-touch",
+                "--ignore-certificate-errors",
+                "--disable-logging",
+                "--use-fake-ui-for-media-stream",
+                "--use-fake-device-for-media-stream",
+                "--disable-http2-grease-settings",
+
+                //"--virtual-clipboard",
                 "--touch-events=enabled",
                 $"--user-agent=\"{config.UserAgent}\"",
-                $"--window-size={(int)Math.Ceiling( config.Sw + scaleX)},{(int)Math.Ceiling( config.Sh + scaleY)}",
+
                 "--window-position=0,0",
-                //$"--device-pixel-ratio={config.DeviceScale}",
-                //$"--screen-size={config.Sw * scaleX},{config.Sh * scaleY}",
-               // $"--screen-avail-size={config.Sw},{config.Sh}",
+                $"--window-size={config.Sw},{config.Sh}",
+                $"--device-pixel-ratio={config.DeviceScale}",
+                $"--screen-size={config.Sw},{config.Sh}",
+                $"--screen-avail-size={config.Sw},{(config.Sh - CommonHelper.RandomRange(47,100))}",
+                "--screen-color-depth=24",
             };
 
             if (config.Os == 1 || config.Os == 2)
@@ -1614,7 +1578,7 @@ namespace QTP.Plugins
             }
             else
             {
-                args.Add($"--disk-cache-dir=\"{config.CacheDir}\"");
+                args.Add($"--user-data-dir=\"{config.CacheDir}\"");
             }
 
             args.AddRange(InitFPArgs(config.TaskArgs, config.MaxTouchPoints));
@@ -1775,7 +1739,7 @@ namespace QTP.Plugins
         {
             token.ThrowIfCancellationRequested();
 
-            await page.SetViewportSizeAsync(ctx.Config.Sw, ctx.Config.Sh);
+            //await page.SetViewportSizeAsync(ctx.Config.Sw, ctx.Config.Sh);
             var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(page);
             await cdpSession.SendAsync("Page.enable");
 
@@ -1793,9 +1757,9 @@ namespace QTP.Plugins
 
             }
 
-            await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, (ctx.Config.Os == 1 || ctx.Config.Os == 2 ? true : false));
+            //await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, (ctx.Config.Os == 1 || ctx.Config.Os == 2 ? true : false));
 
-            await CDPHelper.SetBrowserPermission(cdpSession);
+            //await CDPHelper.SetBrowserPermission(cdpSession);
 
             page.Dialog += async (_, dialog) =>
             {
@@ -3921,6 +3885,16 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+            LogWriteLine("huadong");
+            await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 2, maxTimes: 5);
+
+            await ctx.Page!.ScreenshotAsync(new PageScreenshotOptions
+            {
+                Path = "screenshot.png",
+                FullPage = false
+            });
+
+            LogWriteLine("jieping");
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 
         }
