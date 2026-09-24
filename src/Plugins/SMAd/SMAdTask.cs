@@ -1516,29 +1516,49 @@ namespace QTP.Plugins
 
             var args = new List<string>
             {
-                "--no-first-run",
+                "--disable-field-trial-config",
+                "--disable-background-networking",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-breakpad",
                 "--no-default-browser-check",
-                "--show-avatar-button=never",
-                "--force-prefers-no-reduced-motion",
-                "--enable-unsafe-swiftshader",
-                "--hide-bad-flags",
-                "--hide-crashed-bubble",
-                "--ignore-certificate-errors",
+                "--disable-dev-shm-usage",
+                "--disable-edgeupdater",
+                "--disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion,DnsOverHttps,UseDnsHttpsSvcbAlpn",
+                "--enable-features=CDPScreenshotNewSurface",
+                "--disable-hang-monitor",
+                "--disable-prompt-on-repost",
+                "--disable-renderer-backgrounding",
+                "--force-color-profile=srgb",
+                "--no-first-run",
+                "--password-store=basic",
+                "--use-mock-keychain",
+                "--no-service-autorun",
+                "--export-tagged-pdf",
+                "--disable-search-engine-choice-screen",
+                "--edge-skip-compat-layer-relaunch",
+                "--disable-infobars",
+                "--disable-sync",
+                "--disable-blink-features=AutomationControlled",
                 "--disable-logging",
+                "--disable-quic",
                 "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream",
+                "--enable-unsafe-swiftshader",
+                "--show-avatar-button=never",
                 "--disable-http2-grease-settings",
-
-                //"--virtual-clipboard",
+                "--hide-bad-flags",
+                "--hide-crashed-bubble",
+                "--force-prefers-no-reduced-motion",
+                "--virtual-clipboard",
                 "--touch-events=enabled",
                 $"--user-agent=\"{config.UserAgent}\"",
-
                 "--window-position=0,0",
                 $"--window-size={config.Sw},{config.Sh}",
                 $"--device-pixel-ratio={config.DeviceScale}",
                 $"--screen-size={config.Sw},{config.Sh}",
                 $"--screen-avail-size={config.Sw},{(config.Sh - CommonHelper.RandomRange(47,100))}",
-                "--screen-color-depth=24",
+                $"--screen-color-depth=24",
             };
 
             if (config.Os == 1 || config.Os == 2)
@@ -3889,11 +3909,11 @@ namespace QTP.Plugins
         {
             LogWriteLine("huadong");
             await Task.Delay(2000);
-           //var traces =  await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 3, maxTimes: 5);
+            //var traces =  await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 3, maxTimes: 5);
 
-           // HumanSwipeGifExporter.ExportAll(
-           // traces,
-           // @"./traces");
+            // HumanSwipeGifExporter.ExportAll(
+            // traces,
+            // @"./traces");
 
             await ctx.Page!.ScreenshotAsync(new PageScreenshotOptions
             {
