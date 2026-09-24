@@ -1242,7 +1242,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r2/";
+                    entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r2/";
                 }
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1435,7 +1435,7 @@ namespace QTP.Plugins
 
 
 
-            var maxTouchPoints = os == 1 || os == 2 ? CommonHelper.RandomRange(4, 6) : 0;
+            var maxTouchPoints = os == 1 || os == 2 ? CommonHelper.RandomRange(5, 6) : 0;
 
 
 
@@ -1587,14 +1587,14 @@ namespace QTP.Plugins
                 "--hide-crashed-bubble",
                 "--force-prefers-no-reduced-motion",
                 "--virtual-clipboard",
-                "--mouse-as-touch",
                 "--touch-events=enabled",
                 $"--user-agent=\"{config.UserAgent}\"",
-                $"--window-size={(int)Math.Ceiling( config.Sw + scaleX)},{(int)Math.Ceiling( config.Sh + scaleY)}",
+
                 "--window-position=0,0",
-                //$"--device-pixel-ratio={config.DeviceScale}",
-                //$"--screen-size={config.Sw * scaleX},{config.Sh * scaleY}",
-               // $"--screen-avail-size={config.Sw},{config.Sh}",
+                $"--window-size={config.Sw},{config.Sh}",
+                $"--device-pixel-ratio={config.DeviceScale}",
+                $"--screen-size={config.Sw},{config.Sh}",
+                $"--screen-avail-size={config.Sw},{config.Sh - 47}",
             };
 
             if (config.Os == 1 || config.Os == 2)
@@ -1815,7 +1815,7 @@ namespace QTP.Plugins
 
             }
 
-            await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, (ctx.Config.Os == 1 || ctx.Config.Os == 2 ? true : false));
+            //await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, (ctx.Config.Os == 1 || ctx.Config.Os == 2 ? true : false));
 
             await CDPHelper.SetBrowserPermission(cdpSession);
 
@@ -4006,6 +4006,17 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+            await Task.Delay(5000);
+
+            await HumanSwipeOperator.TimedChaoticBrowseAsync(
+            ctx.Page!,
+            ctx.CdpSession!,
+            duration: TimeSpan.FromMilliseconds(8000),
+            options: GetHumanSwipeOptions(ctx),
+            maxContinuousNoMove: 4,
+            cancellationToken: token);
+
+
             await Task.Delay(TimeSpan.FromSeconds(150), token);
          
         }
