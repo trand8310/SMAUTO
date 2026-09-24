@@ -3,6 +3,7 @@
     using System;
     using System.Diagnostics;
     using System.Linq;
+    using System.Text;
 
     public sealed class DeviceProfileResult
     {
@@ -33,51 +34,43 @@
     public static class AndroidViewportMatcher
     {
         /*
-         * 基准：
-         *   1080 x 2400 -> 412 x 915 @ 2.625
+         * 设计思路：
          *
-         * 说明：
-         *   412 * 2.625 = 1081.5
-         *   915 * 2.625 = 2401.875
+         * 1. 以 1080 宽物理屏 -> DPR 2.625 为核心基准。
+         * 2. 按物理宽度分大档位，每个档位只允许小幅微调：
          *
-         * Android / Chromium 中 CSS viewport 与物理像素并不要求整数完全相除，
-         * 所以允许很小的 rounding error。
+         *      720 ~ 899    -> Base DPR 2.000
+         *      900 ~ 999    -> Base DPR 2.250
+         *      1000 ~ 1149  -> Base DPR 2.625
+         *      1150 ~ 1249  -> Base DPR 2.875
+         *      1250 ~ 1379  -> Base DPR 3.125
+         *      1380 ~ 1500  -> Base DPR 3.500
          *
-         * 设计原则：
-         * 1. DPR 最大控制在 3.0。
-         * 2. 2.625 作为首选基准 DPR。
-         * 3. 分辨率越高，CSS viewport 越大，不再强行压到 360/390。
-         * 4. 只在 CSS 尺寸明显不合理时，才切换到其它常见 DPR。
+         * 3. 每个档位围绕 Base DPR 做 {-0.125, 0, +0.125} 微调。
+         * 4. make + model 用于生成稳定种子：
+         *      同样的 make/model + 物理分辨率
+         *      -> 永远得到相同 DPR 候选优先级
+         *      -> 不依赖 Random，不受进程重启影响。
+         * 5. 最终仍会校验 CSS width/height、宽高比和 DPR 一致性，
+         *    避免稳定但不合理的组合。
          */
 
-        private static readonly float[] CandidateDprs =
-        {
-            2.625f, // 基准，最高优先级
-            2.75f,
-            3.0f,
-            2.5f,
-            2.25f,
-            2.0f
-        };
+        private const float DprStep = 0.125f;
+        private const float MinDpr = 1.75f;
+        private const float MaxDpr = 3.75f;
 
-        private const float PreferredDpr = 2.625f;
-        private const float MaxDpr = 3.0f;
-
-        // 允许的手机 CSS viewport 范围。
-        // 高分辨率设备允许更大的 CSS width。
         private const int MinCssWidth = 320;
         private const int MaxCssWidth = 560;
 
-        private const int MinCssHeight = 640;
-        private const int MaxCssHeight = 1280;
+        private const int MinCssHeight = 600;
+        private const int MaxCssHeight = 1350;
 
-        // 手机屏幕纵横比（height / width）。
-        private const double MinPhoneRatio = 1.75;
-        private const double MaxPhoneRatio = 2.55;
+        private const double MinPhoneRatio = 1.70;
+        private const double MaxPhoneRatio = 2.60;
 
-        // 用于轻微贴近常见 Android viewport 宽度，不强制。
         private static readonly int[] CommonCssWidths =
         {
+            320,
             360,
             384,
             390,
@@ -86,14 +79,20 @@
             411,
             412,
             420,
+            427,
             432,
             448,
+            450,
             480,
             512,
             540
         };
 
-        public static DeviceProfileResult Match(int width, int height)
+        public static DeviceProfileResult Match(
+            int width,
+            int height,
+            string? make,
+            string? model)
         {
             if (width <= 0 || height <= 0)
                 throw new ArgumentOutOfRangeException(nameof(width), "分辨率必须大于 0");
@@ -101,60 +100,183 @@
             int physicalWidth = Math.Min(width, height);
             int physicalHeight = Math.Max(width, height);
 
-            double physicalRatio = (double)physicalHeight / physicalWidth;
+            double physicalRatio =
+                (double)physicalHeight / physicalWidth;
+
             bool suspiciousInput =
                 physicalRatio < MinPhoneRatio ||
                 physicalRatio > MaxPhoneRatio;
 
+            float baseDpr =
+                GetBaseDprByPhysicalWidth(physicalWidth);
+
+            int stableVariant =
+                GetStableVariant(
+                    make,
+                    model,
+                    physicalWidth,
+                    physicalHeight);
+
+            float[] candidateDprs =
+                BuildStableCandidates(baseDpr, stableVariant);
+
             DeviceProfileResult? best = null;
 
-            foreach (float dpr in CandidateDprs)
+            for (int i = 0; i < candidateDprs.Length; i++)
             {
-                if (dpr > MaxDpr)
+                float dpr = candidateDprs[i];
+
+                if (dpr < MinDpr || dpr > MaxDpr)
                     continue;
 
                 var candidate = BuildCandidate(
                     physicalWidth,
                     physicalHeight,
                     dpr,
-                    suspiciousInput);
+                    suspiciousInput,
+                    baseDpr,
+                    i);
 
                 if (candidate == null)
                     continue;
 
-                if (best == null || candidate.Score < best.Score)
+                if (best == null ||
+                    candidate.Score < best.Score)
+                {
                     best = candidate;
+                }
             }
 
             if (best != null)
             {
-                Debug.WriteLine("[AndroidViewportMatcher] Matched: " + best);
+                Debug.WriteLine(
+                    $"[AndroidViewportMatcher] make={make}, model={model}, " +
+                    $"BaseDpr={baseDpr:F3}, StableVariant={stableVariant}, Matched={best}");
+
                 return best;
             }
 
-            // 极端输入的安全 fallback：
-            // 仍然不超过 DPR 3.0。
             var fallback = BuildFallback(
                 physicalWidth,
                 physicalHeight,
-                suspiciousInput);
+                suspiciousInput,
+                baseDpr);
 
-            Debug.WriteLine("[AndroidViewportMatcher] Fallback: " + fallback);
+            Debug.WriteLine(
+                $"[AndroidViewportMatcher] make={make}, model={model}, " +
+                $"Fallback={fallback}");
+
             return fallback;
+        }
+
+        // 兼容旧调用方式。
+        public static DeviceProfileResult Match(
+            int width,
+            int height)
+        {
+            return Match(
+                width,
+                height,
+                null,
+                null);
+        }
+
+        private static float GetBaseDprByPhysicalWidth(
+            int physicalWidth)
+        {
+            if (physicalWidth < 900)
+                return 2.000f;
+
+            if (physicalWidth < 1000)
+                return 2.250f;
+
+            if (physicalWidth < 1150)
+                return 2.625f;
+
+            if (physicalWidth < 1250)
+                return 2.875f;
+
+            if (physicalWidth < 1380)
+                return 3.125f;
+
+            return 3.500f;
+        }
+
+        /*
+         * stableVariant：
+         *
+         * 0 -> 偏向 baseDpr
+         * 1 -> 偏向 baseDpr - 0.125
+         * 2 -> 偏向 baseDpr + 0.125
+         *
+         * 不是随机数，而是 make/model/分辨率 的稳定 hash。
+         */
+        private static int GetStableVariant(
+            string? make,
+            string? model,
+            int physicalWidth,
+            int physicalHeight)
+        {
+            string key =
+                NormalizeKeyPart(make) + "|" +
+                NormalizeKeyPart(model) + "|" +
+                physicalWidth + "x" +
+                physicalHeight;
+
+            uint hash = StableHash32(key);
+
+            // 权重设计：
+            // 0~5  -> Base DPR，约 60%
+            // 6~7  -> -0.125，约 20%
+            // 8~9  -> +0.125，约 20%
+            int bucket = (int)(hash % 10);
+
+            if (bucket <= 5)
+                return 0;
+
+            if (bucket <= 7)
+                return 1;
+
+            return 2;
+        }
+
+        private static float[] BuildStableCandidates(
+            float baseDpr,
+            int stableVariant)
+        {
+            float lower = RoundDpr(baseDpr - DprStep);
+            float center = RoundDpr(baseDpr);
+            float upper = RoundDpr(baseDpr + DprStep);
+
+            /*
+             * 稳定种子只改变候选优先级，
+             * 不是直接强行锁死结果。
+             *
+             * 如果首选 DPR 会产生明显不合理 CSS viewport，
+             * matcher 仍然可以选择第二/第三候选。
+             */
+            return stableVariant switch
+            {
+                1 => new[] { lower, center, upper },
+                2 => new[] { upper, center, lower },
+                _ => new[] { center, lower, upper }
+            };
         }
 
         private static DeviceProfileResult? BuildCandidate(
             int physicalWidth,
             int physicalHeight,
             float dpr,
-            bool suspiciousInput)
+            bool suspiciousInput,
+            float baseDpr,
+            int candidateOrder)
         {
-            // 用真实分辨率 / DPR 得到基础 CSS 尺寸。
-            double rawCssWidth = physicalWidth / (double)dpr;
-            double rawCssHeight = physicalHeight / (double)dpr;
+            double rawCssWidth =
+                physicalWidth / (double)dpr;
 
-            // Chromium / Android viewport 本身可能有 1~2 px rounding，
-            // 因此这里只做整数化，不要求严格整除。
+            double rawCssHeight =
+                physicalHeight / (double)dpr;
+
             int cssWidth = (int)Math.Round(
                 rawCssWidth,
                 MidpointRounding.AwayFromZero);
@@ -163,21 +285,8 @@
                 rawCssHeight,
                 MidpointRounding.AwayFromZero);
 
-            // 对 1080x2400 + 2.625 做基准校正：
-            // raw 大约是 411.43 x 914.29，
-            // 实机参考值是 412 x 915。
-            //
-            // 对其它分辨率采用同样原则：
-            // 很接近常见 CSS width 时，允许向最近常见宽度贴 1~2px。
-            cssWidth = SnapCssWidthIfVeryClose(cssWidth);
-
-            // 高度按物理宽高比重新计算，避免宽度 snap 后 X/Y 比例失衡。
-            double physicalRatio =
-                (double)physicalHeight / physicalWidth;
-
-            cssHeight = (int)Math.Round(
-                cssWidth * physicalRatio,
-                MidpointRounding.AwayFromZero);
+            cssWidth =
+                SnapCssWidthIfVeryClose(cssWidth);
 
             if (cssWidth < MinCssWidth ||
                 cssWidth > MaxCssWidth ||
@@ -190,8 +299,8 @@
             double cssRatio =
                 (double)cssHeight / cssWidth;
 
-            if (cssRatio < MinPhoneRatio ||
-                cssRatio > MaxPhoneRatio)
+            if (cssRatio < MinPhoneRatio - 0.05 ||
+                cssRatio > MaxPhoneRatio + 0.05)
             {
                 return null;
             }
@@ -204,21 +313,32 @@
 
             double score = 0;
 
-            // 1) 首要：X/Y 推导出的实际 DPR 应接近。
-            score += Math.Abs(dprX - dprY) * 100.0;
+            // X / Y 推导 DPR 应尽量一致。
+            score +=
+                Math.Abs(dprX - dprY) * 35.0;
 
-            // 2) 2.625 为蓝本，优先选择接近它的 DPR。
-            score += Math.Abs(dpr - PreferredDpr) * 8.0;
+            // 最终 CSS 反推结果应尽量接近候选 DPR。
+            score +=
+                Math.Abs(dprX - dpr) * 8.0;
 
-            // 3) 选择的 DPR 与实际推导 DPR 应接近。
-            score += Math.Abs(dprX - dpr) * 4.0;
-            score += Math.Abs(dprY - dpr) * 4.0;
+            score +=
+                Math.Abs(dprY - dpr) * 8.0;
 
-            // 4) 只轻微偏向常见 CSS width。
-            score += GetCssWidthPenalty(cssWidth);
+            // 强调“档位稳定”，不要轻易离开当前 Base DPR。
+            score +=
+                Math.Abs(dpr - baseDpr) * 1.5;
 
-            // 5) 分辨率越高允许 CSS 越大，不给大 CSS 额外惩罚。
-            //    只要在合理手机区间即可。
+            /*
+             * candidateOrder 是 make/model 稳定种子决定的顺序。
+             * 第一候选有轻微优势。
+             *
+             * 权重不能太大，否则会为了稳定而选择明显不合理 viewport。
+             */
+            score += candidateOrder * 0.12;
+
+            // 常见 CSS width 只做非常弱的加权。
+            score +=
+                GetCssWidthPenalty(cssWidth);
 
             if (suspiciousInput)
                 score += 25.0;
@@ -243,59 +363,91 @@
             };
         }
 
-        private static int SnapCssWidthIfVeryClose(int cssWidth)
+        private static int SnapCssWidthIfVeryClose(
+            int cssWidth)
         {
             int nearest =
                 CommonCssWidths
                     .OrderBy(x => Math.Abs(x - cssWidth))
                     .First();
 
-            // 只允许非常小的 1~2px 校正。
-            // 避免把高分辨率设备硬压到传统 360/390。
+            // 最多只允许 2px 微调。
             if (Math.Abs(nearest - cssWidth) <= 2)
                 return nearest;
 
             return cssWidth;
         }
 
-        private static double GetCssWidthPenalty(int cssWidth)
+        private static double GetCssWidthPenalty(
+            int cssWidth)
         {
             int nearestDiff =
-                CommonCssWidths.Min(x => Math.Abs(x - cssWidth));
+                CommonCssWidths.Min(
+                    x => Math.Abs(x - cssWidth));
 
-            // 很弱的偏好，不能盖过真实物理尺寸。
             return nearestDiff * 0.002;
         }
 
         private static DeviceProfileResult BuildFallback(
             int physicalWidth,
             int physicalHeight,
-            bool suspiciousInput)
+            bool suspiciousInput,
+            float baseDpr)
         {
-            // 优先用 DPR 3.0，保证永远 <= 3。
-            float dpr = 3.0f;
+            float dpr =
+                Math.Clamp(
+                    baseDpr,
+                    MinDpr,
+                    MaxDpr);
 
-            int cssWidth = (int)Math.Round(
-                physicalWidth / (double)dpr,
-                MidpointRounding.AwayFromZero);
+            int cssWidth =
+                CalculateCss(physicalWidth, dpr);
 
-            int cssHeight = (int)Math.Round(
-                physicalHeight / (double)dpr,
-                MidpointRounding.AwayFromZero);
+            int cssHeight =
+                CalculateCss(physicalHeight, dpr);
 
-            // 如果 CSS 太窄，则降低 DPR。
-            while (cssWidth < MinCssWidth && dpr > 2.0f)
+            while (cssWidth < MinCssWidth &&
+                   dpr > MinDpr)
             {
-                dpr -= 0.125f;
+                dpr =
+                    RoundDpr(
+                        Math.Max(
+                            MinDpr,
+                            dpr - DprStep));
 
-                cssWidth = (int)Math.Round(
-                    physicalWidth / (double)dpr,
-                    MidpointRounding.AwayFromZero);
+                cssWidth =
+                    CalculateCss(
+                        physicalWidth,
+                        dpr);
 
-                cssHeight = (int)Math.Round(
-                    physicalHeight / (double)dpr,
-                    MidpointRounding.AwayFromZero);
+                cssHeight =
+                    CalculateCss(
+                        physicalHeight,
+                        dpr);
             }
+
+            while (cssWidth > MaxCssWidth &&
+                   dpr < MaxDpr)
+            {
+                dpr =
+                    RoundDpr(
+                        Math.Min(
+                            MaxDpr,
+                            dpr + DprStep));
+
+                cssWidth =
+                    CalculateCss(
+                        physicalWidth,
+                        dpr);
+
+                cssHeight =
+                    CalculateCss(
+                        physicalHeight,
+                        dpr);
+            }
+
+            cssWidth =
+                SnapCssWidthIfVeryClose(cssWidth);
 
             return new DeviceProfileResult
             {
@@ -307,13 +459,71 @@
 
                 DeviceScaleFactor = dpr,
 
-                DprX = (double)physicalWidth / cssWidth,
-                DprY = (double)physicalHeight / cssHeight,
+                DprX =
+                    (double)physicalWidth / cssWidth,
+
+                DprY =
+                    (double)physicalHeight / cssHeight,
 
                 Score = 9999.0,
+
                 IsSuspiciousInput = suspiciousInput,
                 IsFallback = true
             };
+        }
+
+        private static int CalculateCss(
+            int physical,
+            float dpr)
+        {
+            return (int)Math.Round(
+                physical / (double)dpr,
+                MidpointRounding.AwayFromZero);
+        }
+
+        private static float RoundDpr(float dpr)
+        {
+            return (float)Math.Round(
+                dpr,
+                3,
+                MidpointRounding.AwayFromZero);
+        }
+
+        private static string NormalizeKeyPart(
+            string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            return value
+                .Trim()
+                .ToLowerInvariant();
+        }
+
+        /*
+         * 固定 FNV-1a 32-bit。
+         *
+         * 不使用 string.GetHashCode()：
+         * .NET 的 string hash 不应拿来做跨进程/跨运行稳定映射。
+         */
+        private static uint StableHash32(
+            string value)
+        {
+            const uint offsetBasis = 2166136261;
+            const uint prime = 16777619;
+
+            uint hash = offsetBasis;
+
+            byte[] bytes =
+                Encoding.UTF8.GetBytes(value);
+
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                hash ^= bytes[i];
+                hash *= prime;
+            }
+
+            return hash;
         }
     }
 }
