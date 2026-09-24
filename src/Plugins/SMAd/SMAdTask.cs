@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
+using Microsoft.VisualBasic;
 using Newtonsoft.Json.Linq;
 using PlaywrightHumanInput;
 using QTP.Common;
@@ -11,6 +12,7 @@ using SMAd.LandingPolicy;
 using SMAd.Models;
 using SMAd.PlaywrightHumanInput;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
@@ -476,7 +478,7 @@ namespace QTP.Plugins
                     result.Add($"--disable-full-version-list");
                     result.Add($"--disable-brand-version-list");
                 }
-                if(make == "xiaomi")
+                if (make == "xiaomi")
                 {
                     if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand_version")?.Value<string>()))
                         result.Add($"--brand-version=\"{taskArgs.SelectToken("dev.brand_version")?.Value<string>()}\"");
@@ -1211,8 +1213,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
-                    //entry.FirstPageUrl = "https://www.121o.com/fp/";
-                    entry.FirstPageUrl = "https://so.m.sm.cn/s?q=%E9%B1%BF%E9%B1%BC%E6%B8%B8%E6%88%8F&from=751111&safe=1&by=suggest&snum=6";
+                    //entry.FirstPageUrl = "https://pixelscan.net/fingerprint-check";
+                    //entry.FirstPageUrl = "https://so.m.sm.cn/s?q=%E9%B1%BF%E9%B1%BC%E6%B8%B8%E6%88%8F&from=751111&safe=1&by=suggest&snum=6";
                 }
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -3886,14 +3888,18 @@ namespace QTP.Plugins
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
             LogWriteLine("huadong");
-            await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 2, maxTimes: 5);
+            await Task.Delay(2000);
+           //var traces =  await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 3, maxTimes: 5);
+
+           // HumanSwipeGifExporter.ExportAll(
+           // traces,
+           // @"./traces");
 
             await ctx.Page!.ScreenshotAsync(new PageScreenshotOptions
             {
                 Path = "screenshot.png",
                 FullPage = false
             });
-
             LogWriteLine("jieping");
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 

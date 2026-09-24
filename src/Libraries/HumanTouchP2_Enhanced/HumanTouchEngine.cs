@@ -41,7 +41,8 @@ namespace PlaywrightHumanInput
         {
             request ??= new HumanTouchRequest();
             Validate(page, cdp);
-            if (page.ViewportSize == null) return null;
+            var viewport = await GetEffectiveViewportAsync(page);
+            if (viewport.Width <= 0 || viewport.Height <= 0) return null;
 
             await _dispatcher.EnableAsync(page, cdp, Session.DeviceProfile);
 
@@ -53,7 +54,7 @@ namespace PlaywrightHumanInput
             for (int attempt = 0; attempt < 8; attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                plan = _planner.Plan(Session, page.ViewportSize.Width, page.ViewportSize.Height, request);
+                plan = _planner.Plan(Session, viewport.Width, viewport.Height, request);
                 if (!request.CheckScrollableBeforeSwipe)
                     break;
 
@@ -133,7 +134,8 @@ namespace PlaywrightHumanInput
         {
             Validate(page, cdp);
             var traces = new List<HumanSwipeTrace>();
-            if (page.ViewportSize == null) return traces;
+            var viewport = await GetEffectiveViewportAsync(page);
+            if (viewport.Width <= 0 || viewport.Height <= 0) return traces;
 
             for (int i = 0; i < maxSwipes; i++)
             {
@@ -141,7 +143,7 @@ namespace PlaywrightHumanInput
                 var rect = await _scrollResolver.GetElementRectAsync(locator);
                 if (rect == null) break;
 
-                double vh = page.ViewportSize.Height;
+                double vh = viewport.Height;
                 double center = rect.CenterY;
                 if (center >= vh * comfortTopRatio && center <= vh * comfortBottomRatio)
                     break;
@@ -178,13 +180,14 @@ namespace PlaywrightHumanInput
         {
             Validate(page, cdp);
             var traces = new List<HumanSwipeTrace>();
-            if (page.ViewportSize == null) return traces;
+            var viewport = await GetEffectiveViewportAsync(page);
+            if (viewport.Width <= 0 || viewport.Height <= 0) return traces;
 
             for (int i = 0; i < maxSwipes; i++)
             {
                 var rect = await _scrollResolver.GetElementRectAsync(locator);
                 if (rect == null) break;
-                double vh = page.ViewportSize.Height;
+                double vh = viewport.Height;
                 if (rect.Bottom >= visibleMarginPx && rect.Top <= vh - visibleMarginPx)
                     break;
 
@@ -210,7 +213,8 @@ namespace PlaywrightHumanInput
             CancellationToken cancellationToken)
         {
             Validate(page, cdp);
-            if (page.ViewportSize == null || rect.Width < 12 || rect.Height < 12) return null;
+            var viewport = await GetEffectiveViewportAsync(page);
+            if (viewport.Width <= 0 || viewport.Height <= 0 || rect.Width < 12 || rect.Height < 12) return null;
 
             int safe = 6;
             var r = Session.Random;
@@ -219,7 +223,7 @@ namespace PlaywrightHumanInput
 
             if (horizontal)
             {
-                startY = Math.Clamp(RandomMath.TruncatedNormal(r, rect.CenterY, rect.Height * 0.07, rect.Top + safe, rect.Bottom - safe), safe, page.ViewportSize.Height - safe);
+                startY = Math.Clamp(RandomMath.TruncatedNormal(r, rect.CenterY, rect.Height * 0.07, rect.Top + safe, rect.Bottom - safe), safe, viewport.Height - safe);
                 if (request.Direction == HumanSwipeDirection.Left)
                 {
                     startX = rect.Left + rect.Width * RandomMath.NextDouble(r, 0.70, 0.86);
@@ -234,7 +238,7 @@ namespace PlaywrightHumanInput
             }
             else
             {
-                startX = Math.Clamp(RandomMath.TruncatedNormal(r, rect.CenterX, rect.Width * 0.07, rect.Left + safe, rect.Right - safe), safe, page.ViewportSize.Width - safe);
+                startX = Math.Clamp(RandomMath.TruncatedNormal(r, rect.CenterX, rect.Width * 0.07, rect.Left + safe, rect.Right - safe), safe, viewport.Width - safe);
                 if (request.Direction == HumanSwipeDirection.Up)
                 {
                     startY = rect.Top + rect.Height * RandomMath.NextDouble(r, 0.68, 0.86);
@@ -255,6 +259,89 @@ namespace PlaywrightHumanInput
             request.CheckScrollableBeforeSwipe = false;
             request.VerifyScrollChanged = false;
             return await SwipeAsync(page, cdp, request, cancellationToken);
+        }
+
+
+        private sealed class EffectiveViewport
+        {
+            public int Width { get; set; }
+            public int Height { get; set; }
+            public double DevicePixelRatio { get; set; }
+            public double ScreenWidth { get; set; }
+            public double ScreenHeight { get; set; }
+            public double VisualViewportScale { get; set; }
+        }
+
+        /// <summary>
+        /// 获取当前页面实际可用的 CSS viewport。
+        ///
+        /// 普通 Playwright NewContext/NewPage 创建的页面优先使用 Page.ViewportSize。
+        /// ConnectOverCDPAsync 附加到既有 Chromium 时，Page.ViewportSize 可能为 null，
+        /// 此时从页面运行时读取 visualViewport/innerWidth/innerHeight。
+        /// </summary>
+        private static async Task<EffectiveViewport> GetEffectiveViewportAsync(IPage page)
+        {
+            if (page.ViewportSize != null)
+            {
+                return new EffectiveViewport
+                {
+                    Width = page.ViewportSize.Width,
+                    Height = page.ViewportSize.Height,
+                    DevicePixelRatio = 1,
+                    ScreenWidth = page.ViewportSize.Width,
+                    ScreenHeight = page.ViewportSize.Height,
+                    VisualViewportScale = 1
+                };
+            }
+
+            try
+            {
+                var result = await page.EvaluateAsync<EffectiveViewport>(@"
+() => {
+    const vv = window.visualViewport;
+
+    // 触摸坐标、Playwright BoundingBox、DOM client 坐标都以 CSS layout viewport 为基准，
+    // 所以这里优先 innerWidth/innerHeight，而不是 visualViewport.width/height。
+    const width = window.innerWidth || document.documentElement.clientWidth || vv?.width || 0;
+    const height = window.innerHeight || document.documentElement.clientHeight || vv?.height || 0;
+
+    return {
+        Width: Math.max(1, Math.round(width)),
+        Height: Math.max(1, Math.round(height)),
+        DevicePixelRatio: Number(window.devicePixelRatio || 1),
+        ScreenWidth: Number(window.screen?.width || 0),
+        ScreenHeight: Number(window.screen?.height || 0),
+        VisualViewportScale: Number(vv?.scale || 1)
+    };
+}");
+
+                if (result != null && result.Width > 0 && result.Height > 0)
+                    return result;
+            }
+            catch
+            {
+                // 页面可能正在导航、执行上下文刚被销毁等。下面再走一次轻量 fallback。
+            }
+
+            try
+            {
+                int width = await page.EvaluateAsync<int>("() => Math.max(1, Math.round(window.innerWidth || document.documentElement.clientWidth || 0))");
+                int height = await page.EvaluateAsync<int>("() => Math.max(1, Math.round(window.innerHeight || document.documentElement.clientHeight || 0))");
+
+                return new EffectiveViewport
+                {
+                    Width = width,
+                    Height = height,
+                    DevicePixelRatio = 1,
+                    ScreenWidth = width,
+                    ScreenHeight = height,
+                    VisualViewportScale = 1
+                };
+            }
+            catch
+            {
+                return new EffectiveViewport();
+            }
         }
 
         private static HumanSwipeTrace BuildTrace(GesturePlan plan, IReadOnlyList<TouchSample> samples, bool moved)
