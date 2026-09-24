@@ -297,23 +297,23 @@ namespace PlaywrightHumanInput
             try
             {
                 var result = await page.EvaluateAsync<EffectiveViewport>(@"
-() => {
-    const vv = window.visualViewport;
+                () => {
+                    const vv = window.visualViewport;
 
-    // 触摸坐标、Playwright BoundingBox、DOM client 坐标都以 CSS layout viewport 为基准，
-    // 所以这里优先 innerWidth/innerHeight，而不是 visualViewport.width/height。
-    const width = window.innerWidth || document.documentElement.clientWidth || vv?.width || 0;
-    const height = window.innerHeight || document.documentElement.clientHeight || vv?.height || 0;
+                    // 触摸坐标、Playwright BoundingBox、DOM client 坐标都以 CSS layout viewport 为基准，
+                    // 所以这里优先 innerWidth/innerHeight，而不是 visualViewport.width/height。
+                    const width = window.innerWidth || document.documentElement.clientWidth || vv?.width || 0;
+                    const height = window.innerHeight || document.documentElement.clientHeight || vv?.height || 0;
 
-    return {
-        Width: Math.max(1, Math.round(width)),
-        Height: Math.max(1, Math.round(height)),
-        DevicePixelRatio: Number(window.devicePixelRatio || 1),
-        ScreenWidth: Number(window.screen?.width || 0),
-        ScreenHeight: Number(window.screen?.height || 0),
-        VisualViewportScale: Number(vv?.scale || 1)
-    };
-}");
+                    return {
+                        Width: Math.max(1, Math.round(width)),
+                        Height: Math.max(1, Math.round(height)),
+                        DevicePixelRatio: Number(window.devicePixelRatio || 1),
+                        ScreenWidth: Number(window.screen?.width || 0),
+                        ScreenHeight: Number(window.screen?.height || 0),
+                        VisualViewportScale: Number(vv?.scale || 1)
+                    };
+                }");
 
                 if (result != null && result.Width > 0 && result.Height > 0)
                     return result;

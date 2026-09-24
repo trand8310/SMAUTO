@@ -1375,7 +1375,8 @@ namespace QTP.Plugins
         {
 
             var os = taskArgs.SelectToken("os")!.Value<int>();
-
+            var make = taskArgs.SelectToken("dev.make")?.Value<string>() ?? "default";
+            var model = taskArgs.SelectToken("dev.model")?.Value<string>() ?? "default";
             var sw1 = taskArgs.SelectToken("dev.sw")?.Value<int>() ?? 1080;
             var sh1 = taskArgs.SelectToken("dev.sh")?.Value<int>() ?? 1920;
             float deviceScale = 1.0f;
@@ -1383,7 +1384,7 @@ namespace QTP.Plugins
             int sh = 0;
             if (os == 1 || os == 2)
             {
-                var profileResult = AndroidViewportMatcher.Match(sw1, sh1);
+                var profileResult = AndroidViewportMatcher.Match(sw1, sh1, make, model);
                 deviceScale = profileResult.DeviceScaleFactor;
                 sw = profileResult.CssWidth;
                 sh = profileResult.CssHeight;
@@ -1399,10 +1400,7 @@ namespace QTP.Plugins
 
 
 
-            var maxTouchPoints = os == 1 || os == 2 ? 5 : 0;
-
-
-
+            var maxTouchPoints = os == 1 || os == 2 ? CommonHelper.RandomRange(5, 6) : 0;
 
             var kernelVersion = taskArgs.SelectToken("kernelVersion")?.Value<string>() ?? _appSettings.KernelVersion;
             var processIndex = taskArgs.SelectToken("processIndex")?.Value<int>() ?? 1;
@@ -1420,15 +1418,15 @@ namespace QTP.Plugins
                 IsLocalAdWord = taskArgs.SelectToken("isLocalAdWord")?.Value<bool>() ?? false,
                 PageLoadingTimeoutMs = taskArgs.SelectToken("pageLoadingTimeout")?.Value<int>() * 1000 ?? 30000,
                 PageLoadedDelayMs = ParsePageLoadedDelayMilliseconds(taskArgs),
-
                 HomepageTrigger = taskArgs.SelectToken("hompageTrigger")?.Value<int>() ?? 0,
                 PriorityNon1688 = taskArgs.SelectToken("priorityNon1688")?.Value<bool>() ?? false,
-
                 UserAgent = taskArgs.SelectToken("dev.ua")!.Value<string>(),
                 Os = os,
                 DeviceScale = deviceScale,
                 Sw = sw,
                 Sh = sh,
+                ScreenWidth = sw1,
+                ScreenHeight = sh1,
                 WordName = taskArgs.SelectToken("wordname")?.Value<string>() ?? "default",
                 NoTrigger1688 = taskArgs.SelectToken("noTrigger1688")?.Value<bool>() ?? false,
                 CleaningWords = taskArgs.SelectToken("cleaningWords")?.Value<bool>() ?? false,
@@ -1514,7 +1512,13 @@ namespace QTP.Plugins
             var scaleX = config.TaskArgs.SelectToken("scaleX")?.Value<float>() ?? 1.0;
             var scaleY = config.TaskArgs.SelectToken("scaleY")?.Value<float>() ?? 1.0;
 
-            var args = new List<string>
+            var metrics = AndroidBrowserUiMatcher.Match(
+            config.ScreenWidth,
+            config.ScreenHeight,
+            config.UserAgent);
+            var statusBarHeight = (metrics.StatusBarHeight + metrics.BrowserToolbarHeight + metrics.NavigationBarHeight);
+
+            var args = (new List<string>
             {
                 "--disable-field-trial-config",
                 "--disable-background-networking",
@@ -1553,13 +1557,14 @@ namespace QTP.Plugins
                 "--virtual-clipboard",
                 "--touch-events=enabled",
                 $"--user-agent=\"{config.UserAgent}\"",
-                "--window-position=0,0",
+                $"--window-position=0,0",
                 $"--window-size={config.Sw},{config.Sh}",
                 $"--device-pixel-ratio={config.DeviceScale}",
                 $"--screen-size={config.Sw},{config.Sh}",
-                $"--screen-avail-size={config.Sw},{(config.Sh - CommonHelper.RandomRange(47,100))}",
+                $"--screen-avail-size={config.Sw},{(config.Sh - statusBarHeight)}",
                 $"--screen-color-depth=24",
-            };
+            }).Distinct().ToList();
+            
 
             if (config.Os == 1 || config.Os == 2)
             {

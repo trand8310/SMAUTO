@@ -25,10 +25,12 @@ namespace SMAd.Models
 
         public string UserAgent { get; set; } = "";
         public int Os { get; set; }
-        public int? DevSw { get; set; }
         public float DeviceScale { get; set; }
         public int Sw { get; set; }
         public int Sh { get; set; }
+        public int ScreenWidth { get; set; }
+        public int ScreenHeight { get; set; }
+        
 
         public string WordName { get; set; } = "";
         public bool NoTrigger1688 { get; set; }
