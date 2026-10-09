@@ -10,6 +10,9 @@
         public int FetchTaskInterval { get; set; }
         public int UVInterval { get; set; }
         public int MaximumConcurrency { get; set; }
+        /// <summary>0 preserves Multiple * MaximumConcurrency for older configuration files.</summary>
+        public int TaskQueueCapacity { get; set; }
+        public int BrowserLaunchConcurrency { get; set; } = 4;
         public int PageLoadingTimeout { get; set; }
         public string TaskName { get; set; }
         public bool IsHiddenMode { get; set; }

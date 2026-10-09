@@ -1,4 +1,4 @@
-﻿using PlaywrightHumanInput;
+using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
@@ -32,12 +32,18 @@ namespace SMAd.LandingPolicy
                     int count = await offerItems.CountAsync();
                     var item = offerItems.Nth(CommonHelper.RandomRange(0, count));
 
-                    await ctx.human!.MoveToElementAsync(
+                    var movement = await ctx.human!.MoveToTargetAsync(
                         ctx.Page!,
                         ctx.CdpSession!,
                         item,
                         maxSwipes: 10,
                         cancellationToken: token);
+
+                    if (!movement.Ready)
+                    {
+                        _owner.LogWriteLine($"目标未到位，跳过点击: {movement.Status}, {movement.Reason}");
+                        return FlowControl.Continue;
+                    }
 
                     await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
 

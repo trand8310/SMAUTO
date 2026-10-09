@@ -1,4 +1,4 @@
-﻿using PlaywrightHumanInput;
+using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
@@ -26,8 +26,8 @@ namespace SMAd.LandingPolicy
 
             if (count == 0)
             {
-                var ok1 = await CDPHelper.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".search-page-container input");
-                var ok2 = ok1 && await CDPHelper.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".search-page-container .search");
+                var ok1 = await SmAdTouch.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".search-page-container input");
+                var ok2 = ok1 && await SmAdTouch.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".search-page-container .search");
 
                 if (ok2)
                 {
@@ -41,7 +41,7 @@ namespace SMAd.LandingPolicy
                             if (count > 0)
                                 return true;
 
-                            if (await CDPHelper.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".no-result-btn"))
+                            if (await SmAdTouch.FindItemAndClickAsync(ctx.Page, ctx.CdpSession!, ".no-result-btn"))
                                 await Task.Delay(1500, ct);
 
                             return false;

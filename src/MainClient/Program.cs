@@ -1,5 +1,6 @@
-﻿using MainClient.Common;
+using MainClient.Common;
 using MainClient.Logging;
+using MainClient.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using QTP;
 using QTP.Common;
 using QTP.Common.Infrastructure;
+using QTP.Plugins;
 using Serilog;
 using Serilog.Events;
 using System.Diagnostics;
@@ -133,11 +135,33 @@ namespace MainClient
                     });
 
                     services.AddSingleton<ChineseNameGenerator>();
-                    services.AddSingleton<ChromiumSessionManager>();
+                    services.AddSingleton<ChromiumSessionManager>(sp =>
+                    {
+                        var manager = new ChromiumSessionManager();
+                        manager.Reclaimed += result => Log.Information("Chromium reclaimed: {ExecutionId}, reason={Reason}, exit={ExitConfirmed}, forced={Forced}, error={Error}",
+                            result.ExecutionId, result.Reason, result.ExitConfirmed, result.Forced, result.Error);
+                        manager.ProfileCleaned += result =>
+                        {
+                            if (!result.Deleted) Log.Warning("Browser profile cleanup failed: {Profile}, attempts={Attempts}, error={Error}", result.UserDataDir, result.Attempts, result.Error);
+                        };
+                        return manager;
+                    });
+                    services.AddSingleton<IBrowserProcessManager>(sp => sp.GetRequiredService<ChromiumSessionManager>());
+                    services.AddSingleton<BrowserRuntimeManager>(sp =>
+                    {
+                        var runtime = new BrowserRuntimeManager(sp.GetRequiredService<IPlaywrightProvider>(), sp.GetRequiredService<IBrowserProcessManager>(),
+                            new(Math.Max(1, appSettings.MaximumConcurrency), Math.Max(1, appSettings.BrowserLaunchConcurrency)));
+                        runtime.Reclaimed += result => Log.Information("Browser session reclaimed: {ExecutionId}, reason={Reason}, exit={ExitConfirmed}, cleanupErrors={CleanupErrors}",
+                            result.ExecutionId, result.Reason, result.ExitConfirmed, result.CleanupErrors);
+                        return runtime;
+                    });
                     services.AddSingleton<TaskStatsAggregator>();
                     services.AddSingleton<AdeHelper>();
                     services.AddSingleton<IpHelper>();
                     services.AddSingleton<ProxyTester>();
+                    services.AddTransient<SMAdTask>();
+                    services.AddSingleton<Func<SMAdTask>>(sp => () => sp.GetRequiredService<SMAdTask>());
+                    services.AddSingleton<SmAdExecutor>();
                     services.AddTransient<MainForm>();
 
                 })
@@ -150,23 +174,30 @@ namespace MainClient
 
             var host = builder.Build();
             StartErrorDialogGuard();
-            Application.ApplicationExit += async (sender, e) =>
+            try
+            {
+                Application.Run(host.Services.GetRequiredService<MainForm>());
+            }
+            finally
             {
                 StopErrorDialogGuard();
-                CommonHelper.ClearLocalChromeProcesses();
+                // ApplicationExit async handlers are not awaited by WinForms.
+                // The form defers closing until tasks drain; complete host disposal here.
                 try
                 {
-                    var provider = host.Services.GetService<IPlaywrightProvider>();
-                    if (provider is IAsyncDisposable asyncDisposable)
-                        await asyncDisposable.DisposeAsync();
+                    Task.Run(async () =>
+                    {
+                        await host.Services.GetRequiredService<BrowserRuntimeManager>().DisposeAsync();
+                        if (host is IAsyncDisposable asyncHost) await asyncHost.DisposeAsync();
+                        else host.Dispose();
+                    }).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex, "Dispose PlaywrightProvider failed");
+                    Log.Fatal(ex, "Application resource shutdown failed");
+                    Environment.ExitCode = 1;
                 }
-            };
-
-            Application.Run(host.Services.GetRequiredService<MainForm>());
+            }
         }
 
         static void RestartApplication()

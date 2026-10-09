@@ -1,4 +1,4 @@
-﻿using PlaywrightHumanInput;
+using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
@@ -26,7 +26,7 @@ namespace SMAd.LandingPolicy
                 var refreshBtn = ctx.Page!.Locator(".no-result-btn").GetByText("刷新");
                 if (await refreshBtn.CountAsync() > 0)
                 {
-                    await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, refreshBtn.First);
+                    await SmAdTouch.TapAsync(ctx.Page, ctx.CdpSession!, refreshBtn.First);
                     await ctx.Page.WaitForTimeoutAsync(2000);
                 }
                 no_result_title = ctx.Page!.GetByText("抱歉，未能匹配到合适的课程");
@@ -41,8 +41,9 @@ namespace SMAd.LandingPolicy
             {
 
                 int imageCount = await openBtn.CountAsync();
-                await _owner.ClickAndDetectNavigationAsync(ctx, openBtn.Nth(imageCount - 1), token);
-                await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
+                var openClick = await _owner.ClickAndDetectNavigationAsync(ctx, openBtn.Nth(imageCount - 1), token);
+                if (!openClick.Navigated)
+                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
             }
 
             openBtn = ctx.Page.Locator(".welcome-popup-open-button");
@@ -60,7 +61,7 @@ namespace SMAd.LandingPolicy
             var closeBtn = ctx.Page.Locator(".close-btn,.close-area .close-icon,.layui-layer-close,.layui-layer-btn");
             if (await closeBtn.CountAsync() > 0)
             {
-                await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, closeBtn.First);
+                await SmAdTouch.TapAsync(ctx.Page, ctx.CdpSession!, closeBtn.First);
                 await Task.Delay(CommonHelper.RandomRange(3500, 5500), token);
             }
 
@@ -86,10 +87,6 @@ namespace SMAd.LandingPolicy
 
                 await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
                 var click = await _owner.ClickAndDetectNavigationAsync(ctx, offer, token);
-                if (click.Navigated)
-                {
-                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
-                }
 
                 return FlowControl.Continue;
             }

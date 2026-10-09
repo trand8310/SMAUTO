@@ -7,6 +7,7 @@ namespace SMAd.Models
     {
         Continue = 0,
         NextPv = 1,
-        EndTask = 2
+        EndTask = 2,
+        Failed = 3
     }
 }

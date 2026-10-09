@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace PlaywrightHumanInput
 {
-    public sealed class HumanTouchEngine
+    public sealed partial class HumanTouchEngine
     {
         private readonly GesturePlanner _planner;
         private readonly KinematicsEngine _kinematics;
@@ -39,12 +39,14 @@ namespace PlaywrightHumanInput
             HumanTouchRequest? request = null,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             request ??= new HumanTouchRequest();
             Validate(page, cdp);
             var viewport = await GetEffectiveViewportAsync(page);
             if (viewport.Width <= 0 || viewport.Height <= 0) return null;
 
             await _dispatcher.EnableAsync(page, cdp, Session.DeviceProfile);
+            using var inputLease = await CdpTouchRuntime.AcquireAsync(cdp, cancellationToken);
 
             GesturePlan? plan = null;
             ScrollTargetState? before = null;
@@ -87,7 +89,7 @@ namespace PlaywrightHumanInput
 
             var baseTrajectory = _kinematics.GenerateBaseTrajectory(Session, plan);
             var samples = _biomechanics.Apply(Session, plan, baseTrajectory);
-            await _dispatcher.DispatchAsync(cdp, samples, plan, Session.DeviceProfile, cancellationToken);
+            await _dispatcher.DispatchWithinLeaseAsync(cdp, samples, plan, Session.DeviceProfile, cancellationToken);
 
             bool moved = true;
             if (request.VerifyScrollChanged && before != null && docBefore != null)

@@ -82,6 +82,14 @@ namespace PlaywrightHumanInput
         public HumanTouchSession Session => Engine.Session;
         public PageContextSnapshot? LastPageContext => _lastPageContext;
 
+        public Task<bool> TapAsync(IPage page, ICDPSession cdp, ILocator target,
+            CancellationToken cancellationToken = default)
+            => Engine.TapAsync(page, cdp, target, log: Options.Log, cancellationToken: cancellationToken);
+
+        public Task<bool> TapAsync(IPage page, ICDPSession cdp, IElementHandle target,
+            CancellationToken cancellationToken = default)
+            => Engine.TapAsync(page, cdp, target, log: Options.Log, cancellationToken: cancellationToken);
+
         public async Task<HumanSwipeTrace?> BrowseOnceAsync(
             IPage page,
             ICDPSession cdp,

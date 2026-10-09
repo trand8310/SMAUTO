@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>HumanTouchP2.Enhancedv3</AssemblyName>
+    <RootNamespace>PlaywrightHumanInput</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="HumanSwipeGifExporter.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+	  <PackageReference Include="Patchright" Version="1.63.0" />
+	  <!--<PackageReference Include="SixLabors.Fonts" Version="3.1.3" />
+	  <PackageReference Include="SixLabors.ImageSharp" Version="4.1.2" />
+	  <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="3.1.2" />-->
+	  <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+</Project>

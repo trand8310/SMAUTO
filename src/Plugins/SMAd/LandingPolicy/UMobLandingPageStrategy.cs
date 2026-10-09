@@ -1,4 +1,4 @@
-﻿using PlaywrightHumanInput;
+using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;
@@ -35,7 +35,7 @@ namespace SMAd.LandingPolicy
                 foreach (var i in indices)
                 {
                     token.ThrowIfCancellationRequested();
-                    await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, tagItems.Nth(i));
+                    await SmAdTouch.TapAsync(ctx.Page, ctx.CdpSession!, tagItems.Nth(i));
                     await Task.Delay(CommonHelper.RandomRange(1000, 1500), token);
                 }
             }
@@ -47,7 +47,7 @@ namespace SMAd.LandingPolicy
                 {
                     if (new[] { 1, 3, 5, 7, 9 }.Contains(CommonHelper.RandomRange(0, 10)))
                     {
-                        await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, button.First);
+                        await SmAdTouch.TapAsync(ctx.Page, ctx.CdpSession!, button.First);
                         await Task.Delay(CommonHelper.RandomRange(2000, 3500), token);
                     }
                 }

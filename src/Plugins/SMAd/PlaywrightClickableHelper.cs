@@ -1,4 +1,4 @@
-﻿using Microsoft.Playwright;
+using Microsoft.Playwright;
 using System.Globalization;
 using System.Text.Json;
 
@@ -42,6 +42,8 @@ namespace SMAd
 
         public sealed class ClickableNodeInfo
         {
+            [System.Text.Json.Serialization.JsonIgnore]
+            public IFrame? SourceFrame { get; set; }
             public string FrameUrl { get; set; } = "";
             public string TagName { get; set; } = "";
             public string Text { get; set; } = "";
@@ -91,10 +93,11 @@ namespace SMAd
 
                     try
                     {
-                        var items = await GetClickableNodesFromFrameAsync(frame, options);
+                        var items = await GetClickableNodesFromFrameAsync(frame, options).WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
                         if (items.Count > 0)
                             result.AddRange(items);
                     }
+                    catch (OperationCanceledException) { throw; }
                     catch
                     {
                         // 某些 frame 可能不可访问，忽略
@@ -108,154 +111,8 @@ namespace SMAd
                     .ToList();
             }
 
-            public static async Task<ClickableNodeInfo?> GetBestClickableNodeAsync(
-                IPage page,
-                ClickAreaOptions? options = null,
-                CancellationToken cancellationToken = default)
-            {
-                var nodes = await GetClickableNodesAsync(page, options, cancellationToken);
-                return nodes.FirstOrDefault();
-            }
 
-            public static async Task<(IFrame Frame, ILocator Locator, ClickableNodeInfo Node)?> GetBestClickableLocatorAsync(
-                IPage page,
-                ClickAreaOptions? options = null,
-                CancellationToken cancellationToken = default)
-            {
-                options ??= new ClickAreaOptions();
 
-                var nodes = await GetClickableNodesAsync(page, options, cancellationToken);
-                if (nodes.Count == 0)
-                    return null;
-
-                foreach (var node in nodes)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var frame = FindFrameByUrl(page, node.FrameUrl);
-                    if (frame == null)
-                        continue;
-
-                    if (string.IsNullOrWhiteSpace(node.Selector))
-                        continue;
-
-                    try
-                    {
-                        var locator = frame.Locator(node.Selector).First;
-                        if (await locator.CountAsync() == 0)
-                            continue;
-
-                        return (frame, locator, node);
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                return null;
-            }
-
-            public static async Task<bool> ClickBestNodeAsync(
-                IPage page,
-                ClickAreaOptions? options = null,
-                int topN = 10,
-                CancellationToken cancellationToken = default)
-            {
-                options ??= new ClickAreaOptions();
-
-                var nodes = await GetClickableNodesAsync(page, options, cancellationToken);
-                if (nodes.Count == 0)
-                    return false;
-
-                foreach (var node in nodes.Take(Math.Max(1, topN)))
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var frame = FindFrameByUrl(page, node.FrameUrl);
-                    if (frame == null)
-                        continue;
-
-                    var ok = await ClickNodeWithFallbackAsync(page, frame, node, cancellationToken);
-                    if (ok)
-                        return true;
-                }
-
-                return false;
-            }
-
-            public static async Task<bool> ClickNodeWithFallbackAsync(
-                IPage page,
-                IFrame frame,
-                ClickableNodeInfo node,
-                CancellationToken cancellationToken = default)
-            {
-                try
-                {
-                    if (string.IsNullOrWhiteSpace(node.Selector))
-                        return false;
-
-                    var locator = frame.Locator(node.Selector).First;
-
-                    if (await locator.CountAsync() == 0)
-                        return false;
-
-                    try
-                    {
-
-                        await locator.ScrollIntoViewIfNeededAsync();
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        await locator.ClickAsync(new LocatorClickOptions
-                        {
-                            Timeout = 2500,
-                            Force = false
-                        });
-
-                        return true;
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        await page.Mouse.ClickAsync((float)node.CenterX, (float)node.CenterY);
-                        return true;
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        await locator.EvaluateAsync("el => el.click()");
-                        return true;
-                    }
-                    catch
-                    {
-                    }
-
-                    return false;
-                }
-                catch
-                {
-                    return false;
-                }
-            }
-
-            private static IFrame? FindFrameByUrl(IPage page, string frameUrl)
-            {
-                if (string.IsNullOrWhiteSpace(frameUrl))
-                    return null;
-
-                return page.Frames.FirstOrDefault(f =>
-                    string.Equals(f.Url, frameUrl, StringComparison.OrdinalIgnoreCase));
-            }
 
             private static async Task<List<ClickableNodeInfo>> GetClickableNodesFromFrameAsync(
                 IFrame frame,
@@ -272,6 +129,7 @@ namespace SMAd
                     PropertyNameCaseInsensitive = true
                 });
 
+                if (items != null) foreach (var item in items) item.SourceFrame = frame;
                 return items ?? new List<ClickableNodeInfo>();
             }
 

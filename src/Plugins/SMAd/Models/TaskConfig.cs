@@ -30,6 +30,7 @@ namespace SMAd.Models
         public int Sh { get; set; }
         public int ScreenWidth { get; set; }
         public int ScreenHeight { get; set; }
+        public SMAd.DeviceEmulation.DeviceDisplayProfile? DisplayProfile { get; set; }
         
 
         public string WordName { get; set; } = "";

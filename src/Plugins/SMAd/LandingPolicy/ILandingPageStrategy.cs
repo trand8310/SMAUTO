@@ -1,4 +1,4 @@
-﻿using SMAd.Models;
+using SMAd.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;

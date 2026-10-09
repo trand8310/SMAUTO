@@ -7,10 +7,26 @@ using System.Threading.Channels;
 
 namespace QTP.Common
 {
-    public abstract class QTPServiceBase : IQTPService
+    public abstract class QTPServiceBase : IQTPService, IWorkerResultService
     {
         public abstract string Title { get; }
         public abstract Task<(bool, bool, int)> ExecuteWorkerAsync(string uniqueId, JObject taskArgs, CancellationToken token);
+        public virtual async Task<WorkerExecutionResult> ExecuteWorkerWithResultAsync(
+            string uniqueId, JObject taskArgs, CancellationToken token)
+        {
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                var (success, clicked, ads) = await ExecuteWorkerAsync(uniqueId, taskArgs, token);
+                return new WorkerExecutionResult(
+                    success ? WorkerExecutionStatus.Succeeded : WorkerExecutionStatus.Failed,
+                    clicked, ads, success ? null : "旧版插件返回执行失败，未提供原因");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                return new WorkerExecutionResult(WorkerExecutionStatus.Canceled, FailureReason: "任务已取消");
+            }
+        }
         public readonly AppSettings _appSettings;
         public event EventHandler<PluginLogEventArgs>? OnLogEventHandler;
         public event EventHandler<TaskStateChangedEventArgs>? OnStateChangedEventHandler;

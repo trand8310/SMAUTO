@@ -10,6 +10,8 @@ namespace PlaywrightHumanInput
     public sealed class HumanTouchSession
     {
         private readonly Random _random;
+        private readonly TimeProvider _timeProvider;
+        private long _lastRecoveryTimestamp;
         private double _speedDrift;
         private double _forceDrift;
 
@@ -17,13 +19,24 @@ namespace PlaywrightHumanInput
             HumanUserProfile? userProfile = null,
             TouchDeviceProfile? deviceProfile = null,
             int? sessionSeed = null)
+            : this(userProfile, deviceProfile, sessionSeed, TimeProvider.System)
         {
+        }
+
+        public HumanTouchSession(
+            HumanUserProfile? userProfile,
+            TouchDeviceProfile? deviceProfile,
+            int? sessionSeed,
+            TimeProvider timeProvider)
+        {
+            _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+            _lastRecoveryTimestamp = _timeProvider.GetTimestamp();
             UserProfile = userProfile ?? HumanUserProfile.CreateRandom();
             DeviceProfile = deviceProfile ?? TouchDeviceProfile.GenericAndroid();
             SessionSeed = sessionSeed ?? CreateSessionSeed(UserProfile.Seed);
             _random = new Random(SessionSeed);
 
-            LastActionUtc = DateTime.UtcNow;
+            LastActionUtc = _timeProvider.GetUtcNow().UtcDateTime;
             PreferredVerticalXRatio = UserProfile.VerticalCenterXRatio;
             PreferredHorizontalYRatio = UserProfile.HorizontalCenterYRatio;
 
@@ -74,9 +87,11 @@ namespace PlaywrightHumanInput
 
         public void RecoverToNow()
         {
-            var now = DateTime.UtcNow;
-            double idle = Math.Max(0, (now - LastActionUtc).TotalSeconds);
+            var now = _timeProvider.GetTimestamp();
+            double idle = Math.Max(0, _timeProvider.GetElapsedTime(_lastRecoveryTimestamp, now).TotalSeconds);
             if (idle <= 0) return;
+            // 独立记录已结算的时间，保留 LastActionUtc 的“最近动作”语义。
+            _lastRecoveryTimestamp = now;
 
             double recovery = Math.Max(0.45, UserProfile.RecoveryBias);
             ShortFatigue *= Math.Exp(-idle / (18.0 / recovery));
@@ -90,7 +105,7 @@ namespace PlaywrightHumanInput
         public void RecordGesture(HumanSwipeTrace? trace)
         {
             RecoverToNow();
-            LastActionUtc = DateTime.UtcNow;
+            LastActionUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
             if (trace == null)
             {
@@ -165,7 +180,7 @@ namespace PlaywrightHumanInput
                 0.15,
                 1.0);
             BehaviorState = BrowseBehaviorState.Observe;
-            LastActionUtc = DateTime.UtcNow;
+            LastActionUtc = _timeProvider.GetUtcNow().UtcDateTime;
         }
 
         public double NextPreferredVerticalXRatio()

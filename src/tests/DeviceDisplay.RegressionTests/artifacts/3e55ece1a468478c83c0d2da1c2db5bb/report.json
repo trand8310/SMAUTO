@@ -1,0 +1,85 @@
+{
+  "Executable": "../pc_chrome.packed/135.0.7049.119/chrome.exe",
+  "Headed": true,
+  "Profile": {
+    "ScreenWidth": 412,
+    "ScreenHeight": 915,
+    "AvailableWidth": 412,
+    "AvailableHeight": 867,
+    "ViewportWidth": 412,
+    "ViewportHeight": 800,
+    "Dpr": 2.625,
+    "Mobile": true,
+    "WindowWidth": 640,
+    "WindowHeight": 1040,
+    "DprArgument": "2.625",
+    "AvailableScreenScript": "(() =\u003E {\n  const values = {availWidth: 412, availHeight: 867};\n  for (const [name, value] of Object.entries(values)) {\n    if (screen[name] !== value) {\n      Object.defineProperty(Screen.prototype, name, {\n        configurable: true, enumerable: true, get() { return value; }\n      });\n    }\n  }\n})();"
+  },
+  "Reports": [
+    {
+      "Page": "\u4E3B\u9875\u9762",
+      "FirstScriptMetrics": {
+        "$id": "1",
+        "sw": 412,
+        "sh": 915,
+        "aw": 412,
+        "ah": 867,
+        "dpr": 2.6249998807907104,
+        "vw": 412,
+        "vh": 800
+      }
+    },
+    {
+      "Page": "\u5F39\u7A97\u6807\u7B7E\u9875",
+      "FirstScriptMetrics": {
+        "$id": "1",
+        "sw": 412,
+        "sh": 915,
+        "aw": 412,
+        "ah": 867,
+        "dpr": 2.6249998807907104,
+        "vw": 412,
+        "vh": 800
+      }
+    },
+    {
+      "Page": "\u65B0\u7A97\u53E3",
+      "FirstScriptMetrics": {
+        "$id": "1",
+        "sw": 412,
+        "sh": 915,
+        "aw": 412,
+        "ah": 867,
+        "dpr": 2.6249998807907104,
+        "vw": 412,
+        "vh": 800
+      }
+    },
+    {
+      "Page": "\u540C\u6807\u7B7E\u9875\u518D\u6B21\u5BFC\u822A",
+      "FirstScriptMetrics": {
+        "$id": "1",
+        "sw": 412,
+        "sh": 915,
+        "aw": 412,
+        "ah": 867,
+        "dpr": 2.6249998807907104,
+        "vw": 412,
+        "vh": 800
+      }
+    },
+    {
+      "Page": "\u4E3B\u52A8\u521B\u5EFA\u7684\u9875\u9762",
+      "FirstScriptMetrics": {
+        "$id": "1",
+        "sw": 412,
+        "sh": 915,
+        "aw": 412,
+        "ah": 867,
+        "dpr": 2.6249998807907104,
+        "vw": 412,
+        "vh": 800
+      }
+    }
+  ]
+}

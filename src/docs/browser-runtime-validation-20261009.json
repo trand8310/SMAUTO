@@ -1,0 +1,79 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\chrome.packed\\145.0.7632.110\\chrome.exe",
+  "Samples": [
+    {
+      "Round": 1,
+      "PrivateBytes": 27303936,
+      "Handles": 434,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0,
+      "DriverPrivateBytes": 131289088,
+      "DriverHandles": 255,
+      "DriverProcesses": 1
+    },
+    {
+      "Round": 2,
+      "PrivateBytes": 25227264,
+      "Handles": 443,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0,
+      "DriverPrivateBytes": 102334464,
+      "DriverHandles": 255,
+      "DriverProcesses": 1
+    },
+    {
+      "Round": 3,
+      "PrivateBytes": 24010752,
+      "Handles": 442,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0,
+      "DriverPrivateBytes": 102506496,
+      "DriverHandles": 255,
+      "DriverProcesses": 1
+    },
+    {
+      "Round": 4,
+      "PrivateBytes": 23261184,
+      "Handles": 446,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0,
+      "DriverPrivateBytes": 105152512,
+      "DriverHandles": 255,
+      "DriverProcesses": 1
+    },
+    {
+      "Round": 5,
+      "PrivateBytes": 23736320,
+      "Handles": 452,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0,
+      "DriverPrivateBytes": 105316352,
+      "DriverHandles": 254,
+      "DriverProcesses": 1
+    },
+    {
+      "Round": 6,
+      "PrivateBytes": 23658496,
+      "Handles": 461,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0,
+      "DriverPrivateBytes": 105603072,
+      "DriverHandles": 254,
+      "DriverProcesses": 1
+    }
+  ],
+  "Touch": {
+    "Dispatched": true,
+    "ClickVerified": false,
+    "ScriptResponsive": false,
+    "OtherSessionResponsive": true,
+    "Error": "TimeoutException: The operation has timed out."
+  },
+  "Note": "Six rounds are a bounded regression observation, not a long-duration memory leak proof."
+}

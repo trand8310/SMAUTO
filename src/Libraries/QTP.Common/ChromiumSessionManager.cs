@@ -1,13 +1,9 @@
-﻿using QTP.Common.Win32;
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Net.Sockets;
 using System.Text.Json;
-using System.Threading.Channels;
 
 namespace QTP.Common
 {
@@ -17,36 +13,68 @@ namespace QTP.Common
         public string? Proxy { get; init; }
         public Process Process { get; init; } = null!;
         public int DebugPort { get; init; }
+        public string CdpEndpoint { get; init; } = "";
         public string UserDir { get; init; } = "";
         public DateTime ExpireAt { get; init; }
+        public TimeSpan Lifetime { get; init; } = TimeSpan.MaxValue;
+        internal long CreatedTimestamp { get; init; } = Stopwatch.GetTimestamp();
+        public ChromiumCloseResult? LastCloseResult { get; internal set; }
+        public Task<ProfileCleanupResult>? DirectoryCleanup { get; internal set; }
+        public event Action<BrowserStopKind>? StopRequested;
+        public BrowserStopKind? StopKind { get; private set; }
+        public void RequestStop(BrowserStopKind kind)
+        {
+            Action<BrowserStopKind>? handlers;
+            lock (CloseSync)
+            {
+                if (StopKind != null) return;
+                StopKind = kind; handlers = StopRequested;
+            }
+            if (handlers != null) foreach (Action<BrowserStopKind> handler in handlers.GetInvocationList())
+                try { handler(kind); } catch { }
+        }
 
         // 0 = 未关闭，1 = 关闭中/已关闭
         public int CloseStarted;
+        internal readonly object CloseSync = new();
+        internal Task? CloseTask;
+        public bool ExitConfirmed { get; internal set; }
     }
 
-    public sealed class ChromiumSessionManager : IAsyncDisposable
+    public sealed class ChromiumSessionManager : IAsyncDisposable, IBrowserProcessManager
     {
         private readonly ConcurrentDictionary<string, ChromiumSession> _sessions = new();
 
-        // 启动并发建议先保守一点，避免页面文件和系统资源被瞬间打爆
-        private readonly SemaphoreSlim _launchLimiter = new(4, 4);
+        // Tracks in-flight starts so shutdown cannot race process registration.
+        private readonly object _startSync = new();
+        private int _starting;
+        private TaskCompletionSource _startsDrained = CompletedSource();
+        private Task? _disposal;
 
-        private readonly Channel<ChromiumSession> _cleanupQueue = Channel.CreateUnbounded<ChromiumSession>(
-            new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false
-            });
+        private readonly ProfileCleanupQueue _cleanup;
+        private readonly HashSet<string> _reservedIds = new();
+        private readonly Dictionary<string, string> _ownedProfiles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Task<ProfileCleanupResult>> _profileCleanupTasks = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, Task> _reclaims = new();
+        private readonly TimeSpan _scanInterval;
+        private readonly TimeSpan _expiryGrace;
+        public event Action<ChromiumCloseResult>? Reclaimed;
+        public event Action<ProfileCleanupResult>? ProfileCleaned;
+        public int PendingDirectoryCleanups => _cleanup.PendingCount;
+        public Task WaitForDirectoryCleanupAsync() => _cleanup.DrainAsync();
 
         private readonly CancellationTokenSource _cts = new();
-        private readonly Task _cleanupLoopTask;
         private readonly Task _expireLoopTask;
 
         private int _disposeStarted;
 
-        public ChromiumSessionManager()
+        public ChromiumSessionManager(TimeSpan? expiryScanInterval = null, TimeSpan? expiryGracePeriod = null,
+            ProfileCleanupQueue? cleanup = null)
         {
-            _cleanupLoopTask = CleanupLoopAsync(_cts.Token);
+            _scanInterval = expiryScanInterval ?? TimeSpan.FromSeconds(1);
+            _expiryGrace = expiryGracePeriod ?? TimeSpan.FromSeconds(5);
+            if (_scanInterval <= TimeSpan.Zero || _expiryGrace < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(expiryScanInterval));
+            _cleanup = cleanup ?? new ProfileCleanupQueue();
             _expireLoopTask = ExpireScanLoopAsync(_cts.Token);
         }
 
@@ -77,264 +105,188 @@ namespace QTP.Common
         /// <summary>
         /// 启动 Chromium，并等待 remote debugging port 可用
         /// </summary>
-        public async Task<ChromiumSession> StartChromium(
-            string uniqueId,
-            string exePath,
-            string userDataDir,
-            TimeSpan ttl,
-            string arguments = "--incognito",
-            string? proxyServer = null,
-            TimeSpan? readyTimeout = null,
-            CancellationToken token = default)
+        public async Task<ChromiumSession> StartChromium(string uniqueId, string exePath, string userDataDir,
+            TimeSpan ttl, string arguments = "--incognito", string? proxyServer = null,
+            TimeSpan? readyTimeout = null, CancellationToken token = default)
         {
-            ThrowIfDisposed();
-            token.ThrowIfCancellationRequested();
-
-            if (string.IsNullOrWhiteSpace(uniqueId))
-                throw new ArgumentNullException(nameof(uniqueId));
-            if (string.IsNullOrWhiteSpace(exePath))
-                throw new ArgumentNullException(nameof(exePath));
-            if (string.IsNullOrWhiteSpace(userDataDir))
-                throw new ArgumentNullException(nameof(userDataDir));
-            if (ttl <= TimeSpan.Zero)
-                throw new ArgumentOutOfRangeException(nameof(ttl));
-
-            var entered = false;
-            var started = false;
-            int port = 0;
+            ArgumentException.ThrowIfNullOrWhiteSpace(uniqueId);
+            ArgumentException.ThrowIfNullOrWhiteSpace(exePath);
+            ArgumentException.ThrowIfNullOrWhiteSpace(userDataDir);
+            if (ttl <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(ttl));
+            userDataDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(userDataDir));
+            if (userDataDir == Path.GetPathRoot(userDataDir)) throw new ArgumentException("A filesystem root cannot be a browser profile.");
+            lock (_startSync)
+            {
+                ThrowIfDisposed();
+                if (_reservedIds.Contains(uniqueId)) throw new InvalidOperationException("Chromium execution ID is already reserved.");
+                if (_ownedProfiles.ContainsKey(userDataDir)) throw new InvalidOperationException("Browser profile is active or awaiting cleanup.");
+                _reservedIds.Add(uniqueId); _ownedProfiles.Add(userDataDir, uniqueId);
+                if (_starting++ == 0) _startsDrained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, _cts.Token);
+            var ct = lifetime.Token;
             Process? proc = null;
-
+            bool directoryCreated = false;
             try
             {
-                await _launchLimiter.WaitAsync(token).ConfigureAwait(false);
-                entered = true;
-
-                ThrowIfDisposed();
-
-                if (_sessions.ContainsKey(uniqueId))
-                    throw new InvalidOperationException($"Chromium session already exists. uniqueId={uniqueId}");
-
-                port = RemotePortManager.AcquirePort();
-
-                var fullArgs = $"{arguments} --user-data-dir=\"{userDataDir}\" --remote-debugging-port={port}";
-                var psi = new ProcessStartInfo
+                ct.ThrowIfCancellationRequested();
+                if (_sessions.ContainsKey(uniqueId)) throw new InvalidOperationException($"Chromium session already exists: {uniqueId}");
+                directoryCreated = !Directory.Exists(userDataDir);
+                Directory.CreateDirectory(userDataDir);
+                File.Delete(Path.Combine(userDataDir, "DevToolsActivePort"));
+                proc = Process.Start(new ProcessStartInfo
                 {
                     FileName = exePath,
-                    Arguments = fullArgs,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                try
+                    Arguments = $"{arguments} --user-data-dir=\"{userDataDir}\" --remote-debugging-port=0",
+                    UseShellExecute = false, CreateNoWindow = true
+                }) ?? throw new InvalidOperationException("Chromium process was not created.");
+                var endpoint = await WaitForDevToolsEndpointAsync(proc, userDataDir, readyTimeout ?? TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+                var session = new ChromiumSession { UniqueId = uniqueId, Proxy = proxyServer, Process = proc,
+                    DebugPort = endpoint.Port, CdpEndpoint = endpoint.WebSocketUrl, UserDir = userDataDir,
+                    ExpireAt = DateTime.UtcNow.Add(ttl), Lifetime = ttl };
+                lock (_startSync)
                 {
-                    proc = Process.Start(psi);
-                    if (proc == null)
-                        throw new InvalidOperationException($"Unable to start chromium process: {exePath}");
+                    ThrowIfDisposed(); ct.ThrowIfCancellationRequested();
+                    if (!_sessions.TryAdd(uniqueId, session)) throw new InvalidOperationException($"Failed to register Chromium: {uniqueId}");
                 }
-                catch (Win32Exception ex) when (ex.NativeErrorCode == 1455)
-                {
-                    SafeRestartHelper.RequestSystemRestart("连续 1455，系统资源不足");
-
-                    //if (ShouldRestartFor1455())
-                    //{
-                    //    SafeRestartHelper.RequestSystemRestart("连续 1455，系统资源不足");
-                    //}
-                    //throw new InvalidOperationException($"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}",ex);
-
-                    //throw new InvalidOperationException($"Chromium 启动失败：页面文件太小或系统提交内存不足。uniqueId={uniqueId}, exePath={exePath}", ex);
-                }
-
-
-
-
-
-
-                started = true;
-
-                var readyTs = readyTimeout ?? TimeSpan.FromSeconds(10);
-                await WaitForDebugPortReadyAsync(proc, port, readyTs, token).ConfigureAwait(false);
-
-                var session = new ChromiumSession
-                {
-                    UniqueId = uniqueId,
-                    Proxy = proxyServer,
-                    Process = proc,
-                    DebugPort = port,
-                    UserDir = userDataDir,
-                    ExpireAt = DateTime.UtcNow.Add(ttl),
-                    CloseStarted = 0
-                };
-
-                if (!_sessions.TryAdd(uniqueId, session))
-                    throw new InvalidOperationException($"Failed to register chromium session. uniqueId={uniqueId}");
-
                 return session;
             }
-            catch
+            catch (Exception startupError)
             {
                 if (proc != null)
                 {
-                    try
+                    var failed = new ChromiumSession { UniqueId = uniqueId, Process = proc, UserDir = userDataDir,
+                        ExpireAt = DateTime.UtcNow.Add(ttl) };
+                    if (_sessions.TryAdd(uniqueId, failed))
                     {
-                        if (!proc.HasExited)
-                            proc.Kill(entireProcessTree: true);
+                        try { await CloseAsync(uniqueId).ConfigureAwait(false); }
+                        catch (Exception closeError) { throw new AggregateException("Startup failed and process exit was not confirmed.", startupError, closeError); }
                     }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                        await proc.WaitForExitAsync(waitCts.Token).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        proc.Dispose();
-                    }
-                    catch
-                    {
-                    }
+                    else await CloseInternalAsync(failed).ConfigureAwait(false);
                 }
-
-                if (port != 0)
-                {
-                    try
-                    {
-                        RemotePortManager.Release(port);
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                if (started)
-                {
-                    _ = CleanupUserDirLaterAsync(userDataDir);
-                }
-
+                else if (directoryCreated)
+                    ScheduleProfileCleanup(new ChromiumSession { UniqueId = uniqueId, UserDir = userDataDir });
                 throw;
             }
             finally
             {
-                if (entered)
-                    _launchLimiter.Release();
+                lock (_startSync)
+                {
+                    if (!_sessions.ContainsKey(uniqueId)) _reservedIds.Remove(uniqueId);
+                    if (proc == null && !directoryCreated) _ownedProfiles.Remove(userDataDir);
+                    if (--_starting == 0) _startsDrained.TrySetResult();
+                }
             }
         }
 
         /// <summary>
         /// 关闭指定会话
         /// </summary>
-        public async Task CloseAsync(string uniqueId)
+        public Task CloseAsync(string uniqueId)
         {
-            if (string.IsNullOrWhiteSpace(uniqueId))
-                return;
-
-            if (!_sessions.TryGetValue(uniqueId, out var session))
-                return;
-
-            if (Interlocked.Exchange(ref session.CloseStarted, 1) == 1)
-                return;
-
-            try
+            if (string.IsNullOrWhiteSpace(uniqueId) || !_sessions.TryGetValue(uniqueId, out var session)) return Task.CompletedTask;
+            lock (session.CloseSync)
             {
-                await CloseInternalAsync(session).ConfigureAwait(false);
-            }
-            finally
-            {
-                _sessions.TryRemove(uniqueId, out _);
+                // Concurrent callers await the same close; a failed close can be retried.
+                if (session.CloseTask == null || session.CloseTask.IsFaulted)
+                    session.CloseTask = CloseAndRemoveAsync(session);
+                return session.CloseTask;
             }
         }
 
-        /// <summary>
-        /// 关闭全部会话
-        /// </summary>
-        public async Task CloseAllAsync()
+        public async Task<ChromiumCloseResult?> CloseWithResultAsync(string uniqueId, BrowserStopKind reason = BrowserStopKind.Completed)
         {
-            var tasks = _sessions.Keys.Select(CloseAsync).ToArray();
-            if (tasks.Length == 0)
-                return;
-
-            try
-            {
-                await Task.WhenAll(tasks).ConfigureAwait(false);
-            }
-            catch
-            {
-                // 尽力而为
-            }
+            if (!_sessions.TryGetValue(uniqueId, out var session)) return null;
+            session.RequestStop(reason);
+            try { await CloseAsync(uniqueId).ConfigureAwait(false); } catch { }
+            return session.LastCloseResult;
         }
-
-        /// <summary>
-        /// 关闭 Chromium 进程、释放端口、安排缓存目录清理
-        /// </summary>
+        private async Task CloseAndRemoveAsync(ChromiumSession session)
+        {
+            Interlocked.Exchange(ref session.CloseStarted, 1);
+            await CloseInternalAsync(session).ConfigureAwait(false);
+            _sessions.TryRemove(new KeyValuePair<string, ChromiumSession>(session.UniqueId, session));
+            lock (_startSync) _reservedIds.Remove(session.UniqueId);
+        }
+        public Task CloseAllAsync() => Task.WhenAll(_sessions.Keys.Select(CloseAsync));
         private async Task CloseInternalAsync(ChromiumSession session)
         {
+            session.RequestStop(BrowserStopKind.Completed);
+            var clock = Stopwatch.StartNew();
+            bool forced = false; int? exitCode = null; string? error = null;
             try
             {
-                if (!session.Process.HasExited)
+                if (!session.ExitConfirmed)
                 {
-                    try
+                    if (!session.Process.HasExited)
                     {
+                        forced = true;
                         session.Process.Kill(entireProcessTree: true);
+                        using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                        await session.Process.WaitForExitAsync(wait.Token).ConfigureAwait(false);
                     }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                        await session.Process.WaitForExitAsync(waitCts.Token).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                    }
+                    if (!session.Process.HasExited) throw new IOException($"Chromium exit not confirmed: {session.UniqueId}");
+                    exitCode = SafeGetExitCode(session.Process);
+                    session.ExitConfirmed = true;
+                    session.Process.Dispose();
+                    ScheduleProfileCleanup(session);
                 }
             }
-            catch
-            {
-            }
+            catch (Exception ex) { error = ex.Message; throw; }
             finally
             {
-                try
-                {
-                    session.Process.Dispose();
-                }
-                catch
-                {
-                }
-
-                try
-                {
-                    RemotePortManager.Release(session.DebugPort);
-                }
-                catch
-                {
-                }
-
-                try
-                {
-                    using var writeCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                    await _cleanupQueue.Writer.WriteAsync(session, writeCts.Token).ConfigureAwait(false);
-                }
-                catch
-                {
-                    _ = CleanupUserDirLaterAsync(session.UserDir);
-                }
+                session.LastCloseResult = new(session.UniqueId, session.StopKind ?? BrowserStopKind.Completed,
+                    session.ExitConfirmed, forced, exitCode, clock.Elapsed, error,
+                    session.DirectoryCleanup ?? Task.FromResult(new ProfileCleanupResult(session.UserDir, false, 0, "Process exit not confirmed")));
+                Publish(Reclaimed, session.LastCloseResult);
             }
+        }
+        private void ScheduleProfileCleanup(ChromiumSession session)
+        {
+            session.DirectoryCleanup ??= _cleanup.Enqueue(session.UserDir);
+            lock (_startSync) _profileCleanupTasks[session.UserDir] = session.DirectoryCleanup;
+            _ = ObserveCleanupAsync(session.UserDir, session.UniqueId, session.DirectoryCleanup);
+        }
+        private async Task ObserveCleanupAsync(string path, string executionId, Task<ProfileCleanupResult> cleanup)
+        {
+            var result = await cleanup.ConfigureAwait(false);
+            if (result.Deleted) lock (_startSync)
+            {
+                if (_ownedProfiles.TryGetValue(path, out var owner) && owner == executionId &&
+                    _profileCleanupTasks.TryGetValue(path, out var latest) && ReferenceEquals(latest, cleanup))
+                { _ownedProfiles.Remove(path); _profileCleanupTasks.Remove(path); }
+            }
+            Publish(ProfileCleaned, result);
+        }
+        public Task<ProfileCleanupResult> RetryProfileCleanupAsync(string userDir)
+        {
+            userDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(userDir));
+            lock (_startSync)
+            {
+                ThrowIfDisposed();
+                if (!_ownedProfiles.TryGetValue(userDir, out var owner)) throw new InvalidOperationException("Profile is not owned by this manager.");
+                if (_reservedIds.Contains(owner)) throw new InvalidOperationException("Profile is still used by an execution.");
+                if (_profileCleanupTasks.TryGetValue(userDir, out var previous) &&
+                    (!previous.IsCompleted || previous.IsCompletedSuccessfully && previous.Result.Deleted))
+                    return previous;
+                var cleanup = _cleanup.Enqueue(userDir);
+                _profileCleanupTasks[userDir] = cleanup;
+                _ = ObserveCleanupAsync(userDir, owner, cleanup);
+                return cleanup;
+            }
+        }
+        private static void Publish<T>(Action<T>? handlers, T result)
+        {
+            if (handlers != null) foreach (Action<T> handler in handlers.GetInvocationList())
+                try { handler(result); } catch { }
         }
 
         /// <summary>
         /// 等待 Chromium 的 remote debugging port 真正 ready
         /// </summary>
-        private static async Task WaitForDebugPortReadyAsync(
+        private static async Task<ChromiumDevToolsEndpoint> WaitForDevToolsEndpointAsync(
             Process process,
-            int port,
+            string userDataDir,
             TimeSpan timeout,
             CancellationToken token)
         {
@@ -343,52 +295,41 @@ namespace QTP.Common
 
             var ct = timeoutCts.Token;
             Exception? lastError = null;
-            var start = DateTime.UtcNow;
+            var stopwatch = Stopwatch.StartNew();
+            var activePortFile = Path.Combine(userDataDir, "DevToolsActivePort");
 
-            while (true)
+            try
             {
-                ct.ThrowIfCancellationRequested();
-
-                try
+                while (true)
                 {
+                    ct.ThrowIfCancellationRequested();
                     if (process.HasExited)
                     {
                         throw new InvalidOperationException(
-                            $"Chromium exited before debug port became ready. ExitCode={SafeGetExitCode(process)}");
+                            $"Chromium exited before DevTools became ready. ExitCode={SafeGetExitCode(process)}");
                     }
 
-                    var tcpOk = await CanConnectTcpAsync(
-                        host: "127.0.0.1",
-                        port: port,
-                        timeoutMs: 5000,
-                        token: ct).ConfigureAwait(false);
-
-                    if (tcpOk)
+                    try
                     {
-                        var versionOk = await CanQueryDevToolsVersionAsync(
-                            port: port,
-                            token: ct,
-                            timeoutMs: 5000).ConfigureAwait(false);
-
-                        if (versionOk)
-                            return;
+                        if (File.Exists(activePortFile))
+                        {
+                            var lines = await File.ReadAllLinesAsync(activePortFile, ct).ConfigureAwait(false);
+                            if (ChromiumDevToolsEndpoint.TryParse(lines, out var endpoint) &&
+                                await CanQueryDevToolsVersionAsync(endpoint!.Port, ct,
+                                    expectedWebSocketUrl: endpoint.WebSocketUrl).ConfigureAwait(false))
+                                return endpoint;
+                        }
                     }
+                    catch (IOException ex) { lastError = ex; }
+                    catch (UnauthorizedAccessException ex) { lastError = ex; }
+                    await Task.Delay(100, ct).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    var elapsed = DateTime.UtcNow - start;
-                    throw new TimeoutException(
-                        $"Timed out waiting for Chromium debug port {port} to become ready after {elapsed.TotalSeconds:N1}s.",
-                        lastError);
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex;
-                }
-
-                await Task.Delay(200, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Timed out waiting for Chromium DevToolsActivePort after {stopwatch.Elapsed.TotalSeconds:N1}s. File={activePortFile}",
+                    lastError);
             }
         }
 
@@ -407,52 +348,13 @@ namespace QTP.Common
         }
 
         /// <summary>
-        /// 测试 TCP 连接
-        /// </summary>
-        private static async Task<bool> CanConnectTcpAsync(
-            string host,
-            int port,
-            int timeoutMs,
-            CancellationToken token)
-        {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            linkedCts.CancelAfter(timeoutMs);
-            var ct = linkedCts.Token;
-
-            try
-            {
-                using var client = new TcpClient();
-
-#if NET8_0_OR_GREATER
-                await client.ConnectAsync(host, port, ct).ConfigureAwait(false);
-#else
-                var connectTask = client.ConnectAsync(host, port);
-                var completed = await Task.WhenAny(connectTask, Task.Delay(timeoutMs, ct)).ConfigureAwait(false);
-                if (completed != connectTask)
-                    return false;
-                await connectTask.ConfigureAwait(false);
-#endif
-
-                return client.Connected;
-            }
-            catch (OperationCanceledException)
-            {
-                token.ThrowIfCancellationRequested();
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
         /// 测试 DevTools /json/version 是否可访问
         /// </summary>
         private static async Task<bool> CanQueryDevToolsVersionAsync(
             int port,
             CancellationToken token,
-            int timeoutMs = 1500)
+            int timeoutMs = 1500,
+            string? expectedWebSocketUrl = null)
         {
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             linkedCts.CancelAfter(timeoutMs);
@@ -490,7 +392,10 @@ namespace QTP.Common
                     return false;
 
                 var wsUrl = wsProp.GetString();
-                return !string.IsNullOrWhiteSpace(wsUrl);
+                return Uri.TryCreate(wsUrl, UriKind.Absolute, out var actual) &&
+                    actual.Scheme == "ws" && actual.Port == port &&
+                    (expectedWebSocketUrl == null ||
+                     actual.AbsolutePath == new Uri(expectedWebSocketUrl).AbsolutePath);
             }
             catch (OperationCanceledException)
             {
@@ -503,184 +408,78 @@ namespace QTP.Common
             }
         }
 
-        private async Task CleanupLoopAsync(CancellationToken token)
-        {
-            try
-            {
-                await foreach (var session in _cleanupQueue.Reader.ReadAllAsync(token).ConfigureAwait(false))
-                {
-                    await TryDeleteDirectoryWithRetryAsync(session.UserDir).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch
-            {
-            }
-        }
-
-        private async Task CleanupUserDirLaterAsync(string userDir)
-        {
-            try
-            {
-                await TryDeleteDirectoryWithRetryAsync(userDir).ConfigureAwait(false);
-            }
-            catch
-            {
-            }
-        }
-
-        /// <summary>
-        /// 删除缓存目录：不依赖业务 token，尽量清干净
-        /// </summary>
-        private static async Task TryDeleteDirectoryWithRetryAsync(string userDir)
-        {
-            if (string.IsNullOrWhiteSpace(userDir))
-                return;
-
-            var delays = new[]
-            {
-                TimeSpan.Zero,
-                TimeSpan.FromSeconds(5),
-                TimeSpan.FromSeconds(10),
-                TimeSpan.FromSeconds(20),
-                TimeSpan.FromSeconds(30)
-            };
-
-            foreach (var delay in delays)
-            {
-                try
-                {
-                    if (!Directory.Exists(userDir))
-                        return;
-
-                    if (delay > TimeSpan.Zero)
-                        await Task.Delay(delay).ConfigureAwait(false);
-
-                    Directory.Delete(userDir, recursive: true);
-                    return;
-                }
-                catch
-                {
-                    // 继续重试
-                }
-            }
-        }
-
         private async Task ExpireScanLoopAsync(CancellationToken token)
         {
             try
             {
-                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
-
+                using var timer = new PeriodicTimer(_scanInterval);
                 while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
                 {
-                    var now = DateTime.UtcNow;
-                    List<string>? expiredIds = null;
-
-                    foreach (var kv in _sessions)
+                    foreach (var session in _sessions.Values)
                     {
-                        token.ThrowIfCancellationRequested();
-
-                        var session = kv.Value;
-                        if (now >= session.ExpireAt)
-                        {
-                            expiredIds ??= new List<string>();
-                            expiredIds.Add(kv.Key);
-                        }
-                    }
-
-                    if (expiredIds == null || expiredIds.Count == 0)
-                        continue;
-
-                    foreach (var uniqueId in expiredIds)
-                    {
-                        try
-                        {
-                            await CloseAsync(uniqueId).ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                        }
+                        if (session.ExitConfirmed || session.CloseStarted != 0 || _reclaims.ContainsKey(session.UniqueId)) continue;
+                        BrowserStopKind? reason = null;
+                        try { if (session.Process.HasExited) reason = BrowserStopKind.BrowserCrashed; } catch { }
+                        if (reason == null && Stopwatch.GetElapsedTime(session.CreatedTimestamp) >= session.Lifetime)
+                            reason = BrowserStopKind.LifetimeExpired;
+                        if (reason == null) continue;
+                        var reclaim = Task.Run(() => ReclaimExpiredAsync(session, reason.Value, token));
+                        _reclaims[session.UniqueId] = reclaim;
+                        _ = reclaim.ContinueWith(_ => _reclaims.TryRemove(session.UniqueId, out var removed),
+                            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                     }
                 }
             }
-            catch (OperationCanceledException)
-            {
-            }
-            catch
-            {
-            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         }
-
-        private static bool ShouldRestartFor1455()
+        private async Task ReclaimExpiredAsync(ChromiumSession session, BrowserStopKind reason, CancellationToken token)
         {
-            var ms = SystemMemoryHelper.GetMemoryStatus();
-
-            var memoryLoad = ms.dwMemoryLoad;
-            var availPhysMb = SystemMemoryHelper.ToMb(ms.ullAvailPhys);
-            var availPageFileMb = SystemMemoryHelper.ToMb(ms.ullAvailPageFile);
-
-            var dangerous =
-                memoryLoad >= 88 ||
-                availPhysMb <= 1024 ||
-                availPageFileMb <= 1024;
-
-            if (!dangerous)
-                return false;
-
-            return MemoryCrisisGuard.ShouldRestartNow();
-
-
+            session.RequestStop(reason);
+            try
+            {
+                if (reason == BrowserStopKind.LifetimeExpired) await Task.Delay(_expiryGrace, token).ConfigureAwait(false);
+                if (_sessions.TryGetValue(session.UniqueId, out var current) && ReferenceEquals(current, session))
+                    await CloseAsync(session.UniqueId).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            catch { } // CloseInternalAsync publishes the failed close, preserving ownership for retry.
         }
+
         private void ThrowIfDisposed()
         {
             if (Volatile.Read(ref _disposeStarted) != 0)
                 throw new ObjectDisposedException(nameof(ChromiumSessionManager));
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
-            if (Interlocked.Exchange(ref _disposeStarted, 1) == 1)
-                return;
-
-            try
+            lock (_startSync)
             {
-                _cts.Cancel();
+                if (_disposal == null || _disposal.IsFaulted)
+                {
+                    Interlocked.Exchange(ref _disposeStarted, 1);
+                    _disposal = Task.Run(DisposeCoreAsync);
+                }
+                return new(_disposal);
             }
-            catch
-            {
-            }
-
-            try
-            {
-                await CloseAllAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-            }
-
-            _cleanupQueue.Writer.TryComplete();
-
-            try
-            {
-                await _cleanupLoopTask.ConfigureAwait(false);
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                await _expireLoopTask.ConfigureAwait(false);
-            }
-            catch
-            {
-            }
-
-            _launchLimiter.Dispose();
+        }
+        private async Task DisposeCoreAsync()
+        {
+            _cts.Cancel();
+            Task starts;
+            lock (_startSync) starts = _startsDrained.Task;
+            await starts.ConfigureAwait(false);
+            await _expireLoopTask.ConfigureAwait(false);
+            await Task.WhenAll(_reclaims.Values.ToArray()).ConfigureAwait(false);
+            await CloseAllAsync().ConfigureAwait(false);
+            if (!_sessions.IsEmpty) throw new IOException("Some managed Chromium processes have not exited.");
+            await _cleanup.DisposeAsync().ConfigureAwait(false);
             _cts.Dispose();
+        }
+        private static TaskCompletionSource CompletedSource()
+        {
+            var t = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            t.SetResult(); return t;
         }
     }
 }

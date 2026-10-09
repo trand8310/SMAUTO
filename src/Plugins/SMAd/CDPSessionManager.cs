@@ -1,8 +1,9 @@
-﻿
+
  
 namespace QTP.Plugins
 {
     using Microsoft.Playwright;
+    using PlaywrightHumanInput;
     using System;
     using System.Collections.Concurrent;
     using System.Collections.Generic;
@@ -15,14 +16,18 @@ namespace QTP.Plugins
         private sealed class SessionEntry
         {
             public required Lazy<Task<ICDPSession>> LazySession { get; init; }
-            public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
             public EventHandler<IPage>? CloseHandler;
+            public EventHandler<ICDPSession>? SessionCloseHandler;
+            public int Removed;
         }
 
         private readonly IBrowserContext _context;
         private readonly ConcurrentDictionary<IPage, SessionEntry> _sessionMap = new();
         private readonly EventHandler<IPage> _contextPageHandler;
         private int _disposeStarted;
+        private readonly object _sync = new();
+        private readonly List<Task> _cleanup = new();
+        private Task? _disposeTask;
 
         public CDPSessionManager(IBrowserContext context)
         {
@@ -41,65 +46,61 @@ namespace QTP.Plugins
         {
             if (page == null)
                 throw new ArgumentNullException(nameof(page));
+            if (page.Context is { } owner && !ReferenceEquals(owner, _context))
+                throw new InvalidOperationException("The page belongs to another browser context.");
 
-            var entry = _sessionMap.GetOrAdd(page, CreateEntry);
+            SessionEntry entry;
+            lock (_sync)
+            {
+                ObjectDisposedException.ThrowIf(_disposeStarted != 0, this);
+                entry = _sessionMap.GetOrAdd(page, CreateEntry);
+                AttachPageCloseHandler(page);
+                _ = entry.LazySession.Value;
+            }
 
             try
             {
-                return await entry.LazySession.Value.ConfigureAwait(false);
+                var session = await entry.LazySession.Value.ConfigureAwait(false);
+                ObjectDisposedException.ThrowIf(_disposeStarted != 0, this);
+                if (Volatile.Read(ref entry.Removed) != 0 || page.IsClosed)
+                    throw new InvalidOperationException("The page session has closed.");
+                return session;
             }
             catch
             {
                 // 创建失败后把坏缓存清掉，避免后续一直拿到 faulted task
-                _sessionMap.TryRemove(new KeyValuePair<IPage, SessionEntry>(page, entry));
+                RemoveEntry(page, entry);
                 throw;
             }
         }
 
-        public bool ContainsPage(IPage page)
-        {
-            if (page == null)
-                return false;
-
-            return _sessionMap.ContainsKey(page);
-        }
 
         public bool RemoveSession(IPage page)
         {
             if (page == null)
                 return false;
 
-            if (!_sessionMap.TryRemove(page, out var entry))
-                return false;
-
-            if (entry.CloseHandler != null)
+            lock (_sync)
             {
-                try { page.Close -= entry.CloseHandler; } catch { }
+                return _sessionMap.TryGetValue(page, out var entry) && RemoveEntry(page, entry);
             }
+        }
 
-            _ = DisposeSessionEntryAsync(entry);
-            return true;
+        private bool RemoveEntry(IPage page, SessionEntry entry)
+        {
+            lock (_sync)
+            {
+                if (Interlocked.Exchange(ref entry.Removed, 1) != 0) return false;
+                _sessionMap.TryRemove(new KeyValuePair<IPage, SessionEntry>(page, entry));
+                if (entry.CloseHandler != null) page.Close -= entry.CloseHandler;
+                _cleanup.Add(DisposeSessionEntryAsync(entry));
+                return true;
+            }
         }
 
         public int Count => _sessionMap.Count;
 
-        public IReadOnlyCollection<IPage> GetTrackedPages()
-        {
-            return _sessionMap.Keys.ToArray();
-        }
 
-        public async Task<bool> TryWarmupSessionAsync(IPage page)
-        {
-            try
-            {
-                await GetOrCreateSessionAsync(page).ConfigureAwait(false);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
 
         public void Clear()
         {
@@ -111,27 +112,38 @@ namespace QTP.Plugins
 
         private SessionEntry CreateEntry(IPage page)
         {
-            return new SessionEntry
+            SessionEntry entry = null!;
+            entry = new SessionEntry
             {
                 LazySession = new Lazy<Task<ICDPSession>>(
-                    () => CreateSessionCoreAsync(page),
+                    async () => {
+                        var session = await CreateSessionCoreAsync(page);
+                        EventHandler<ICDPSession> closed = (_, _) => { CdpTouchRuntime.Invalidate(session); RemoveEntry(page, entry); };
+                        session.Close += closed;
+                        entry.SessionCloseHandler = closed;
+                        return session;
+                    },
                     LazyThreadSafetyMode.ExecutionAndPublication)
             };
+            return entry;
         }
 
         private void AttachPageCloseHandler(IPage page)
         {
-            if (page == null)
-                return;
-
-            var entry = _sessionMap.GetOrAdd(page, CreateEntry);
-            if (entry.CloseHandler != null)
-                return;
-
-            EventHandler<IPage> closeHandler = (_, _) => RemoveSession(page);
-            if (Interlocked.CompareExchange(ref entry.CloseHandler, closeHandler, null) == null)
+            lock (_sync)
             {
-                page.Close += closeHandler;
+                if (page == null || Volatile.Read(ref _disposeStarted) != 0)
+                    return;
+
+                var entry = _sessionMap.GetOrAdd(page, CreateEntry);
+                if (entry.CloseHandler != null)
+                    return;
+
+                EventHandler<IPage> closeHandler = (_, _) => RemoveEntry(page, entry);
+                if (Interlocked.CompareExchange(ref entry.CloseHandler, closeHandler, null) == null)
+                {
+                    page.Close += closeHandler;
+                }
             }
         }
 
@@ -155,47 +167,32 @@ namespace QTP.Plugins
             try
             {
                 var session = await entry.LazySession.Value.ConfigureAwait(false);
-                if (session is IAsyncDisposable asyncDisposable)
+                if (entry.SessionCloseHandler != null) session.Close -= entry.SessionCloseHandler;
+                CdpTouchRuntime.Lease? lease = null;
+                try
                 {
-                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    try { lease = await CdpTouchRuntime.StopAsync(session); } catch { }
+                    await session.DetachAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
                 }
-                else if (session is IDisposable disposable)
-                {
-                    disposable.Dispose();
-                }
+                finally { lease?.Dispose(); }
             }
             catch
             {
             }
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
-            if (Interlocked.Exchange(ref _disposeStarted, 1) == 1)
-                return;
-
-            try
+            KeyValuePair<IPage, SessionEntry>[] entries;
+            lock (_sync)
             {
+                if (_disposeTask != null) return new ValueTask(_disposeTask);
+                Interlocked.Exchange(ref _disposeStarted, 1);
+                entries = _sessionMap.ToArray();
+                foreach (var pair in entries) RemoveEntry(pair.Key, pair.Value);
                 _context.Page -= _contextPageHandler;
-            }
-            catch
-            {
-            }
-
-            var entries = _sessionMap.ToArray();
-            _sessionMap.Clear();
-
-            foreach (var pair in entries)
-            {
-                if (pair.Value.CloseHandler != null)
-                {
-                    try { pair.Key.Close -= pair.Value.CloseHandler; } catch { }
-                }
-            }
-
-            foreach (var pair in entries)
-            {
-                await DisposeSessionEntryAsync(pair.Value).ConfigureAwait(false);
+                _disposeTask = Task.WhenAll(_cleanup.ToArray());
+                return new ValueTask(_disposeTask);
             }
         }
     }

@@ -1,54 +1,13 @@
-﻿namespace SMAd
+namespace SMAd
 {
     using Microsoft.Playwright;
     using System.Text;
 
-    public sealed class CenterClickCandidate
-    {
-        public string TagName { get; set; } = "";
-        public string SelectorHint { get; set; } = "";
-        public double CenterX { get; set; }
-        public double CenterY { get; set; }
-        public double Width { get; set; }
-        public double Height { get; set; }
-        public double Score { get; set; }
-    }
 
     public static class CenterClickableFinder
     {
         private const string MarkerAttr = "data-oai-click-candidate";
 
-        public static async Task<List<CenterClickCandidate>> GetCandidatesAsync(
-            IPage page,
-            double xMinRatio = 0.30,
-            double xMaxRatio = 0.70,
-            double yMinRatio = 0.30,
-            double yMaxRatio = 0.70,
-            int xSteps = 5,
-            int ySteps = 5)
-        {
-            if (page == null || page.IsClosed || page.ViewportSize == null)
-                return new List<CenterClickCandidate>();
-
-            NormalizeArgs(
-                page,
-                ref xMinRatio,
-                ref xMaxRatio,
-                ref yMinRatio,
-                ref yMaxRatio,
-                ref xSteps,
-                ref ySteps,
-                out int vw,
-                out int vh);
-
-            var script = BuildFinderScript(returnMarkedCount: false);
-
-            var result = await page.EvaluateAsync<List<CenterClickCandidate>>(
-                script,
-                new object[] { vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps, MarkerAttr });
-
-            return result ?? new List<CenterClickCandidate>();
-        }
 
         public static async Task<int> MarkCandidatesAsync(
             IPage page,
@@ -80,108 +39,8 @@
                 new object[] { vw, vh, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps, MarkerAttr });
         }
 
-        public static async Task<CenterClickCandidate?> GetBestCandidateAsync(
-            IPage page,
-            double xMinRatio = 0.30,
-            double xMaxRatio = 0.70,
-            double yMinRatio = 0.30,
-            double yMaxRatio = 0.70,
-            int xSteps = 5,
-            int ySteps = 5)
-        {
-            var list = await GetCandidatesAsync(page, xMinRatio, xMaxRatio, yMinRatio, yMaxRatio, xSteps, ySteps);
-            return list.Count > 0 ? list[0] : null;
-        }
 
-        public static async Task<bool> ClickBestByMouseAsync(
-            IPage page,
-            CancellationToken cancellationToken = default)
-        {
-            if (page == null || page.IsClosed)
-                return false;
 
-            var best = await GetBestCandidateAsync(page);
-            if (best == null)
-                return false;
-
-            try
-            {
-                var x = (float)GetSafeInnerPoint(best.Width, best.CenterX);
-                var y = (float)GetSafeInnerPoint(best.Height, best.CenterY);
-
-                await page.Mouse.MoveAsync(x, y);
-                await Task.Delay(Random.Shared.Next(35, 90), cancellationToken);
-                await page.Mouse.ClickAsync(x, y);
-
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public static async Task<bool> ClickBestByTouchAsync(
-            IPage page,
-            ICDPSession client,
-            CancellationToken cancellationToken = default)
-        {
-            if (page == null || page.IsClosed || client == null)
-                return false;
-
-            var best = await GetBestCandidateAsync(page);
-            if (best == null)
-                return false;
-
-            try
-            {
-                var viewport = page.ViewportSize;
-                if (viewport == null)
-                    return false;
-
-                float x = (float)Math.Clamp(
-                    GetSafeInnerPoint(best.Width, best.CenterX),
-                    1,
-                    viewport.Width - 1);
-
-                float y = (float)Math.Clamp(
-                    GetSafeInnerPoint(best.Height, best.CenterY),
-                    1,
-                    viewport.Height - 1);
-
-                await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
-                {
-                    ["type"] = "touchStart",
-                    ["touchPoints"] = new object[]
-                    {
-                        new { x, y }
-                    },
-                    ["modifiers"] = 0
-                });
-
-                await Task.Delay(Random.Shared.Next(35, 70), cancellationToken);
-
-                await client.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
-                {
-                    ["type"] = "touchEnd",
-                    ["touchPoints"] = Array.Empty<object>()
-                });
-
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
 
         public static ILocator GetMarkedLocator(IPage page)
         {
@@ -224,20 +83,6 @@
             return value;
         }
 
-        /// <summary>
-        /// 在候选框内部选一个更像真人的安全点击点。
-        /// 这里传入的是中心点坐标，所以需要把随机偏移加回去。
-        /// </summary>
-        private static double GetSafeInnerPoint(double size, double center)
-        {
-            if (size <= 2)
-                return center;
-
-            // 取中间 20% 范围内的微随机，不点边缘
-            double half = size / 2.0;
-            double offset = Random.Shared.NextDouble() * (half * 0.20 * 2) - (half * 0.20);
-            return center + offset;
-        }
 
         private static string BuildFinderScript(bool returnMarkedCount)
         {

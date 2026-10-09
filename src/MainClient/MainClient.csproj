@@ -52,8 +52,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Libraries\HumanTouchP2_Enhanced\HumanTouchP2.Enhanced.csproj" />
+		<ProjectReference Include="..\Libraries\HumanTouchP2_Enhancedv3\HumanTouchP2.Enhancedv3.csproj" />
 		<ProjectReference Include="..\Libraries\QTP.Common\QTP.Common.csproj" />
+		<ProjectReference Include="..\Plugins\SMAd\SMAd.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

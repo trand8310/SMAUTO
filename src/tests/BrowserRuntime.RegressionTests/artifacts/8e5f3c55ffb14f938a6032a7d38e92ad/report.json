@@ -1,0 +1,61 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\chrome.packed\\145.0.7632.110\\chrome.exe",
+  "Samples": [
+    {
+      "Round": 1,
+      "PrivateBytes": 25567232,
+      "Handles": 383,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0
+    },
+    {
+      "Round": 2,
+      "PrivateBytes": 23298048,
+      "Handles": 387,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0
+    },
+    {
+      "Round": 3,
+      "PrivateBytes": 23977984,
+      "Handles": 387,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0
+    },
+    {
+      "Round": 4,
+      "PrivateBytes": 22675456,
+      "Handles": 388,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0
+    },
+    {
+      "Round": 5,
+      "PrivateBytes": 22380544,
+      "Handles": 388,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0
+    },
+    {
+      "Round": 6,
+      "PrivateBytes": 22638592,
+      "Handles": 389,
+      "Processes": 0,
+      "DriverLeases": 0,
+      "CdpEntries": 0
+    }
+  ],
+  "Touch": {
+    "Dispatched": true,
+    "ClickVerified": false,
+    "ScriptResponsive": false,
+    "OtherSessionResponsive": true,
+    "Error": "TimeoutException: The operation has timed out."
+  },
+  "Note": "Six rounds are a bounded regression observation, not a long-duration memory leak proof."
+}

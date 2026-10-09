@@ -1,9 +1,10 @@
-﻿using MainClient.Common;
+using MainClient.Common;
 using MainClient.Logging;
 using MainClient.LogViewer;
 using MainClient.Models;
 using MainClient.Net;
 using MainClient.UiTask;
+using MainClient.Services;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -20,7 +21,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Management;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -43,10 +43,11 @@ namespace MainClient
         private readonly AdeHelper _adeHelper;
         private readonly FileUpdater _fileUpdater;
         private readonly ProxyTester _ipTester;
-        private readonly IPlaywrightProvider _playwrightProvider;
-        private readonly ChromiumSessionManager _processManager;
         private readonly TaskStatsAggregator _aggregator;
-        private readonly ChineseNameGenerator _nameGenerator;
+        private readonly SmAdExecutor _smAdExecutor;
+        private readonly BrowserRuntimeManager _browserRuntime;
+        private readonly SemaphoreSlim _runnerTransition = new(1, 1);
+        private bool _closingStarted, _closeCompleted;
         private readonly FileCleanupQueue _fileCleanupQueue = new();
         private int _startupAutomationTriggered = 0;
 
@@ -213,32 +214,6 @@ namespace MainClient
         }
 
         #endregion
-
-        private Dictionary<string, QTPPlugin> allPlugins = new Dictionary<string, QTPPlugin>();
-        private void LoadQTPPlugins()
-        {
-            DirectoryInfo d = new DirectoryInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins"));
-            d.GetFiles().ToList().ForEach(x =>
-             {
-                 var assembly = System.Reflection.Assembly.LoadFile(x.FullName);
-                 if (assembly != null)
-                 {
-                     var typeName = System.IO.Path.GetFileNameWithoutExtension(x.FullName);
-                     Type type = assembly.GetType($"QTP.Plugins.{typeName}Task");
-                     if (type != null)
-                     {
-                         System.Reflection.MethodInfo methodInfo = type.GetMethod("GetInfo");
-                         object result = methodInfo.Invoke(null, null);
-                         if (result != null && result is QTPPlugin)
-                         {
-                             var plugin = (QTPPlugin)result;
-                             plugin.type = type;
-                             allPlugins.Add(plugin.Name, plugin);
-                         }
-                     }
-                 }
-             });
-        }
 
         public async Task ReloadWordNames(string category)
         {
@@ -687,36 +662,29 @@ namespace MainClient
 
 
         public MainForm(
-            IPlaywrightProvider playwrightProvider,
+            SmAdExecutor smAdExecutor,
             TaskStatsAggregator aggregator,
             AdeHelper adeHelper,
-            ChineseNameGenerator nameGenerator,
             FileUpdater fileUpdater,
             IpHelper ipHelper,
             ProxyTester ipTester,
-            ChromiumSessionManager processManager,
             AppSettings appSettings,
             IHttpClientFactory httpClientFactory,
-            ILogger<MainForm> logger)
+            ILogger<MainForm> logger, BrowserRuntimeManager browserRuntime)
         {
             InitializeComponent();
-            this._playwrightProvider = playwrightProvider;
+            this._smAdExecutor = smAdExecutor;
+            _browserRuntime = browserRuntime;
             this._aggregator = aggregator;
             this._adeHelper = adeHelper;
-            this._nameGenerator = nameGenerator;
             this._fileUpdater = fileUpdater;
             this._ipHelper = ipHelper;
             this._ipTester = ipTester;
             this._appSettings = appSettings;
-            this._processManager = processManager;
             this._logger = logger;
             this._httpClientFactory = httpClientFactory;
             this.Text += $"{AppConsts.AppVersion}";
-            LoadQTPPlugins();
-            foreach (var p in allPlugins)
-            {
-                comboBox_QTPName.Items.Add(p.Key);
-            }
+            comboBox_QTPName.Items.Add(SmAdExecutor.ServiceName);
             InitKernelVersion();
             LoadAppSetting();
             #region 数据初始化
@@ -994,7 +962,9 @@ namespace MainClient
                 _appSettings.Protocol = "http";
 
 
-            comboBox_QTPName.Text = _appSettings.QTPName;
+            // 直接引用模式仅使用 SMAd；旧配置不再影响任务选择。
+            _appSettings.QTPName = SmAdExecutor.ServiceName;
+            comboBox_QTPName.SelectedIndex = 0;
             textBox_ProxyIpUrl.Text = _appSettings.ProxyIpUrl;
             textBox_TaskApiUrl.Text = _appSettings.TaskApiUrl;
             textBox_DevApiUrl.Text = _appSettings.DevApiUrl;
@@ -1206,6 +1176,14 @@ namespace MainClient
         /// <param name="writer"></param>
         /// <param name="token"></param>
         /// <returns></returns>
+        private int _resourcePauseLogged;
+        private bool StopNewWorkForResourcePressure()
+        {
+            if (!_browserRuntime.IsResourceLimited) return false;
+            if (Interlocked.Exchange(ref _resourcePauseLogged, 1) == 0)
+                _logger.LogWarning("系统资源不足：停止拉取任务和启动新执行，已有浏览器任务继续完成；资源恢复后可重新开始。");
+            return true;
+        }
         private async Task ProducerAsync(ChannelWriter<JToken> writer, CancellationToken token)
         {
             Exception? completionError = null;
@@ -1215,6 +1193,7 @@ namespace MainClient
                 var host = await CommonHelper.GetHostAsync();
                 while (!token.IsCancellationRequested)
                 {
+                    if (StopNewWorkForResourcePressure()) return;
                     var url = $"{_appSettings.TaskApiUrl}?type=1&action=getTask&name={_appSettings.TaskName}&host={System.Web.HttpUtility.UrlEncode(host)}&ver={AppConsts.AppVersion}&_t={DateTime.Now.Ticks}";
                     var res = await _adeHelper.GetTaskAsync(url, token);
                     if (string.IsNullOrWhiteSpace(res))
@@ -1252,6 +1231,7 @@ namespace MainClient
                         {
                             if (!await writer.WaitToWriteAsync(token))
                                 return;
+                            if (StopNewWorkForResourcePressure()) return;
 
                             await writer.WriteAsync(item, token);
                             totalEnqueued++;
@@ -1284,6 +1264,7 @@ namespace MainClient
                 token.ThrowIfCancellationRequested();
 
                 var parseResult = ParseTask(task);
+                if (StopNewWorkForResourcePressure()) return;
                 if (!parseResult.Success)
                 {
                     _logger.LogWarning("ConsumerAsync skip malformed task: {Task}", task?.ToString(Newtonsoft.Json.Formatting.None));
@@ -1317,6 +1298,7 @@ namespace MainClient
 
                 for (int uvIndex = 0; uvIndex < ctx.TotalUV; uvIndex++)
                 {
+                    if (StopNewWorkForResourcePressure()) return;
                     if (token.IsCancellationRequested)
                         return;
 
@@ -1332,7 +1314,7 @@ namespace MainClient
 
                         var pluginArgs = BuildPluginArgs(ctx, task, dev, consumerId, uvIndex);
 
-                        bool stopRemainingUv = await ExecutePluginOnceAsync(
+                        bool stopRemainingUv = await ExecuteSmAdOnceAsync(
                             ctx,
                             pluginArgs,
                             consumerId,
@@ -1537,12 +1519,13 @@ namespace MainClient
                         continue;
                     }
 
-                    if (_appSettings.GetIpInfo || _appSettings.IsRealIp || _appSettings.IsIpDuplicate)
+                    // Connectivity is required even when IP metadata is not requested.
+                    if (_appSettings.IsProxyMode)
                     {
                         var ok = await TryFillIpInfoAsync(ctx, token);
                         if (!ok)
                         {
-                            LogWriteLine($"无法获取IP信息,{ctx.ProxyServer}");
+                            LogWriteLine($"代理预检查未通过,{ctx.ProxyServer}");
                             await Task.Delay(Random.Shared.Next(100, 200), token);
                             continue;
                         }
@@ -1583,14 +1566,15 @@ namespace MainClient
         {
             ctx.ProxyServer = "127.0.0.1:7890";
 
-            var result = await _ipTester.TestAsync(ctx.ProxyServer);
+            var result = await _ipTester.TestAsync(ctx.ProxyServer, token, _appSettings.Protocol);
             if (!result.IsValid)
             {
-                LogWriteLine($"无法获取IP信息,{ctx.ProxyServer}");
-                throw new InvalidOperationException($"无法获取IP信息,{ctx.ProxyServer}");
+                LogWriteLine($"代理预检查未通过,{ctx.ProxyServer}: {result.ErrorMessage}");
+                throw new InvalidOperationException($"代理预检查未通过,{ctx.ProxyServer}: {result.ErrorMessage}");
             }
 
-            ApplyIpTestResult(ctx, result);
+            if (_appSettings.GetIpInfo || _appSettings.IsRealIp || _appSettings.IsIpDuplicate)
+                ApplyIpTestResult(ctx, result);
         }
         /// <summary>
         /// 非代理模式
@@ -1604,7 +1588,7 @@ namespace MainClient
             if (!_appSettings.GetIpInfo && !_appSettings.IsRealIp)
                 return;
 
-            var result = await _ipTester.TestAsync(ctx.ProxyServer);
+            var result = await _ipTester.TestAsync(ctx.ProxyServer, token);
             if (!result.IsValid)
             {
                 LogWriteLine($"无法获取IP信息,{ctx.ProxyServer}");
@@ -1651,8 +1635,9 @@ namespace MainClient
         /// <returns></returns>
         private bool IsValidProxyServer(string proxyServer)
         {
-            const string pattern = @"(?:(?:[0,1]?\d?\d|2[0-4]\d|25[0-5])\.){3}(?:[0,1]?\d?\d|2[0-4]\d|25[0-5]):\d{1,5}";
-            return Regex.IsMatch(proxyServer, pattern);
+            try { ProxyFailureClassifier.Address(proxyServer, _appSettings.Protocol); return true; }
+            catch (ArgumentException) { return false; }
+            catch (UriFormatException) { return false; }
         }
 
         /// <summary>
@@ -1663,11 +1648,15 @@ namespace MainClient
         /// <returns></returns>
         private async Task<bool> TryFillIpInfoAsync(ConsumerTaskContext ctx, CancellationToken token)
         {
-            var result = await _ipTester.TestAsync(ctx.ProxyServer);
+            var result = await _ipTester.TestAsync(ctx.ProxyServer, token, _appSettings.Protocol);
             if (!result.IsValid)
+            {
+                LogWriteLine($"代理检测失败,{ctx.ProxyServer}: {result.ErrorMessage}");
                 return false;
+            }
 
-            ApplyIpTestResult(ctx, result);
+            if (_appSettings.GetIpInfo || _appSettings.IsRealIp || _appSettings.IsIpDuplicate)
+                ApplyIpTestResult(ctx, result);
             return true;
         }
         /// <summary>
@@ -1828,7 +1817,7 @@ namespace MainClient
         }
 
         /// <summary>
-        /// 执行插件
+        /// 执行一次 SMAd，并决定是否停止剩余 UV
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="args"></param>
@@ -1836,122 +1825,33 @@ namespace MainClient
         /// <param name="uvIndex"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async Task<bool> ExecutePluginOnceAsync(
-        ConsumerTaskContext ctx,
-        JObject args,
-        int consumerId,
-        int uvIndex,
-        CancellationToken token)
+        private async Task<bool> ExecuteSmAdOnceAsync(
+            ConsumerTaskContext ctx, JObject args, int consumerId, int uvIndex, CancellationToken token)
         {
-            if (!allPlugins.TryGetValue(_appSettings.QTPName, out var plugin) || plugin.type == null)
+            var executionId = Guid.NewGuid().ToString("D");
+            LogWriteLine(
+                $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
+
+            var result = await _smAdExecutor.ExecuteAsync(executionId, args, token, e => LogWriteLine(e));
+            if (result.ProxyFailure != null)
             {
-                _logger.LogError("ConsumerAsync plugin not found: {PluginName}", _appSettings.QTPName);
-                return false;
+                LogWriteLine($"代理无法继续当前任务，停止剩余UV: type={result.ProxyFailure}, reason={result.FailureReason}");
+                return true;
+            }
+            // 外层区分用户停止与 IP 到期，取消后停止剩余 UV。
+            if (result.Status == WorkerExecutionStatus.Canceled)
+            {
+                token.ThrowIfCancellationRequested();
+                return true;
             }
 
-            var pluginInstance = Activator.CreateInstance(
-                plugin.type,
-                new object[] { _playwrightProvider, _aggregator, _processManager, _adeHelper, _nameGenerator, _appSettings });
-
-            if (pluginInstance is not IQTPService pluginService)
-            {
-                _logger.LogWarning("ConsumerAsync plugin instance invalid. plugin={PluginName}", _appSettings.QTPName);
-                return false;
-            }
-
-            var uniqueId = Guid.NewGuid().ToString("D");
-
-            EventHandler<PluginLogEventArgs>? logHandler = null;
-            EventHandler<TaskStateChangedEventArgs>? stateChangedHandler = null;
-            EventHandler<TaskAdWordEventArgs>? adWordHandler = null;
-
-            try
-            {
-                logHandler = (s, e) => LogWriteLine(e);
-                stateChangedHandler = (s, e) =>
-                {
-                    _aggregator.Enqueue(new TaskEvent(e.Id, e.Type, e.Count, e.Data));
-                };
-                adWordHandler = (s, e) =>
-                {
-                    _aggregator.EnqueueAdWord(e.Type, e.Word);
-                };
-
-                pluginService.OnLogEventHandler += logHandler;
-                pluginService.OnStateChangedEventHandler += stateChangedHandler;
-                pluginService.OnTaskAdWordEventHandler += adWordHandler;
-
-                LogWriteLine(
-                    $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
-
-
-                try
-                {
-                    var (_, isPageTriggerClick, _) =
-                        await pluginService.ExecuteWorkerAsync(uniqueId, args, token);
-
-                    if (ctx.TotalUV > 1 && isPageTriggerClick && _appSettings.UVsTriggerOne)
-                        return true;
-                }
-                catch (OperationCanceledException) when (token.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "ConsumerAsync plugin execute failed. taskId={TaskId}, consumer={ConsumerId}",
-                        ctx.TaskId, consumerId);
-                }
-
-                return false;
-            }
-            finally
-            {
-                if (logHandler != null) pluginService.OnLogEventHandler -= logHandler;
-                if (stateChangedHandler != null) pluginService.OnStateChangedEventHandler -= stateChangedHandler;
-                if (adWordHandler != null) pluginService.OnTaskAdWordEventHandler -= adWordHandler;
-
-                try
-                {
-                    await _processManager.CloseAsync(uniqueId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Close process failed. uniqueId={UniqueId}", uniqueId);
-                }
-
-                if (pluginService is IAsyncDisposable asyncDisposable)
-                {
-                    try
-                    {
-                        await asyncDisposable.DisposeAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Async dispose plugin failed. uniqueId={UniqueId}", uniqueId);
-                    }
-                }
-                else if (pluginService is IDisposable disposable)
-                {
-                    try
-                    {
-                        disposable.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Dispose plugin failed. uniqueId={UniqueId}", uniqueId);
-                    }
-                }
-            }
+            return ctx.TotalUV > 1 && result.PageTriggerClick && _appSettings.UVsTriggerOne;
         }
-
-
-
 
         private void InitPipelineRunner()
         {
-            int capacity = Math.Max(1, _appSettings.Multiple * _appSettings.MaximumConcurrency);
+            int capacity = _appSettings.TaskQueueCapacity > 0 ? _appSettings.TaskQueueCapacity
+                : (int)Math.Clamp((long)Math.Max(1, _appSettings.Multiple) * Math.Max(1, _appSettings.MaximumConcurrency), 1, int.MaxValue);
             int consumerCount = Math.Max(1, _appSettings.MaximumConcurrency);
             _pipeline = new PipelineRunner<JToken>(
                 capacity,
@@ -1990,6 +1890,16 @@ namespace MainClient
 
         private async Task StartRunnerAsync()
         {
+            await _runnerTransition.WaitAsync();
+            try
+            {
+                if (!_closingStarted && _uiRunner?.State is not (RunnerState.Running or RunnerState.Stopping))
+                    await StartRunnerCoreAsync();
+            }
+            finally { _runnerTransition.Release(); }
+        }
+        private async Task StartRunnerCoreAsync()
+        {
             string version = comboBox_KernelVersion.Text;
             var chromeDir = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -2021,9 +1931,10 @@ namespace MainClient
             }
 
 
+            if (_closingStarted) return;
+            _browserRuntime.BeginRun(new(Math.Max(1, _appSettings.MaximumConcurrency), Math.Max(1, _appSettings.BrowserLaunchConcurrency)));
+            Interlocked.Exchange(ref _resourcePauseLogged, 0);
             await _aggregator.StartAsync();
-
-
             InitPipelineRunner();
 
             var runner = new UiTaskRunner(token => _pipeline!.RunAsync(token));
@@ -2048,6 +1959,12 @@ namespace MainClient
         }
         private async Task StopRunnerAsync()
         {
+            await _runnerTransition.WaitAsync();
+            try { await StopRunnerCoreAsync(); }
+            finally { _runnerTransition.Release(); }
+        }
+        private async Task StopRunnerCoreAsync()
+        {
             try
             {
                 _appAutoRestart?.Stop();
@@ -2056,10 +1973,12 @@ namespace MainClient
                 {
                     await _uiRunner.StopAsync();
                 }
+                await _browserRuntime.StopAsync();
                 await _aggregator.StopAsync();
             }
             finally
             {
+                _appAutoRestart?.Dispose();
                 _appAutoRestart = null;
             }
         }
@@ -2318,19 +2237,30 @@ namespace MainClient
 
         protected override async void OnFormClosing(FormClosingEventArgs e)
         {
-            if (_wsClient != null)
+            if (_closeCompleted) { base.OnFormClosing(e); return; }
+            e.Cancel = true;
+            base.OnFormClosing(e);
+            if (_closingStarted) return;
+            _closingStarted = true;
+            Enabled = false;
+            try
             {
-                try
+                await StopRunnerAsync();
+                if (_wsClient != null)
                 {
                     await _wsClient.StopAsync();
                     await _wsClient.DisposeAsync();
                 }
-                catch
-                {
-                }
+                _closeCompleted = true;
+                BeginInvoke(new Action(Close));
             }
-
-            base.OnFormClosing(e);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Application shutdown did not finish");
+                _closingStarted = false;
+                Enabled = true;
+                MessageBox.Show("任务尚未完全停止，请稍后重试关闭。", "停止未完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
     }
 }

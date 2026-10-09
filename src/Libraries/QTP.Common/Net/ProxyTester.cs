@@ -29,33 +29,45 @@ namespace QTP.Common
             _timeout = TimeSpan.FromSeconds(timeoutSeconds);
         }
 
-        public async Task<ProxyTestResult> TestAsync(string? proxyAddress = null)
+        public async Task<ProxyTestResult> TestAsync(string? proxyAddress = null,
+            CancellationToken cancellationToken = default, string? protocol = null)
         {
-            using var cts = new CancellationTokenSource(_timeout);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!string.IsNullOrWhiteSpace(proxyAddress))
+                proxyAddress = ProxyFailureClassifier.Address(proxyAddress, protocol);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(_timeout);
 
             var tasks = _testUrls
                 .Select(url => TryRequestAsync(url, proxyAddress, cts.Token))
                 .ToList();
+            var failures = new List<string>();
 
-            while (tasks.Count > 0)
+            try
             {
-                var finished = await Task.WhenAny(tasks);
-                tasks.Remove(finished);
-
-                var result = await finished;
-                if (result.IsValid)
+                while (tasks.Count > 0)
                 {
-                    cts.Cancel(); // 取消其他未完成请求
-                    return result;
+                    var finished = await Task.WhenAny(tasks);
+                    tasks.Remove(finished);
+                    var result = await finished;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (result.IsValid)
+                        return result;
+                    failures.Add($"{result.SuccessUrl}: {result.ErrorMessage}");
                 }
+                cancellationToken.ThrowIfCancellationRequested();
+                return new ProxyTestResult
+                {
+                    Proxy = proxyAddress ?? "",
+                    IsValid = false,
+                    ErrorMessage = "全部测试站点请求失败: " + string.Join(" | ", failures)
+                };
             }
-
-            return new ProxyTestResult
+            finally
             {
-                Proxy = proxyAddress ?? "",
-                IsValid = false,
-                ErrorMessage = "全部测试站点请求失败"
-            };
+                cts.Cancel();
+                await Task.WhenAll(tasks);
+            }
         }
 
         public async Task<List<ProxyTestResult>> TestManyAsync(IEnumerable<string?> proxies, int maxDegreeOfParallelism = 10)
@@ -117,7 +129,7 @@ namespace QTP.Common
                     Timeout = Timeout.InfiniteTimeSpan
                 };
 
-                var response = await client.GetAsync(url, cancellationToken);
+                using var response = await client.GetAsync(url, cancellationToken);
                 result.Data = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 sw.Stop();

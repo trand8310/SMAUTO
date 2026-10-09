@@ -106,47 +106,61 @@ namespace SMAd
             // 步数可以稍多一点，更平滑
             int steps = Random.Shared.Next(15, 25);
 
-            // 起点按下
-            await DispatchTouchAsync(cdpSession, "touchStart", startX, startY);
-            await Task.Delay(Random.Shared.Next(60, 120), token);
-
-            for (int i = 1; i <= steps; i++)
+            await global::PlaywrightHumanInput.CdpTouchRuntime.InitializeAsync(page, cdpSession, token: token);
+            using var lease = await global::PlaywrightHumanInput.CdpTouchRuntime.AcquireAsync(cdpSession, token);
+            token.ThrowIfCancellationRequested();
+            bool completed = false;
+            try
             {
-                token.ThrowIfCancellationRequested();
+                // 起点按下
+                await DispatchTouchAsync(cdpSession, "touchStart", startX, startY);
+                await Task.Delay(Random.Shared.Next(60, 120), token);
 
-                double t = (double)i / steps;
-
-                // easeInOut，让前后慢、中间快
-                double eased = EaseInOutCubic(t);
-
-                // 主位移
-                double currentX = startX + totalDx * eased;
-
-                // 轻微抖动
-                double jitterY = Random.Shared.NextDouble() * 2.4 - 1.2;
-                double jitterX = Random.Shared.NextDouble() * 1.2 - 0.6;
-
-                // 后段微调，避免过于机械
-                if (i > steps * 0.8)
+                for (int i = 1; i <= steps; i++)
                 {
-                    jitterX *= 0.5;
-                    jitterY *= 0.5;
+                    token.ThrowIfCancellationRequested();
+
+                    double t = (double)i / steps;
+
+                    // easeInOut，让前后慢、中间快
+                    double eased = EaseInOutCubic(t);
+
+                    // 主位移
+                    double currentX = startX + totalDx * eased;
+
+                    // 轻微抖动
+                    double jitterY = Random.Shared.NextDouble() * 2.4 - 1.2;
+                    double jitterX = Random.Shared.NextDouble() * 1.2 - 0.6;
+
+                    // 后段微调，避免过于机械
+                    if (i > steps * 0.8)
+                    {
+                        jitterX *= 0.5;
+                        jitterY *= 0.5;
+                    }
+
+                    await DispatchTouchAsync(
+                        cdpSession,
+                        "touchMove",
+                        currentX + jitterX,
+                        endY + jitterY);
+
+                    await Task.Delay(Random.Shared.Next(12, 25), token);
                 }
 
-                await DispatchTouchAsync(
-                    cdpSession,
-                    "touchMove",
-                    currentX + jitterX,
-                    endY + jitterY);
+                // 结束前轻微补一点点，模拟人手放开前的稳定动作
+                await DispatchTouchAsync(cdpSession, "touchMove", endX - 1, endY);
+                await Task.Delay(Random.Shared.Next(20, 50), token);
 
-                await Task.Delay(Random.Shared.Next(12, 25), token);
+
+                token.ThrowIfCancellationRequested();
+                completed = true;
             }
-
-            // 结束前轻微补一点点，模拟人手放开前的稳定动作
-            await DispatchTouchAsync(cdpSession, "touchMove", endX - 1, endY);
-            await Task.Delay(Random.Shared.Next(20, 50), token);
-
-            await DispatchTouchEndAsync(cdpSession);
+            finally
+            {
+                if (completed) await global::PlaywrightHumanInput.CdpTouchRuntime.ReleaseTouchAsync(cdpSession);
+                else { try { await global::PlaywrightHumanInput.CdpTouchRuntime.ReleaseTouchAsync(cdpSession, true); } catch { } }
+            }
             return true;
         }
 
@@ -172,17 +186,7 @@ namespace SMAd
                 }
                 },
                 ["modifiers"] = 0
-            });
-        }
-
-        private static async Task DispatchTouchEndAsync(ICDPSession cdpSession)
-        {
-            await cdpSession.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
-            {
-                ["type"] = "touchEnd",
-                ["touchPoints"] = Array.Empty<object>(),
-                ["modifiers"] = 0
-            });
+            }).WaitAsync(TimeSpan.FromSeconds(5));
         }
 
         private static double EaseInOutCubic(double t)

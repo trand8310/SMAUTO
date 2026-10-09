@@ -1,4 +1,4 @@
-﻿using SMAd.Models;
+using SMAd.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,7 +24,13 @@ namespace SMAd.LandingPolicy
             foreach (var strategy in _strategies)
             {
                 if (strategy.CanHandle(url))
-                    return await strategy.HandleAsync(ctx, token);
+                {
+                    var result = FlowControl.Continue;
+                    await SMAd.PageActions.OptionalPageOperation.RunAsync(ctx, strategy.GetType().Name,
+                        async () => result = await strategy.HandleAsync(ctx, token), token,
+                        message => ctx.human.Options.Log?.Invoke(message));
+                    return result;
+                }
             }
 
             return FlowControl.Continue;

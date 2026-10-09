@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 
 namespace MainClient.UiTask
 {
@@ -45,7 +45,12 @@ namespace MainClient.UiTask
 
             long globalItemNumber = 0;
 
-            var producerTask = Task.Run(() => _producer(_channel.Writer, runToken), runToken);
+            var producerTask = Task.Run(async () =>
+            {
+                try { await _producer(_channel.Writer, runToken).ConfigureAwait(false); }
+                catch { linkedCts.Cancel(); throw; }
+                finally { _channel.Writer.TryComplete(); }
+            });
 
             var consumerTasks = Enumerable.Range(0, _consumerCount)
                 .Select(consumerId => Task.Run(async () =>
@@ -79,13 +84,18 @@ namespace MainClient.UiTask
                     {
                         // 正常停止
                     }
-                }, runToken))
+                    catch
+                    {
+                        linkedCts.Cancel();
+                        throw;
+                    }
+                }))
                 .ToArray();
 
             try
             {
-                await producerTask.ConfigureAwait(false);
-                await Task.WhenAll(consumerTasks).ConfigureAwait(false);
+                // Cancellation/failure must await consumers' finally blocks and browser cleanup.
+                await Task.WhenAll(consumerTasks.Append(producerTask)).ConfigureAwait(false);
 
                 if (token.IsCancellationRequested)
                 {

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 
 namespace MainClient.UiTask
 {
@@ -187,7 +187,7 @@ namespace MainClient.UiTask
 
             lock (_sync)
             {
-                if (State == RunnerState.Stopped)
+                if (State == RunnerState.Stopped && (_runLoopTask == null || _runLoopTask.IsCompleted))
                     return;
 
                 if (State != RunnerState.Faulted)
