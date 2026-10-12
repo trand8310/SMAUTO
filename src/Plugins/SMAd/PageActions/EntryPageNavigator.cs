@@ -2,7 +2,8 @@ using Microsoft.Playwright;
 
 namespace SMAd.PageActions;
 
-public sealed record EntryNavigationResult(bool Opened, bool Downloaded, string? Reason = null, int? HttpStatus = null);
+public sealed record EntryNavigationResult(bool Opened, bool Downloaded, string? Reason = null, int? HttpStatus = null,
+    QTP.Common.BrowserStopKind? FailureKind = null);
 
 /// <summary>Entry downloads are navigation diagnostics, never a successful page visit.</summary>
 public static class EntryPageNavigator
@@ -49,8 +50,9 @@ public static class EntryPageNavigator
                     await PageActionExecutor.WaitReadyAsync(page, token);
                     return new(true, false);
                 }
-                catch (PlaywrightException ex)
+                catch (Exception ex) when (ex is PlaywrightException || IsTransient(ex))
                 {
+                    token.ThrowIfCancellationRequested();
                     bool becameDownload = ex.Message.Contains("Download is starting", StringComparison.OrdinalIgnoreCase);
                     if (!becameDownload && ex.Message.Contains("ERR_ABORTED", StringComparison.OrdinalIgnoreCase))
                     {
@@ -59,10 +61,15 @@ public static class EntryPageNavigator
                         token.ThrowIfCancellationRequested();
                         becameDownload = downloadObserved.Task.IsCompletedSuccessfully || Volatile.Read(ref attachmentResponse) != 0;
                     }
-                    if (!becameDownload) throw;
-                    log($"Entry navigation became a download: attempt={attempt}/2, url={url}");
+                    if (ex is PageDocumentException documentError)
+                        return new(false, false, documentError.Message, documentError.Status);
+                    if (!becameDownload && !IsTransient(ex)) throw;
+                    log($"Entry navigation {(becameDownload ? "became a download" : "temporarily failed")}: attempt={attempt}/2, url={url}, error={ex.Message}");
                     if (attempt == 2 || page.IsClosed)
-                        return new(false, true, "Entry navigation repeatedly became a download; no page visit completed");
+                        return becameDownload
+                            ? new(false, true, "Entry navigation repeatedly became a download; no page visit completed")
+                            : new(false, false, $"Entry navigation failed after bounded retry: {ex.Message}",
+                                FailureKind: IsTimeout(ex) ? QTP.Common.BrowserStopKind.OperationTimedOut : QTP.Common.BrowserStopKind.ExecutionFailed);
                     await Task.Delay(Random.Shared.Next(800, 1401), token);
                 }
             }
@@ -74,4 +81,10 @@ public static class EntryPageNavigator
             page.Response -= onResponse;
         }
     }
+
+    private static bool IsTimeout(Exception ex) => ex is TimeoutException || ex.GetType().Name == "TimeoutException";
+    private static bool IsTransient(Exception ex) => IsTimeout(ex) || ex is PlaywrightException &&
+        (ex.Message.Contains("ERR_CONNECTION_RESET", StringComparison.Ordinal) ||
+         ex.Message.Contains("ERR_EMPTY_RESPONSE", StringComparison.Ordinal) ||
+         ex.Message.Contains("ERR_CONNECTION_TIMED_OUT", StringComparison.Ordinal));
 }

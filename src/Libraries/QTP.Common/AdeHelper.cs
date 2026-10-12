@@ -728,7 +728,7 @@ namespace QTP
             try
             {
                 var baseUri = new Uri(_appSettings.TaskApiUrl, UriKind.Absolute);
-                var uploadUri = new Uri(baseUri, "/api{_apiVersion}/cloud_word.php?action=upload_cloud_word");
+                var uploadUri = new Uri(baseUri, $"/api{_apiVersion}/cloud_word.php?action=upload_cloud_word");
                 await using var zipStream = new MemoryStream();
                 using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
                 {

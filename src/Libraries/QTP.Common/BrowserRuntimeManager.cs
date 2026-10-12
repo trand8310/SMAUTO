@@ -91,6 +91,7 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
         Action<BrowserStopKind>? startupStopped = null;
         Exception? startupFailure = null;
         var clock = Stopwatch.StartNew();
+        BrowserLifecycleLog.Write(options.ExecutionId, "runtime.acquire_begin", "BrowserRuntimeManager.AcquireAsync", "等待执行与启动并发名额");
         try
         {
             await _running.WaitAsync(ct).ConfigureAwait(false); runHeld = true;
@@ -108,6 +109,8 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
             process.StopRequested += startupStopped;
             if (process.StopKind != null) sessionLifetime.Cancel();
             browser = await _connect(driver.Playwright, process.CdpEndpoint, sessionToken).ConfigureAwait(false);
+            BrowserLifecycleLog.Write(options.ExecutionId, "connection.connected", "BrowserRuntimeManager.AcquireAsync", "Playwright 已连接 CDP",
+                new { elapsedMs = clock.Elapsed.TotalMilliseconds, process = BrowserLifecycleLog.Snapshot(process) });
             sessionToken.ThrowIfCancellationRequested();
             if (!browser.IsConnected || browser.Contexts.Count == 0)
                 throw new InvalidOperationException("Browser connection has no usable default context.");
@@ -144,6 +147,9 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
         {
             if (process != null && startupStopped != null) process.StopRequested -= startupStopped;
             Exception? closeError = null;
+            if (startupFailure != null)
+                BrowserLifecycleLog.Write(options.ExecutionId, "runtime.acquire_failed", "BrowserRuntimeManager.AcquireAsync", "启动或 CDP 连接失败，将回收本次资源",
+                    new { reason = BrowserFailureClassifier.Classify(startupFailure).ToString(), elapsedMs = clock.Elapsed.TotalMilliseconds, error = startupFailure.ToString(), process = BrowserLifecycleLog.Snapshot(process) });
             if (!transferred)
             {
                 preparedLease?.DetachBindings();
@@ -187,6 +193,9 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
     internal Task CloseProcessAsync(string executionId) => _processes.CloseAsync(executionId);
     internal void PublishReclaim(BrowserReclaimResult result)
     {
+        BrowserLifecycleLog.Write(result.ExecutionId, "session.reclaim_end", "BrowserRuntimeManager.PublishReclaim", BrowserLifecycleLog.Explain(result.Reason),
+            new { reason = result.Reason.ToString(), result.ExitConfirmed, elapsedMs = result.Elapsed.TotalMilliseconds,
+                result.CleanupErrors, forced = result.ProcessResult?.Forced, exitCode = result.ProcessResult?.ExitCode });
         if (Reclaimed is { } handlers) foreach (Action<BrowserReclaimResult> handler in handlers.GetInvocationList())
             try { handler(result); } catch { }
     }

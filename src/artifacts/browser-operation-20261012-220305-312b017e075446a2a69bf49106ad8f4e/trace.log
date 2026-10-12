@@ -1,0 +1,75 @@
+CONFIG kernel=145.0.7632.110, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=2
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Tap[1] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[1] stage: tap resolved element, elapsed=129ms, budget=5000ms
+Tap[2] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[2] stage: resolve owner frame, elapsed=1ms, budget=5000ms
+Tap[2] stage: initialize touch, elapsed=17ms, budget=5000ms
+Tap[2] stage: wait for touch session lock, elapsed=18ms, budget=5000ms
+Tap[2] stage: prepare action rhythm, elapsed=18ms, budget=5000ms
+Prepare: 187ms
+Tap[2] stage: check visibility and enabled state, elapsed=218ms, budget=5000ms
+Tap[2] stage: read bounding box, elapsed=271ms, budget=5000ms
+Tap[2] stage: read viewport, elapsed=286ms, budget=5000ms
+Tap[2] stage: target hit test, elapsed=314ms, budget=5000ms
+Tap[2] stage: check target stability, elapsed=345ms, budget=5000ms
+Tap[2] stage: dispatch touch, elapsed=399ms, budget=5000ms
+Tap: (167.0,86.4), planned=56ms, actual=86ms, force=0.51
+Tap[3] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[3] stage: tap resolved element, elapsed=7ms, budget=5000ms
+Tap[4] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[4] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[4] stage: initialize touch, elapsed=4ms, budget=5000ms
+Tap[4] stage: wait for touch session lock, elapsed=4ms, budget=5000ms
+Tap[4] stage: prepare action rhythm, elapsed=4ms, budget=5000ms
+Prepare: 140ms
+Tap[4] stage: check visibility and enabled state, elapsed=154ms, budget=5000ms
+Tap[4] stage: read bounding box, elapsed=163ms, budget=5000ms
+Tap[4] stage: read viewport, elapsed=165ms, budget=5000ms
+Tap[4] stage: target hit test, elapsed=168ms, budget=5000ms
+Tap[4] stage: check target stability, elapsed=171ms, budget=5000ms
+Tap[4] stage: dispatch touch, elapsed=220ms, budget=5000ms
+Tap: (163.6,511.1), planned=55ms, actual=325ms, force=0.54
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Navigation ready: 2578ms, observe=2284ms, url=about:blank
+Navigation observation: planned=2284ms, actual=2290ms
+Action Diagnostic popup: success=True, dispatched=True, 4871ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Tap[5] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[5] stage: tap resolved element, elapsed=73ms, budget=5000ms
+Tap[6] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[6] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[6] stage: initialize touch, elapsed=21ms, budget=5000ms
+Tap[6] stage: wait for touch session lock, elapsed=21ms, budget=5000ms
+Tap[6] stage: prepare action rhythm, elapsed=21ms, budget=5000ms
+Prepare: 287ms
+Tap[6] stage: check visibility and enabled state, elapsed=319ms, budget=5000ms
+Tap[6] stage: read bounding box, elapsed=332ms, budget=5000ms
+Tap[6] stage: read viewport, elapsed=335ms, budget=5000ms
+Tap[6] stage: target hit test, elapsed=337ms, budget=5000ms
+Tap[6] stage: check target stability, elapsed=340ms, budget=5000ms
+Tap[6] stage: dispatch touch, elapsed=383ms, budget=5000ms
+Tap: (150.6,78.9), planned=84ms, actual=111ms, force=0.57
+Tap[7] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[7] stage: tap resolved element, elapsed=7ms, budget=5000ms
+Tap[8] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[8] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[8] stage: initialize touch, elapsed=3ms, budget=5000ms
+Tap[8] stage: wait for touch session lock, elapsed=4ms, budget=5000ms
+Tap[8] stage: prepare action rhythm, elapsed=4ms, budget=5000ms
+Prepare: 62ms
+Tap[8] stage: check visibility and enabled state, elapsed=81ms, budget=5000ms
+Tap[8] stage: read bounding box, elapsed=91ms, budget=5000ms
+Tap[8] stage: read viewport, elapsed=93ms, budget=5000ms
+Tap[8] stage: target hit test, elapsed=97ms, budget=5000ms
+Tap[8] stage: check target stability, elapsed=99ms, budget=5000ms
+Tap[8] stage: dispatch touch, elapsed=145ms, budget=5000ms
+Tap: (140.8,530.7), planned=67ms, actual=332ms, force=0.58
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Navigation ready: 2554ms, observe=3964ms, url=about:blank
+Navigation observation: planned=3964ms, actual=3974ms
+Action Diagnostic popup: success=True, dispatched=True, 6529ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+ROUND 2: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

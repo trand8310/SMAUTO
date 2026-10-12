@@ -1,0 +1,397 @@
+CONFIG kernel=145.0.7632.110, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=6
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Tap[1] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[1] stage: tap resolved element, elapsed=119ms, budget=5000ms
+Tap[2] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[2] stage: resolve owner frame, elapsed=2ms, budget=5000ms
+Tap[2] stage: initialize touch, elapsed=18ms, budget=5000ms
+Tap[2] stage: wait for touch session lock, elapsed=19ms, budget=5000ms
+Tap[2] stage: prepare action rhythm, elapsed=20ms, budget=5000ms
+Prepare: 192ms
+Tap[2] stage: check visibility and enabled state, elapsed=242ms, budget=5000ms
+Tap[2] stage: read bounding box, elapsed=317ms, budget=5000ms
+Tap[2] stage: read viewport, elapsed=327ms, budget=5000ms
+Tap[2] stage: target hit test, elapsed=386ms, budget=5000ms
+Tap[2] stage: check target stability, elapsed=409ms, budget=5000ms
+Tap[2] stage: dispatch touch, elapsed=460ms, budget=5000ms
+Tap: (142.7,74.6), planned=67ms, actual=94ms, force=0.53
+Page initialization failed: page: no object with guid page@39ab14e850e93da3619b599c37291d60
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Tap[3] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[3] stage: tap resolved element, elapsed=6ms, budget=5000ms
+Tap[4] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[4] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[4] stage: initialize touch, elapsed=4ms, budget=5000ms
+Tap[4] stage: wait for touch session lock, elapsed=4ms, budget=5000ms
+Tap[4] stage: prepare action rhythm, elapsed=4ms, budget=5000ms
+Prepare: 216ms
+Tap[4] stage: check visibility and enabled state, elapsed=223ms, budget=5000ms
+Tap[4] stage: read bounding box, elapsed=234ms, budget=5000ms
+Tap[4] stage: read viewport, elapsed=236ms, budget=5000ms
+Tap[4] stage: target hit test, elapsed=238ms, budget=5000ms
+Tap[4] stage: check target stability, elapsed=240ms, budget=5000ms
+Tap[4] stage: dispatch touch, elapsed=309ms, budget=5000ms
+Tap: (133.4,515.7), planned=56ms, actual=159ms, force=0.49
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Navigation ready: 2613ms, observe=5557ms, url=about:blank
+Navigation observation: planned=5557ms, actual=5567ms
+Action Diagnostic popup: success=True, dispatched=True, 8182ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+Tap[5] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[5] stage: tap resolved element, elapsed=10ms, budget=5000ms
+Tap[6] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[6] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[6] stage: initialize touch, elapsed=21ms, budget=5000ms
+Tap[6] stage: wait for touch session lock, elapsed=21ms, budget=5000ms
+Tap[6] stage: prepare action rhythm, elapsed=22ms, budget=5000ms
+Tap[6] stage: check visibility and enabled state, elapsed=22ms, budget=5000ms
+Tap[6] stage: read bounding box, elapsed=33ms, budget=5000ms
+Tap[6] stage: read viewport, elapsed=38ms, budget=5000ms
+Tap[6] stage: target hit test, elapsed=40ms, budget=5000ms
+Tap[6] stage: check target stability, elapsed=42ms, budget=5000ms
+Tap[6] stage: dispatch touch, elapsed=83ms, budget=5000ms
+Tap: (157.0,39.8), planned=64ms, actual=120ms, force=0.52
+Actual search page input touched=True, candidates=2
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Tap[7] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[7] stage: tap resolved element, elapsed=94ms, budget=5000ms
+Tap[8] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[8] stage: resolve owner frame, elapsed=3ms, budget=5000ms
+Tap[8] stage: initialize touch, elapsed=12ms, budget=5000ms
+Tap[8] stage: wait for touch session lock, elapsed=12ms, budget=5000ms
+Tap[8] stage: prepare action rhythm, elapsed=13ms, budget=5000ms
+Prepare: 248ms
+Tap[8] stage: check visibility and enabled state, elapsed=279ms, budget=5000ms
+Tap[8] stage: read bounding box, elapsed=297ms, budget=5000ms
+Tap[8] stage: read viewport, elapsed=299ms, budget=5000ms
+Tap[8] stage: target hit test, elapsed=303ms, budget=5000ms
+Tap[8] stage: check target stability, elapsed=316ms, budget=5000ms
+Tap[8] stage: dispatch touch, elapsed=365ms, budget=5000ms
+Tap: (134.4,75.3), planned=92ms, actual=104ms, force=0.48
+Page initialization failed: page: no object with guid page@935338f63b08428890045c5a1e744ebe
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Tap[9] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[9] stage: tap resolved element, elapsed=7ms, budget=5000ms
+Tap[10] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[10] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[10] stage: initialize touch, elapsed=3ms, budget=5000ms
+Tap[10] stage: wait for touch session lock, elapsed=3ms, budget=5000ms
+Tap[10] stage: prepare action rhythm, elapsed=3ms, budget=5000ms
+Prepare: 68ms
+Tap[10] stage: check visibility and enabled state, elapsed=81ms, budget=5000ms
+Tap[10] stage: read bounding box, elapsed=94ms, budget=5000ms
+Tap[10] stage: read viewport, elapsed=95ms, budget=5000ms
+Tap[10] stage: target hit test, elapsed=98ms, budget=5000ms
+Tap[10] stage: check target stability, elapsed=100ms, budget=5000ms
+Tap[10] stage: dispatch touch, elapsed=146ms, budget=5000ms
+Tap: (162.7,509.9), planned=69ms, actual=166ms, force=0.51
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":942,"windowState":"normal"}}
+Navigation ready: 2395ms, observe=2627ms, url=about:blank
+Navigation observation: planned=2627ms, actual=2633ms
+Action Diagnostic popup: success=True, dispatched=True, 5028ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+Tap[11] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[11] stage: tap resolved element, elapsed=11ms, budget=5000ms
+Tap[12] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[12] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[12] stage: initialize touch, elapsed=23ms, budget=5000ms
+Tap[12] stage: wait for touch session lock, elapsed=23ms, budget=5000ms
+Tap[12] stage: prepare action rhythm, elapsed=23ms, budget=5000ms
+Tap[12] stage: check visibility and enabled state, elapsed=23ms, budget=5000ms
+Tap[12] stage: read bounding box, elapsed=38ms, budget=5000ms
+Tap[12] stage: read viewport, elapsed=41ms, budget=5000ms
+Tap[12] stage: target hit test, elapsed=43ms, budget=5000ms
+Tap[12] stage: check target stability, elapsed=53ms, budget=5000ms
+Tap[12] stage: dispatch touch, elapsed=89ms, budget=5000ms
+Tap: (214.2,42.2), planned=85ms, actual=138ms, force=0.52
+Actual search page input touched=True, candidates=2
+ROUND 2: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True
+Display: screen=432x960, available=432x880, viewport=432x856, DPR=2.5, window(DIP)={"bounds":{"left":0,"top":0,"width":432,"height":960,"windowState":"normal"}}
+Tap[13] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[13] stage: tap resolved element, elapsed=58ms, budget=5000ms
+Tap[14] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[14] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[14] stage: initialize touch, elapsed=12ms, budget=5000ms
+Tap[14] stage: wait for touch session lock, elapsed=12ms, budget=5000ms
+Tap[14] stage: prepare action rhythm, elapsed=12ms, budget=5000ms
+Prepare: 300ms
+Tap[14] stage: check visibility and enabled state, elapsed=316ms, budget=5000ms
+Tap[14] stage: read bounding box, elapsed=325ms, budget=5000ms
+Tap[14] stage: read viewport, elapsed=328ms, budget=5000ms
+Tap[14] stage: target hit test, elapsed=330ms, budget=5000ms
+Tap[14] stage: check target stability, elapsed=334ms, budget=5000ms
+Tap[14] stage: dispatch touch, elapsed=369ms, budget=5000ms
+Tap: (126.8,88.0), planned=109ms, actual=141ms, force=0.64
+Page initialization failed: Object reference not set to an instance of an object.
+Page initialization failed: page: no object with guid page@adbb60d2de575e30f4fa070297128869
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Tap[15] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[15] stage: tap resolved element, elapsed=6ms, budget=5000ms
+Tap[16] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[16] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[16] stage: initialize touch, elapsed=4ms, budget=5000ms
+Tap[16] stage: wait for touch session lock, elapsed=4ms, budget=5000ms
+Tap[16] stage: prepare action rhythm, elapsed=5ms, budget=5000ms
+Prepare: 41ms
+Tap[16] stage: check visibility and enabled state, elapsed=52ms, budget=5000ms
+Tap[16] stage: read bounding box, elapsed=61ms, budget=5000ms
+Tap[16] stage: read viewport, elapsed=63ms, budget=5000ms
+Tap[16] stage: target hit test, elapsed=66ms, budget=5000ms
+Tap[16] stage: check target stability, elapsed=69ms, budget=5000ms
+Tap[16] stage: dispatch touch, elapsed=119ms, budget=5000ms
+Tap: (171.0,484.7), planned=111ms, actual=197ms, force=0.64
+Display: screen=432x960, available=432x880, viewport=432x856, DPR=2.5, window(DIP)={"bounds":{"left":0,"top":0,"width":432,"height":960,"windowState":"normal"}}
+Navigation ready: 462ms, observe=2252ms, url=about:blank
+Navigation observation: planned=2252ms, actual=2254ms
+Action Diagnostic popup: success=True, dispatched=True, 2716ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+Reading/Up (240,651)->(243,414) duration=719ms release=8px/s
+Swipe dispatched: scroll verified=True, points=50
+Tap[17] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[17] stage: tap resolved element, elapsed=9ms, budget=5000ms
+Tap[18] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[18] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[18] stage: initialize touch, elapsed=22ms, budget=5000ms
+Tap[18] stage: wait for touch session lock, elapsed=22ms, budget=5000ms
+Tap[18] stage: prepare action rhythm, elapsed=22ms, budget=5000ms
+Prepare: 151ms
+Tap[18] stage: check visibility and enabled state, elapsed=177ms, budget=5000ms
+Tap[18] stage: read bounding box, elapsed=187ms, budget=5000ms
+Tap[18] stage: read viewport, elapsed=188ms, budget=5000ms
+Tap[19] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[19] stage: tap resolved element, elapsed=6ms, budget=5000ms
+Tap[20] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[20] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[20] stage: initialize touch, elapsed=3ms, budget=5000ms
+Tap[20] stage: wait for touch session lock, elapsed=3ms, budget=5000ms
+Tap[20] stage: prepare action rhythm, elapsed=3ms, budget=5000ms
+Tap[20] stage: check visibility and enabled state, elapsed=3ms, budget=5000ms
+Tap[20] stage: read bounding box, elapsed=11ms, budget=5000ms
+Tap[20] stage: read viewport, elapsed=13ms, budget=5000ms
+Tap[20] stage: target hit test, elapsed=16ms, budget=5000ms
+Tap[20] stage: check target stability, elapsed=18ms, budget=5000ms
+Tap[20] stage: dispatch touch, elapsed=56ms, budget=5000ms
+Tap: (196.6,759.4), planned=110ms, actual=145ms, force=0.66
+Actual search page input touched=True, candidates=2
+ROUND 3: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True
+Display: screen=411x914, available=411x834, viewport=411x810, DPR=3.5, window(DIP)={"bounds":{"left":0,"top":0,"width":410,"height":914,"windowState":"normal"}}
+Tap[21] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[21] stage: tap resolved element, elapsed=60ms, budget=5000ms
+Tap[22] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[22] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[22] stage: initialize touch, elapsed=26ms, budget=5000ms
+Tap[22] stage: wait for touch session lock, elapsed=26ms, budget=5000ms
+Tap[22] stage: prepare action rhythm, elapsed=26ms, budget=5000ms
+Prepare: 168ms
+Tap[22] stage: check visibility and enabled state, elapsed=212ms, budget=5000ms
+Tap[22] stage: read bounding box, elapsed=229ms, budget=5000ms
+Tap[22] stage: read viewport, elapsed=235ms, budget=5000ms
+Tap[22] stage: target hit test, elapsed=240ms, budget=5000ms
+Tap[22] stage: check target stability, elapsed=258ms, budget=5000ms
+Tap[22] stage: dispatch touch, elapsed=307ms, budget=5000ms
+Tap: (139.8,80.1), planned=68ms, actual=110ms, force=0.59
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Tap[23] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[23] stage: tap resolved element, elapsed=7ms, budget=5000ms
+Tap[24] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[24] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[24] stage: initialize touch, elapsed=6ms, budget=5000ms
+Tap[24] stage: wait for touch session lock, elapsed=6ms, budget=5000ms
+Tap[24] stage: prepare action rhythm, elapsed=6ms, budget=5000ms
+Prepare: 9ms
+Tap[24] stage: check visibility and enabled state, elapsed=20ms, budget=5000ms
+Tap[24] stage: read bounding box, elapsed=29ms, budget=5000ms
+Tap[24] stage: read viewport, elapsed=31ms, budget=5000ms
+Tap[24] stage: target hit test, elapsed=36ms, budget=5000ms
+Tap[24] stage: check target stability, elapsed=40ms, budget=5000ms
+Tap[24] stage: dispatch touch, elapsed=84ms, budget=5000ms
+Tap: (145.7,568.2), planned=64ms, actual=164ms, force=0.60
+Display: screen=411x914, available=411x834, viewport=411x810, DPR=3.5, window(DIP)={"bounds":{"left":0,"top":0,"width":410,"height":914,"windowState":"normal"}}
+Navigation ready: 2331ms, observe=5309ms, url=about:blank
+Navigation observation: planned=5309ms, actual=5318ms
+Action Diagnostic popup: success=True, dispatched=True, 7649ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+Tap[25] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[25] stage: tap resolved element, elapsed=9ms, budget=5000ms
+Tap[26] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[26] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[26] stage: initialize touch, elapsed=24ms, budget=5000ms
+Tap[26] stage: wait for touch session lock, elapsed=24ms, budget=5000ms
+Tap[26] stage: prepare action rhythm, elapsed=24ms, budget=5000ms
+Tap[26] stage: check visibility and enabled state, elapsed=24ms, budget=5000ms
+Tap[26] stage: read bounding box, elapsed=33ms, budget=5000ms
+Tap[26] stage: read viewport, elapsed=35ms, budget=5000ms
+Tap[26] stage: target hit test, elapsed=37ms, budget=5000ms
+Tap[26] stage: check target stability, elapsed=39ms, budget=5000ms
+Tap[26] stage: dispatch touch, elapsed=84ms, budget=5000ms
+Tap: (178.7,41.5), planned=72ms, actual=102ms, force=0.60
+Actual search page input touched=True, candidates=2
+ROUND 4: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True
+Display: screen=411x914, available=411x834, viewport=411x810, DPR=3.5, window(DIP)={"bounds":{"left":0,"top":0,"width":410,"height":914,"windowState":"normal"}}
+Tap[27] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[27] stage: tap resolved element, elapsed=85ms, budget=5000ms
+Tap[28] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[28] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[28] stage: initialize touch, elapsed=59ms, budget=5000ms
+Tap[28] stage: wait for touch session lock, elapsed=59ms, budget=5000ms
+Tap[28] stage: prepare action rhythm, elapsed=59ms, budget=5000ms
+Prepare: 189ms
+Tap[28] stage: check visibility and enabled state, elapsed=272ms, budget=5000ms
+Tap[28] stage: read bounding box, elapsed=345ms, budget=5000ms
+Tap[28] stage: read viewport, elapsed=364ms, budget=5000ms
+Tap[28] stage: target hit test, elapsed=378ms, budget=5000ms
+Tap[28] stage: check target stability, elapsed=397ms, budget=5000ms
+Tap[28] stage: dispatch touch, elapsed=498ms, budget=5000ms
+Tap: (188.3,86.0), planned=71ms, actual=126ms, force=0.60
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Tap[29] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[29] stage: tap resolved element, elapsed=8ms, budget=5000ms
+Tap[30] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[30] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[30] stage: initialize touch, elapsed=4ms, budget=5000ms
+Tap[30] stage: wait for touch session lock, elapsed=4ms, budget=5000ms
+Tap[30] stage: prepare action rhythm, elapsed=4ms, budget=5000ms
+Tap[30] stage: check visibility and enabled state, elapsed=4ms, budget=5000ms
+Tap[30] stage: read bounding box, elapsed=12ms, budget=5000ms
+Tap[30] stage: read viewport, elapsed=13ms, budget=5000ms
+Tap[30] stage: target hit test, elapsed=15ms, budget=5000ms
+Tap[30] stage: check target stability, elapsed=17ms, budget=5000ms
+Tap[30] stage: dispatch touch, elapsed=53ms, budget=5000ms
+Tap: (163.0,547.4), planned=64ms, actual=144ms, force=0.59
+Display: screen=411x914, available=411x834, viewport=411x810, DPR=3.5, window(DIP)={"bounds":{"left":0,"top":0,"width":410,"height":914,"windowState":"normal"}}
+Navigation ready: 2270ms, observe=3671ms, url=about:blank
+Navigation observation: planned=3671ms, actual=3681ms
+Action Diagnostic popup: success=True, dispatched=True, 5951ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+Tap[31] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[31] stage: tap resolved element, elapsed=8ms, budget=5000ms
+Tap[32] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[32] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[32] stage: initialize touch, elapsed=22ms, budget=5000ms
+Tap[32] stage: wait for touch session lock, elapsed=22ms, budget=5000ms
+Tap[32] stage: prepare action rhythm, elapsed=22ms, budget=5000ms
+Tap[32] stage: check visibility and enabled state, elapsed=22ms, budget=5000ms
+Tap[32] stage: read bounding box, elapsed=32ms, budget=5000ms
+Tap[32] stage: read viewport, elapsed=39ms, budget=5000ms
+Tap[32] stage: target hit test, elapsed=42ms, budget=5000ms
+Tap[32] stage: check target stability, elapsed=44ms, budget=5000ms
+Tap[32] stage: dispatch touch, elapsed=82ms, budget=5000ms
+Tap: (176.9,39.6), planned=68ms, actual=127ms, force=0.58
+Actual search page input touched=True, candidates=2
+ROUND 5: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True
+Display: screen=411x914, available=411x834, viewport=411x810, DPR=3.5, window(DIP)={"bounds":{"left":0,"top":0,"width":410,"height":914,"windowState":"normal"}}
+Tap[33] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[33] stage: tap resolved element, elapsed=47ms, budget=5000ms
+Tap[34] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[34] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[34] stage: initialize touch, elapsed=26ms, budget=5000ms
+Tap[34] stage: wait for touch session lock, elapsed=26ms, budget=5000ms
+Tap[34] stage: prepare action rhythm, elapsed=27ms, budget=5000ms
+Prepare: 169ms
+Tap[34] stage: check visibility and enabled state, elapsed=216ms, budget=5000ms
+Tap[34] stage: read bounding box, elapsed=233ms, budget=5000ms
+Tap[34] stage: read viewport, elapsed=237ms, budget=5000ms
+Tap[34] stage: target hit test, elapsed=241ms, budget=5000ms
+Tap[34] stage: check target stability, elapsed=252ms, budget=5000ms
+Tap[34] stage: dispatch touch, elapsed=294ms, budget=5000ms
+Tap: (188.9,79.6), planned=58ms, actual=77ms, force=0.55
+Page initialization failed: page: no object with guid page@18dd6590bd583c2c5e820b05dd3ced7d
+Page initialization failed: page: no object with guid page@6738a604af7fe23610cbe8cebb8c541e
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Page initialization failed: Page is already closed.
+Page initialization failed: Page is already closed.
+Page initialization failed: Protocol error (Target.attachToTarget): No target with given id found
+Tap[35] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[35] stage: tap resolved element, elapsed=6ms, budget=5000ms
+Tap[36] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[36] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[36] stage: initialize touch, elapsed=3ms, budget=5000ms
+Tap[36] stage: wait for touch session lock, elapsed=3ms, budget=5000ms
+Tap[36] stage: prepare action rhythm, elapsed=3ms, budget=5000ms
+Prepare: 13ms
+Tap[36] stage: check visibility and enabled state, elapsed=22ms, budget=5000ms
+Tap[36] stage: read bounding box, elapsed=30ms, budget=5000ms
+Tap[36] stage: read viewport, elapsed=31ms, budget=5000ms
+Tap[36] stage: target hit test, elapsed=33ms, budget=5000ms
+Tap[36] stage: check target stability, elapsed=35ms, budget=5000ms
+Tap[36] stage: dispatch touch, elapsed=70ms, budget=5000ms
+Tap: (183.4,565.8), planned=75ms, actual=153ms, force=0.53
+Display: screen=411x914, available=411x834, viewport=411x810, DPR=3.5, window(DIP)={"bounds":{"left":0,"top":0,"width":410,"height":914,"windowState":"normal"}}
+Navigation ready: 2283ms, observe=2761ms, url=about:blank
+Navigation observation: planned=2761ms, actual=2775ms
+Action Diagnostic popup: success=True, dispatched=True, 5058ms, 
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm100000&q=%E5%A4%A9%E6%B0%94, content-type=text/html;charset=utf-8, content-disposition=, location=
+Tap[37] stage: resolve locator, elapsed=0ms, budget=5000ms
+Tap[37] stage: tap resolved element, elapsed=11ms, budget=5000ms
+Tap[38] stage: wait for input lock, elapsed=0ms, budget=5000ms
+Tap[38] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[38] stage: initialize touch, elapsed=23ms, budget=5000ms
+Tap[38] stage: wait for touch session lock, elapsed=24ms, budget=5000ms
+Tap[38] stage: prepare action rhythm, elapsed=24ms, budget=5000ms
+Tap[38] stage: check visibility and enabled state, elapsed=26ms, budget=5000ms
+Tap[38] stage: read bounding box, elapsed=38ms, budget=5000ms
+Tap[38] stage: read viewport, elapsed=40ms, budget=5000ms
+Tap[38] stage: target hit test, elapsed=41ms, budget=5000ms
+Tap[38] stage: check target stability, elapsed=44ms, budget=5000ms
+Tap[38] stage: dispatch touch, elapsed=87ms, budget=5000ms
+Tap: (148.6,41.8), planned=82ms, actual=136ms, force=0.51
+Actual search page input touched=True, candidates=2
+ROUND 6: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

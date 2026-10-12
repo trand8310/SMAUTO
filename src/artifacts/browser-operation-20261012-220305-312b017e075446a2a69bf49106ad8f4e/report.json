@@ -1,0 +1,44 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Build\\publish\\File\\chrome-win\\145.0.7632.110\\chrome.exe",
+  "KernelVersion": "145.0.7632.110",
+  "IsHiddenMode": false,
+  "Incognito": true,
+  "Proxy": false,
+  "ActualUrl": "https://wm.m.sm.cn/s?from=wm100000\u0026q=%E5%A4%A9%E6%B0%94",
+  "Reports": [
+    {
+      "Round": 1,
+      "Model": "24129RT7CC",
+      "Stage": "completed",
+      "Outcome": "success",
+      "ElapsedMs": 19288,
+      "Error": null,
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 0,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[25404:14920:1012/220307.482:WARNING:chrome\\browser\\chrome_browser_main_win.cc:787] Command line too long for RegisterApplicationRestart:  --battery-charging-time=0 --battery-discharging-time=0 --battery-level=0.24 --brand=XiaoMiBrowser --brand-name=XiaoMiBrowser --brand-version=19.5.35751 --device-memory=8 --device-pixel-ratio=2.875 --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-blink-features=AutomationControlled --disable-brand-version-list --disable-breakpad --disable-dev-shm-usage --disable-edgeupdater --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion,DnsOverHttps,UseDnsHttpsSvcbAlpn --disable-\r\n[25404:16704:1012/220307.485:ERROR:chrome\\browser\\extensions\\external_registry_loader_win.cc:161] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:59661/devtools/browser/afbba368-1abf-482a-859a-02a3b0cdece3"
+      }
+    },
+    {
+      "Round": 2,
+      "Model": "24129RT7CC",
+      "Stage": "completed",
+      "Outcome": "success",
+      "ElapsedMs": 19675,
+      "Error": null,
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 0,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[6768:28516:1012/220325.536:ERROR:chrome\\browser\\extensions\\external_registry_loader_win.cc:161] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\n[6768:12976:1012/220325.538:WARNING:chrome\\browser\\chrome_browser_main_win.cc:787] Command line too long for RegisterApplicationRestart:  --battery-charging-time=0 --battery-discharging-time=0 --battery-level=0.97 --brand=XiaoMiBrowser --brand-name=XiaoMiBrowser --brand-version=19.9.30337 --device-memory=8 --device-pixel-ratio=2.875 --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-blink-features=AutomationControlled --disable-brand-version-list --disable-breakpad --disable-dev-shm-usage --disable-edgeupdater --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion,DnsOverHttps,UseDnsHttpsSvcbAlpn --disable-f\r\nDevTools listening on ws://127.0.0.1:56685/devtools/browser/6550c933-0873-474a-bd01-1764532cfa96"
+      }
+    }
+  ]
+}

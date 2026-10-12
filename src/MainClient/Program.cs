@@ -44,6 +44,8 @@ namespace MainClient
 
             AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
             {
+                BrowserLifecycleLog.Write("application", "application.unhandled_exception", "AppDomain.UnhandledException", "客户端发生未处理异常，可能触发重启并中断浏览器执行",
+                    new { e.IsTerminating, error = (e.ExceptionObject as Exception)?.ToString() });
                 Log.Fatal(e.ExceptionObject as Exception, "UnhandledException");
                 RestartApplication();
             };
@@ -105,6 +107,11 @@ namespace MainClient
                 .WriteTo.Sink<UiLogSink>()
                 .CreateLogger();
 
+            BrowserLifecycleLog.Write("application", "application.started", "MainClient.Program", "客户端启动，独立浏览器生命周期日志已启用",
+                new { logFile = BrowserLifecycleLog.CurrentFilePath });
+            if (BrowserLifecycleLog.LastWriteError is { } logError) Log.Warning("Browser lifecycle log unavailable: {Error}", logError);
+            else Log.Information("浏览器独立诊断日志: {LogFile}", BrowserLifecycleLog.CurrentFilePath);
+
             var baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
             var parentDir = Directory.GetParent(baseDir)?.FullName ?? AppDomain.CurrentDomain.BaseDirectory;
             var packagesDir = Path.Combine(parentDir, "packages");
@@ -138,8 +145,15 @@ namespace MainClient
                     services.AddSingleton<ChromiumSessionManager>(sp =>
                     {
                         var manager = new ChromiumSessionManager();
-                        manager.Reclaimed += result => Log.Information("Chromium reclaimed: {ExecutionId}, reason={Reason}, exit={ExitConfirmed}, forced={Forced}, error={Error}",
-                            result.ExecutionId, result.Reason, result.ExitConfirmed, result.Forced, result.Error);
+                        manager.Reclaimed += result =>
+                        {
+                            Log.Information("Chromium reclaimed: {ExecutionId}, reason={Reason}, exit={ExitConfirmed}, forced={Forced}, exitCode={ExitCode}, error={Error}",
+                                result.ExecutionId, result.Reason, result.ExitConfirmed, result.Forced, result.ExitCode, result.Error);
+                            if (BrowserLifecycleLog.LastWriteError is { } journalError)
+                                Log.Warning("Browser lifecycle log write failed: {LogFile}, error={Error}", BrowserLifecycleLog.CurrentFilePath, journalError);
+                            if (result.Reason != BrowserStopKind.Completed && !string.IsNullOrWhiteSpace(result.DiagnosticTail))
+                                Log.Warning("Chromium diagnostics: {ExecutionId}, {Diagnostics}", result.ExecutionId, result.DiagnosticTail);
+                        };
                         manager.ProfileCleaned += result =>
                         {
                             if (!result.Deleted) Log.Warning("Browser profile cleanup failed: {Profile}, attempts={Attempts}, error={Error}", result.UserDataDir, result.Attempts, result.Error);
@@ -180,6 +194,7 @@ namespace MainClient
             }
             finally
             {
+                BrowserLifecycleLog.Write("application", "application.stopping", "MainClient.Program.finally", "客户端窗口退出，开始释放所属浏览器运行时");
                 StopErrorDialogGuard();
                 // ApplicationExit async handlers are not awaited by WinForms.
                 // The form defers closing until tasks drain; complete host disposal here.
@@ -194,6 +209,7 @@ namespace MainClient
                 }
                 catch (Exception ex)
                 {
+                    BrowserLifecycleLog.Write("application", "application.shutdown_failed", "MainClient.Program.finally", "客户端资源回收异常", new { error = ex.ToString() });
                     Log.Fatal(ex, "Application resource shutdown failed");
                     Environment.ExitCode = 1;
                 }
@@ -217,6 +233,7 @@ namespace MainClient
             }
 
             _lastRestartRequestUtc = utcNow;
+            BrowserLifecycleLog.Write("application", "application.restart_requested", "MainClient.Program.RestartApplication", "客户端请求重启；当前进程将退出");
 
             try
             {

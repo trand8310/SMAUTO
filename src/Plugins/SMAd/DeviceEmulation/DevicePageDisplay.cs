@@ -39,13 +39,21 @@ public static class DevicePageDisplay
         // Read-only verification. Never patch Screen properties when the kernel cannot supply them.
         var check = await session.SendAsync("Runtime.evaluate", new Dictionary<string, object>
         {
-            ["expression"] = $"screen.width === {display.ScreenWidth} && screen.height === {display.ScreenHeight} && " +
-                $"screen.availWidth === {display.AvailableWidth} && screen.availHeight === {display.AvailableHeight} && " +
-                $"Math.abs(devicePixelRatio - {display.DprArgument}) < 0.001",
+            ["expression"] = "({width:screen.width,height:screen.height,availWidth:screen.availWidth,availHeight:screen.availHeight,dpr:devicePixelRatio})",
             ["returnByValue"] = true
         }).WaitAsync(TimeSpan.FromSeconds(5), token);
-        if (!check!.Value.GetProperty("result").TryGetProperty("value", out var valid) || valid.ValueKind != JsonValueKind.True)
-            throw new InvalidOperationException("Native screen, available screen or DPR does not match the device profile. The Chromium kernel must support the configured values; JavaScript fallback is disabled.");
+        if (!check!.Value.GetProperty("result").TryGetProperty("value", out var metrics) ||
+            metrics.ValueKind != JsonValueKind.Object ||
+            !Matches(metrics, "width", display.ScreenWidth) || !Matches(metrics, "height", display.ScreenHeight) ||
+            !Matches(metrics, "availWidth", display.AvailableWidth) || !Matches(metrics, "availHeight", display.AvailableHeight) ||
+            !Matches(metrics, "dpr", display.Dpr, 0.001))
+            throw new QTP.Common.BrowserFailureException(QTP.Common.BrowserStopKind.DeviceConfigurationFailed,
+                $"Native display mismatch: expected screen={display.ScreenWidth}x{display.ScreenHeight}, available={display.AvailableWidth}x{display.AvailableHeight}, DPR={display.DprArgument}; " +
+                $"actual={check.Value.GetRawText()}. The kernel must implement these values; JavaScript fallback is disabled.");
         return actual!.Value.Clone();
     }
+
+    private static bool Matches(JsonElement metrics, string name, double expected, double tolerance = 0) =>
+        metrics.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) &&
+        double.IsFinite(number) && Math.Abs(number - expected) <= tolerance;
 }

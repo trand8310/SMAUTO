@@ -1,0 +1,30 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-8a08a94eb7f24a6b83b8ba3c70e21c98, pid=16696, kernel=145.0.7632.110, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html, content-disposition=, location=
+神马搜索:ExecuteWorker: 8.71
+神马搜索:Touch Prepare: 210ms
+神马搜索:Touch Preview/Up (248,475)->(241,126) duration=308ms release=184px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=25
+神马搜索:Touch FastScan/Up (214,746)->(223,290) duration=199ms release=3882px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=15
+神马搜索:Touch FastScan/Up (217,516)->(209,59) duration=159ms release=4282px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=13
+神马搜索:Touch Preview/Up (200,499)->(197,121) duration=373ms release=201px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=29
+神马搜索:Touch Reading/Up (265,746)->(264,539) duration=847ms release=25px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=59
+神马搜索:Touch Preview/Up (149,584)->(153,208) duration=356ms release=236px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=24
+神马搜索:Touch FastScan/Up (278,682)->(273,162) duration=198ms release=5077px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=16
+点击比率:0.00%
+神马搜索:Touch Reading/Up (249,580)->(243,354) duration=594ms release=74px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=41
+神马搜索:Touch Move target: Ready, 
+触发广告位:鏈湴娴嬭瘯鐩爣锛岀偣鍑昏繘鍏ヨ惤鍦伴〉:(12,297.2174,378.08698,140)
+Device target initialization failed: target=FA239752F4AFC54BD1273C539C86AD20, session=E66ABFF58C79803FD59521ADC9F34908, error=A task was canceled.
+Action Navigate: success=False, dispatched=True, 5220ms, Cancelled
+神马搜索:ExecuteWorker:Canceled: Browser disconnected
+Browser execution ending: executionId=full-flow-8a08a94eb7f24a6b83b8ba3c70e21c98, stage=page visit, elapsed=52084ms, reason=CdpDisconnected, detail=Browser disconnected

@@ -627,19 +627,29 @@ namespace QTP.Plugins
         {
             _lastBrowserReclaim = null; _lastBrowserFailure = null;
             var result = await ExecuteWorkerCoreAsync(uniqueId, taskArgs, token);
-            return result with
+            var finalResult = result with
             {
                 BrowserReclaim = _lastBrowserReclaim,
                 BrowserStopKind = _lastBrowserReclaim?.Reason ?? _lastBrowserFailure,
                 Status = _lastBrowserReclaim?.ExitConfirmed == false ? WorkerExecutionStatus.Failed : result.Status,
                 FailureReason = _lastBrowserReclaim?.ExitConfirmed == false ? result.FailureReason ?? "Browser process exit not confirmed" : result.FailureReason
             };
+            BrowserLifecycleLog.Write(uniqueId, "worker.result", "SMAdTask.ExecuteWorkerWithResultAsync", "执行已结束，记录最终业务结果与关闭原因",
+                new { status = finalResult.Status.ToString(), finalResult.FailureReason, finalResult.CompletedPvs, finalResult.CompletedClickPvs,
+                    finalResult.ClickRequested, reason = finalResult.BrowserStopKind?.ToString(), finalResult.ActionLogPath,
+                    exitConfirmed = finalResult.BrowserReclaim?.ExitConfirmed });
+            return finalResult;
         }
         private async Task<WorkerExecutionResult> ExecuteWorkerCoreAsync(string uniqueId, JObject taskArgs, CancellationToken token)
         {
             WorkerRunContext? ctx = null;
             bool flowSucceeded = false;
+            var executionClock = System.Diagnostics.Stopwatch.StartNew();
+            var stage = "configuration";
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            BrowserLifecycleLog.Write(uniqueId, "worker.begin", "SMAdTask.ExecuteWorkerCoreAsync", "开始本次独立执行",
+                new { taskId = taskArgs.SelectToken("task.id")?.ToString(), kernel = taskArgs.SelectToken("kernelVersion")?.ToString(),
+                    headless = taskArgs.SelectToken("isHiddenMode")?.ToString(), proxy = taskArgs.SelectToken("isProxyMode")?.ToString() });
 
             try
             {
@@ -662,6 +672,8 @@ namespace QTP.Plugins
                 LogWriteLine($"{this.Title}:ExecuteWorker:Start");
 
 
+                stage = "browser launch and CDP connection";
+                ctx.RecordStage(stage);
                 var browser = await StartAndConnectBrowserAsync(ctx, linkedCts.Token);
                 if (browser == null)
                 {
@@ -696,6 +708,8 @@ namespace QTP.Plugins
                 ctx.Context = ctx.Browser.Contexts[0];
                 ctx.CdpManager = new CDPSessionManager(ctx.Context);
 
+                stage = "page and device initialization";
+                ctx.RecordStage(stage);
                 await AttachLifecycleEventsAsync(ctx, linkedCts.Token);
                 await ConfigureContextAsync(ctx, linkedCts.Token);
 
@@ -711,6 +725,8 @@ namespace QTP.Plugins
                     return BuildWorkerResult(ctx);
                 }
 
+                stage = "page visit";
+                ctx.RecordStage(stage);
                 var ok = await RunMainFlowAsync(ctx, linkedCts.Token);
                 if (!ok)
                 {
@@ -730,10 +746,13 @@ namespace QTP.Plugins
                 flowSucceeded = ok;
                 return BuildWorkerResult(ctx, success: ok);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException ex)
             {
+                RecordExecutionException(uniqueId, ctx, stage, ex, token.IsCancellationRequested);
                 if (token.IsCancellationRequested)
                     return BuildWorkerResult(ctx, canceled: true);
+                if (ctx != null && ex is BrowserStartupCanceledException)
+                    ctx.LastFailureReason = ex.Message;
 
                 if (ctx?.ProxyFailed == true)
                 {
@@ -758,6 +777,7 @@ namespace QTP.Plugins
             }
             catch (PlaywrightException ex)
             {
+                RecordExecutionException(uniqueId, ctx, stage, ex, token.IsCancellationRequested);
                 if (ctx != null && BrowserFailureClassifier.Classify(ex) == BrowserStopKind.OperationTimedOut)
                     ctx.BrowserFailureKind = BrowserStopKind.OperationTimedOut;
                 if (ctx != null)
@@ -780,6 +800,8 @@ namespace QTP.Plugins
             }
             catch (Exception ex)
             {
+                RecordExecutionException(uniqueId, ctx, stage, ex, token.IsCancellationRequested);
+                if (ctx != null && ex is BrowserFailureException failure) ctx.BrowserFailureKind = failure.Kind;
                 if (ctx != null && BrowserFailureClassifier.Classify(ex) == BrowserStopKind.OperationTimedOut)
                     ctx.BrowserFailureKind = BrowserStopKind.OperationTimedOut;
                 if (ctx != null)
@@ -803,8 +825,19 @@ namespace QTP.Plugins
             finally
             {
                 // Record the end reason before cancelling the internal cleanup token.
-                ctx?.BrowserSession?.RequestStop(token.IsCancellationRequested ? BrowserStopKind.Canceled
-                    : !flowSucceeded ? ctx.BrowserFailureKind ?? BrowserStopKind.Completed : BrowserStopKind.Completed);
+                var endKind = token.IsCancellationRequested ? BrowserStopKind.Canceled
+                    : !flowSucceeded ? ctx?.BrowserFailureKind ??
+                        (stage == "page visit" ? BrowserStopKind.ExecutionFailed : BrowserStopKind.StartupFailed)
+                        : BrowserStopKind.Completed;
+                LogWriteLine($"Browser execution ending: executionId={uniqueId}, stage={stage}, elapsed={executionClock.ElapsedMilliseconds}ms, " +
+                    $"reason={ctx?.BrowserSession?.StopKind ?? endKind}, detail={ctx?.LastFailureReason ?? _lastBrowserFailure?.ToString()}");
+                BrowserLifecycleLog.Write(uniqueId, "worker.ending", "SMAdTask.ExecuteWorkerCoreAsync.finally", BrowserLifecycleLog.Explain(ctx?.BrowserSession?.StopKind ?? endKind),
+                    new { stage = ctx?.LifecycleStage ?? stage, elapsedMs = executionClock.ElapsedMilliseconds,
+                        reason = (ctx?.BrowserSession?.StopKind ?? endKind).ToString(), detail = ctx?.BrowserSession?.StopReason ?? ctx?.LastFailureReason ?? _lastBrowserFailure?.ToString(),
+                        flowSucceeded, callerCanceled = token.IsCancellationRequested, executionCanceled = linkedCts.IsCancellationRequested,
+                        leaseCanceled = ctx?.BrowserSession?.Token.IsCancellationRequested, pv = ctx?.PvIndex, url = ctx?.Page?.Url,
+                        ctx?.CompletedPvs, ctx?.CompletedClickPvs, process = BrowserLifecycleLog.Snapshot(ctx?.BrowserSession?.ProcessSession) });
+                ctx?.BrowserSession?.RequestStop(endKind, ctx.LastFailureReason ?? (flowSucceeded ? "Page flow completed" : "Page flow did not complete"), "SMAdTask.finally");
                 try
                 {
                     if (!linkedCts.IsCancellationRequested)
@@ -833,6 +866,11 @@ namespace QTP.Plugins
         #endregion
 
         #region Main Flow
+
+        private static void RecordExecutionException(string id, WorkerRunContext? ctx, string stage, Exception error, bool callerCanceled)
+            => BrowserLifecycleLog.Write(id, "worker.exception", "SMAdTask.ExecuteWorkerCoreAsync", "执行异常；保留原始异常和取消来源",
+                new { stage = ctx?.LifecycleStage ?? stage, callerCanceled, leaseReason = ctx?.BrowserSession?.StopKind?.ToString(),
+                    ctx?.LastFailureReason, error = error.ToString(), pv = ctx?.PvIndex, url = ctx?.Page?.Url });
 
         private async Task<bool> RunMainFlowAsync(WorkerRunContext ctx, CancellationToken token)
         {
@@ -879,33 +917,7 @@ namespace QTP.Plugins
                 var cdp = await ctx.CdpManager!.GetOrCreateSessionAsync(page);
                 SmAdTouch.Bind(page, cdp, token, ctx.human);
             }
-
-            int secondJumpRate = 0;
-            if (!string.IsNullOrWhiteSpace(_appSettings.SecondJumpRate))
-            {
-                if (_appSettings.SecondJumpRate.Contains("-"))
-                {
-                    var values = _appSettings.SecondJumpRate.Split('-');
-                    if (values.Length == 2)
-                        secondJumpRate = CommonHelper.RandomRange(Int32.Parse(values[0]), Int32.Parse(values[1]));
-                }
-                else
-                {
-                    secondJumpRate = Int32.Parse(_appSettings.SecondJumpRate);
-                }
-            }
-            else
-            {
-                secondJumpRate = CommonHelper.RandomRange(45, 75);
-            }
-
-            if (secondJumpRate > 0)
-            {
-                if (_aggregator.GetLocalMetric(ctx.Config.TaskId, "dsp_second_jump_rate") == 0)
-                {
-                    _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump_rate", secondJumpRate);
-                }
-            }
+ 
 
 
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
@@ -913,6 +925,7 @@ namespace QTP.Plugins
                 token.ThrowIfCancellationRequested();
                 LogWriteLine($"{this.Title}:pv：{ctx.Config.TotalPV}/{ctx.PvIndex}");
                 ctx.ResetPerPvState();
+                ctx.RecordStage("清理上一轮页面并准备入口");
                 await EnsureSinglePageAsync(ctx, token);
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
@@ -927,6 +940,7 @@ namespace QTP.Plugins
                     return false;
                 }
 
+                ctx.RecordStage("准备入口地址或搜索词");
                 var entry = await PrepareEntryAsync(ctx, token);
                 if (!entry.Success)
                 {
@@ -1054,18 +1068,21 @@ namespace QTP.Plugins
                     continue;
                 }
 
+                ctx.RecordStage("检测页面目标标记");
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
                 if (adsOk && ctx.PageAdsCount == 0)
                 {
                     token.ThrowIfCancellationRequested();
                     ctx.Config.LinkedCts.Token.ThrowIfCancellationRequested();
                     ctx.CompleteCurrentVisit();
+                    ctx.RecordStage("没有广告标记，快速完成当前访问");
                     LogWriteLine("没有广告标记，快速完成当前访问，跳过滑动、点击和停留");
                     continue;
                 }
                 if (!adsOk)
                     LogWriteLine("广告检测未完成，继续当前页面访问与停留");
 
+                ctx.RecordStage("入口页面浏览与阅读");
                 await BrowseForAsync(ctx, 5, 8, token);
                 await Task.Delay(CommonHelper.RandomRange(3500, 8500), token);
 
@@ -1080,10 +1097,12 @@ namespace QTP.Plugins
                     LogWriteLine($"{this.Title}:RunMainFlow: DecideJumpClick前 Browser已断开");
                     continue;
                 }
+                ctx.RecordStage("计算首次点击条件");
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
                     ctx.ClickRequested = true;
+                    ctx.RecordStage("首次点击定位与跳转");
                     var clickFlow = FlowControl.Continue;
                     await TryOptionalPageOperationAsync(ctx, "First jump", async () =>
                     {
@@ -1107,6 +1126,7 @@ namespace QTP.Plugins
                     LogWriteLine($"目标页 HTTP {documentStatus}，跳过当前PV停留及计数");
                     continue;
                 }
+                ctx.RecordStage("详情页面停留与阅读");
                 var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
                 if (sleepFlow == FlowControl.Failed) return false;
                 token.ThrowIfCancellationRequested();
@@ -1284,9 +1304,12 @@ namespace QTP.Plugins
             ctx.DebugPort = lease.ProcessSession.DebugPort;
             var registration = lease.Token.Register(() =>
             {
+                ctx.BrowserFailureKind ??= lease.StopKind;
                 ctx.LastFailureReason ??= lease.StopReason ?? "Browser session stopped";
                 try { ctx.Config.LinkedCts.Cancel(); } catch (ObjectDisposedException) { }
             });
+            LogWriteLine($"Browser connected: executionId={ctx.Config.UniqueId}, pid={lease.ProcessSession.Process.Id}, " +
+                $"kernel={ctx.Config.KernelVersion}, lifetime={_appSettings.IpTtl}s, headless={ctx.Config.TaskArgs.SelectToken("isHiddenMode")}, proxy={ctx.Config.TaskArgs.SelectToken("isProxyMode")}");
             lease.RegisterCleanup(async () =>
             {
                 registration.Dispose();
@@ -1353,7 +1376,8 @@ namespace QTP.Plugins
                 "--disable-infobars",
                 "--disable-sync",
                 "--disable-blink-features=AutomationControlled",
-                "--disable-logging",
+                "--enable-logging=stderr",
+                "--log-level=1",
                 "--disable-quic",
                 "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream",
@@ -1408,10 +1432,6 @@ namespace QTP.Plugins
                 args.Add("--incognito");
                 args.Add("--enable-incognito-themes");
             }
-            else
-            {
-                args.Add($"--user-data-dir=\"{config.CacheDir}\"");
-            }
 
             args.AddRange(InitFPArgs(config.TaskArgs, config.MaxTouchPoints));
             return args;
@@ -1431,7 +1451,12 @@ namespace QTP.Plugins
                     ctx.LastFailureReason = "Device initialization failed: " + ex.Message;
                     ctx.BrowserSession?.RequestStop(BrowserStopKind.StartupFailed, ctx.LastFailureReason);
                     CancelLinkedContext(ctx, ctx.LastFailureReason);
-                }, token);
+                }, token, message =>
+                {
+                    LogWriteLine(message);
+                    BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.device_diagnostic", "DeviceTargetController", message,
+                        new { stage = ctx.LifecycleStage });
+                });
 
             if (ctx.Config.TaskArgs.SelectToken("ipInfo.lon") != null &&
                 ctx.Config.TaskArgs.SelectToken("ipInfo.lat") != null)
@@ -1492,6 +1517,8 @@ namespace QTP.Plugins
             catch (Exception ex)
             {
                 LogWriteLine($"Page initialization failed: {ex.Message}");
+                BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.initialization_failed", "SMAdTask.HandleContextPageAsync", "新页面初始化失败",
+                    new { stage = ctx.LifecycleStage, url = newPage.Url, error = ex.ToString() });
             }
         }
 
@@ -1560,6 +1587,9 @@ namespace QTP.Plugins
             if (ctx.DeviceTargets != null) await ctx.DeviceTargets.WaitForPageAsync(cdpSession, token);
             var display = ctx.Config.DisplayProfile ??= DeviceDisplayProfile.From(ctx.Config);
             var actualWindow = await DevicePageDisplay.ApplyAsync(cdpSession, display, token);
+            BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.device_ready", "SMAdTask.InitPageCoreAsync", "原生显示验证及窗口设置完成",
+                new { stage = ctx.LifecycleStage, url = page.Url, display.ScreenWidth, display.ScreenHeight,
+                    display.AvailableWidth, display.AvailableHeight, display.ViewportWidth, display.ViewportHeight, dpr = display.DprArgument, actualWindow });
             LogWriteLine($"Display: screen={display.ScreenWidth}x{display.ScreenHeight}, available={display.AvailableWidth}x{display.AvailableHeight}, viewport={display.ViewportWidth}x{display.ViewportHeight}, DPR={display.DprArgument}, window(DIP)={actualWindow}");
             await cdpSession.SendAsync("Page.enable").WaitAsync(TimeSpan.FromSeconds(5), token);
 
@@ -1567,6 +1597,8 @@ namespace QTP.Plugins
             SmAdTouch.Bind(page, cdpSession, token, ctx.human);
             page.Close += (_, _) =>
             {
+                BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.closed", "IPage.Close", "页面关闭事件；可能是主动页面切换，不单独判定浏览器崩溃",
+                    new { stage = ctx.LifecycleStage, url = page.Url, executionCanceled = ctx.Config.LinkedCts.IsCancellationRequested, sessionClosing = ctx.BrowserSession?.IsClosing });
                 ctx.PageInitializations.TryRemove(page, out _);
                 ctx.PageHttpStatuses.TryRemove(page, out _);
             };
@@ -1584,6 +1616,8 @@ namespace QTP.Plugins
                 {
                     ctx.PageCrashed = true;
                     ctx.LastFailureReason = "Page crashed";
+                    BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.crashed", "IPage.Crash", "收到页面渲染进程崩溃事件",
+                        new { stage = ctx.LifecycleStage, url = page.Url, process = BrowserLifecycleLog.Snapshot(ctx.BrowserSession?.ProcessSession) });
                     ctx.BrowserSession?.RequestStop(BrowserStopKind.BrowserCrashed, "Page crashed");
                     CancelLinkedContext(ctx, "PageCrashed");
                 }
@@ -1708,7 +1742,12 @@ namespace QTP.Plugins
             try
             {
                 var failure = request.Failure;
-                var mainNavigation = request.IsNavigationRequest && ReferenceEquals(request.Frame, request.Frame.Page.MainFrame);
+                // Explicit proxy failures do not depend on a Frame that may not exist yet for a popup.
+                var proxyEnabled = ctx.Config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() == true;
+                var explicitProxy = ProxyFailureClassifier.Classify(failure, proxyEnabled, false);
+                if (explicitProxy.HasValue)
+                { StopForProxyFailure(ctx, explicitProxy.Value, $"Proxy {explicitProxy}: {failure}, req={request.Url}"); return; }
+                var mainNavigation = request.IsNavigationRequest && TryGetMainRequestPage(request, out _);
                 if (mainNavigation) ctx.LastFailureReason = $"RequestFailed: {failure}, req={request.Url}";
                 var kind = ProxyFailureClassifier.Classify(failure,
                     ctx.Config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() == true, mainNavigation);
@@ -1720,16 +1759,30 @@ namespace QTP.Plugins
         private void HandleDocumentResponse(WorkerRunContext ctx, IResponse response)
         {
             if (!response.Request.IsNavigationRequest) return;
-            var page = response.Request.Frame.Page;
-            if (!ReferenceEquals(response.Request.Frame, page.MainFrame)) return;
+            if (response.Status == 407 && ctx.Config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() == true)
+            { StopForProxyFailure(ctx, ProxyFailureKind.Authentication, $"Proxy HTTP 407: {response.Url}"); return; }
+            // Context.Response can arrive before a popup has a Page/Frame object. Never throw into the driver dispatcher.
+            if (!TryGetMainRequestPage(response.Request, out var page)) return;
             ctx.PageHttpStatuses[page] = response.Status;
             if (response.Status >= 400)
             {
+                BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.http_error", "SMAdTask.HandleDocumentResponse", "主文档返回 HTTP 错误，后续动作可能被跳过",
+                    new { stage = ctx.LifecycleStage, status = response.Status, url = response.Url });
                 ctx.LastFailureReason = $"Main document HTTP {response.Status}: {response.Url}";
                 LogWriteLine(ctx.LastFailureReason);
             }
-            if (response.Status == 407 && ctx.Config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() == true)
-                StopForProxyFailure(ctx, ProxyFailureKind.Authentication, $"Proxy HTTP 407: {response.Url}");
+        }
+
+        private static bool TryGetMainRequestPage(IRequest request, out IPage page)
+        {
+            page = null!;
+            try
+            {
+                var frame = request.Frame;
+                page = frame.Page;
+                return ReferenceEquals(frame, page.MainFrame);
+            }
+            catch (PlaywrightException) { return false; }
         }
 
         private void StopForProxyFailure(WorkerRunContext ctx, ProxyFailureKind kind, string reason)
@@ -1742,15 +1795,21 @@ namespace QTP.Plugins
 
         private async Task<bool> NavigateToEntryAsync(WorkerRunContext ctx, string url, CancellationToken token)
         {
+            ctx.RecordStage("打开入口页面并等待就绪");
             token.ThrowIfCancellationRequested();
             ctx.DisableBusinessDownloads();
 
             try
             {
                 var navigation = await SMAd.PageActions.EntryPageNavigator.NavigateAsync(ctx.Page!, url,
-                    ctx.Config.PageLoadingTimeoutMs, token, message => LogWriteLine(message));
+                    ctx.Config.PageLoadingTimeoutMs, token, message =>
+                    {
+                        LogWriteLine(message);
+                        BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.entry_navigation_diagnostic", "EntryPageNavigator", message);
+                    });
                 if (!navigation.Opened)
                 {
+                    if (navigation.FailureKind.HasValue) ctx.BrowserFailureKind = navigation.FailureKind;
                     if (navigation.HttpStatus == 407 && ctx.Config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() == true)
                         StopForProxyFailure(ctx, ProxyFailureKind.Authentication, $"Entry proxy HTTP 407: {url}");
                     ctx.LastFailureReason = navigation.Reason;
@@ -1767,7 +1826,7 @@ namespace QTP.Plugins
             catch (TimeoutException ex)
             {
                 ctx.LastFailureReason = $"Entry navigation timed out: {ex.Message}";
-                ctx.BrowserSession?.RequestStop(BrowserStopKind.OperationTimedOut, ctx.LastFailureReason);
+                ctx.BrowserFailureKind = BrowserStopKind.OperationTimedOut;
                 return false;
             }
             ctx.CurrentPageUrl = ctx.Page!.Url;
@@ -2179,33 +2238,10 @@ namespace QTP.Plugins
 
         private async Task<FlowControl> HandleLandingPageAsync(WorkerRunContext ctx, CancellationToken token)
         {
+            ctx.RecordStage("落地页策略浏览、定位与二跳");
             token.ThrowIfCancellationRequested();
             if (ctx.LandingDispatcher == null)
                 return FlowControl.Continue;
-
-
-
-            var metrics = _aggregator.GetLocalMetrics(ctx.Config.TaskId, "dsp_second_jump_rate", "dsp_second_jump", "dsp_second_jump_click");
-            if (metrics["dsp_second_jump_rate"] > 0)
-            {
-                _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump");
-
-                if (metrics["dsp_second_jump_click"] > 0 && metrics["dsp_second_jump"] > 0)
-                {
-                    LogWriteLine($"[{ctx.Config.TaskId}] 二跳比率:{(metrics["dsp_second_jump_click"] / (double)metrics["dsp_second_jump"] * 100):N2}%");
-                }
-
-                bool canSeondJump = metrics["dsp_second_jump_rate"] == 100
-                    || metrics["dsp_second_jump_click"] == 0
-                    || ((metrics["dsp_second_jump_click"] / (double)metrics["dsp_second_jump"]) * 100 < metrics["dsp_second_jump_rate"]);
-
-                if (!canSeondJump)
-                    return FlowControl.Continue;
-
-
-                _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump_click");
-            }
-
             return await ctx.LandingDispatcher.DispatchAsync(ctx, token);
         }
 

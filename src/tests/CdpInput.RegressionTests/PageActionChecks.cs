@@ -211,6 +211,23 @@ internal static class PageActionChecks
         var entryResult = await EntryPageNavigator.NavigateAsync(entryPage, "https://example.test/search", 5000, default, _ => { });
         check(entryResult.Opened && entryAttempts == 2, "入口转下载后在同一页面重试一次，可恢复正常访问");
         entryAttempts = 0;
+        entryState.Navigate = () => ++entryAttempts == 1
+            ? Task.FromException<IResponse?>(new TimeoutException("Navigation timed out"))
+            : Task.FromResult<IResponse?>(null);
+        entryResult = await EntryPageNavigator.NavigateAsync(entryPage, "https://example.test/search", 5000, default, _ => { });
+        check(entryResult.Opened && entryAttempts == 2, "首次入口超时在同一浏览器重试恢复，不立即结束执行");
+        entryAttempts = 0;
+        entryState.Navigate = () => { entryAttempts++; return Task.FromException<IResponse?>(new TimeoutException("Navigation timed out")); };
+        entryResult = await EntryPageNavigator.NavigateAsync(entryPage, "https://example.test/search", 5000, default, _ => { });
+        check(!entryResult.Opened && entryAttempts == 2 && entryResult.FailureKind == QTP.Common.BrowserStopKind.OperationTimedOut,
+            "反复入口超时只重试一次并返回明确超时结果");
+        entryAttempts = 0;
+        entryState.Navigate = () => { entryAttempts++; return Task.FromException<IResponse?>(new PlaywrightException("net::ERR_PROXY_CONNECTION_FAILED")); };
+        bool proxyPropagated = false;
+        try { await EntryPageNavigator.NavigateAsync(entryPage, "https://example.test/search", 5000, default, _ => { }); }
+        catch (PlaywrightException) { proxyPropagated = true; }
+        check(proxyPropagated && entryAttempts == 1, "明确代理故障不进入普通入口重试");
+        entryAttempts = 0;
         entryState.Navigate = () => { entryAttempts++; return Task.FromException<IResponse?>(new PlaywrightException("Download is starting")); };
         entryResult = await EntryPageNavigator.NavigateAsync(entryPage, "https://example.test/search", 5000, default, _ => { });
         check(!entryResult.Opened && entryResult.Downloaded && entryAttempts == 2 && entryResult.Reason != null,
@@ -287,6 +304,7 @@ public class ActionStub : DispatchProxy
     public string Url = "about:blank";
     public ILocator? Locator;
     public IFrame? Frame;
+    public Exception? FrameError;
     public bool ReadyError;
     public bool Closed;
     public bool Connected = true;
@@ -317,7 +335,7 @@ public class ActionStub : DispatchProxy
         if (name == "get_Url") return Url;
         if (name == "get_Status") return Status;
         if (name == "get_Request") return Request;
-        if (name == "get_Frame") return Frame;
+        if (name == "get_Frame") { if (FrameError != null) throw FrameError; return Frame; }
         if (name == "get_Page") return Page;
         if (name == "get_IsNavigationRequest") return NavigationRequest;
         if (name == "get_Failure") return Failure;

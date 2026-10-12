@@ -6,6 +6,31 @@ internal static class ReclaimChecks
 {
     public static async Task RunAsync(Action<bool, string> check)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            await using var manager = new ChromiumSessionManager();
+            ChromiumCloseResult? reclaim = null;
+            manager.Reclaimed += result => reclaim = result;
+            bool crashClassified = false;
+            try
+            {
+                await manager.StartChromium("native-exit-fixture", Environment.GetEnvironmentVariable("ComSpec")!,
+                    Path.Combine(Path.GetTempPath(), "native-exit-fixture-" + Guid.NewGuid().ToString("N")), TimeSpan.FromMinutes(1),
+                    "/d /c \"echo native-exit-fixture 1>&2 & exit /b 23\"");
+            }
+            catch (BrowserFailureException ex)
+            {
+                crashClassified = ex.Kind == BrowserStopKind.BrowserCrashed && ex.Message.Contains("ExitCode=23") && ex.Message.Contains("native-exit-fixture");
+            }
+            check(crashClassified && reclaim is { Reason: BrowserStopKind.BrowserCrashed, ExitCode: 23, Forced: false, ExitConfirmed: true },
+                "启动进程主动退出保留真实退出码和崩溃分类，不误记Completed或强杀");
+            check(reclaim?.DiagnosticTail?.Contains("native-exit-fixture") == true,
+                "短命进程stderr已排空且故障诊断保留到回收结果");
+            var lifecycle = File.ReadLines(BrowserLifecycleLog.CurrentFilePath).Where(line => line.Contains("native-exit-fixture")).ToArray();
+            check(lifecycle.Any(line => line.Contains("process.launch_failed") && line.Contains("ExitCode=23")) &&
+                lifecycle.Any(line => line.Contains("process.reclaim_end") && line.Contains("\"forced\":false") && line.Contains("\"exitCode\":23")),
+                "真实提前退出在独立日志保留原始启动错误、退出码和非强制回收证据");
+        }
         {
             var profile = Path.Combine(Path.GetTempPath(), "smad-cleanup-lock-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(profile);

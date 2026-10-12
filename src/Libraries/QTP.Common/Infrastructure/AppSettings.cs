@@ -158,14 +158,6 @@
         /// </summary>
         public string Protocol { get; set; } = "http";
 
-        /// <summary>
-        /// 二跳比率
-        /// </summary>
-        public string SecondJumpRate { get; set; }
-
-
-
-
 
 
 

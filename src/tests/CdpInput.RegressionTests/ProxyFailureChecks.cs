@@ -44,6 +44,10 @@ internal static class ProxyFailureChecks
             var result = await EntryPageNavigator.NavigateAsync(page, "https://http-error-fixture.test/", 5000, default, _ => { });
             check(!result.Opened && result.HttpStatus == 503 && browser.IsConnected,
                 "真实Chromium收到503且有可见body时仍拒绝计为入口访问成功");
+            bool readyRejected = false;
+            try { await PageActionExecutor.WaitReadyAsync(page, default); }
+            catch (PageDocumentException ex) { readyRejected = ex.Status == 503; }
+            check(readyRejected && browser.IsConnected, "页面就绪验证用只读导航状态识别HTTP错误，覆盖初始响应缺失Frame的页面");
         }
         finally { await httpContext.CloseAsync(); }
     }
@@ -102,6 +106,20 @@ internal static class ProxyFailureChecks
         ActionStub.Of(response).Request = request;
         ActionStub.Of(response).Url = requestState.Url;
         var handleResponse = typeof(SMAdTask).GetMethod("HandleDocumentResponse", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var earlyRequest = ActionStub.Create<IRequest>();
+        ActionStub.Of(earlyRequest).NavigationRequest = true;
+        ActionStub.Of(earlyRequest).FrameError = new PlaywrightException("Frame for this navigation request is not available");
+        var earlyResponse = ActionStub.Create<IResponse>();
+        ActionStub.Of(earlyResponse).Status = 200;
+        ActionStub.Of(earlyResponse).Request = earlyRequest;
+        handleResponse.Invoke(worker, new object[] { httpContext, earlyResponse });
+        check(!httpContext.Config.LinkedCts.IsCancellationRequested && !httpContext.ProxyFailed,
+            "新页面Frame尚未创建时响应监听不抛异常、不取消浏览器执行");
+        var earlyProxyContext = new WorkerRunContext(new() { LinkedCts = new(), TaskArgs = JObject.Parse("{isProxyMode:true}") });
+        ActionStub.Of(earlyRequest).Failure = "net::ERR_PROXY_CONNECTION_FAILED";
+        handleFailure.Invoke(worker, new object[] { earlyProxyContext, earlyRequest });
+        check(earlyProxyContext.ProxyFailure == ProxyFailureKind.Connection,
+            "新页面Frame未创建也能识别明确代理连接故障");
         handleResponse.Invoke(worker, new object[] { httpContext, response });
         httpContext.CurrentVisitReady = true;
         httpContext.CompleteCurrentVisit();

@@ -1014,7 +1014,6 @@ namespace MainClient
             numericUpDown_MinFrequency.Value = _appSettings.MinFrequency;
             comboBox_Protocol.Text = _appSettings.Protocol ?? "http";
             checkBox_NoTrigger1688Shop.Checked = _appSettings.NoTrigger1688Shop;
-            textBox_SecondJumpRate.Text = _appSettings.SecondJumpRate;
         }
         private static object lock_config = new object();
         private void UpdateAppSetting()
@@ -1073,7 +1072,6 @@ namespace MainClient
 
                 _appSettings.Protocol = comboBox_Protocol.Text;
                 _appSettings.NoTrigger1688Shop = checkBox_NoTrigger1688Shop.Checked;
-                _appSettings.SecondJumpRate = textBox_SecondJumpRate.Text;
 
                 UserConfigService.Save("AppSettings", _appSettings);
             }

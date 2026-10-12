@@ -20,6 +20,8 @@ namespace QTP.Common
         internal long CreatedTimestamp { get; init; } = Stopwatch.GetTimestamp();
         public ChromiumCloseResult? LastCloseResult { get; internal set; }
         public Task<ProfileCleanupResult>? DirectoryCleanup { get; internal set; }
+        internal ChromiumDiagnosticBuffer Diagnostics { get; init; } = new();
+        public string DiagnosticTail => Diagnostics.Text;
         public event Action<BrowserStopKind>? StopRequested;
         public BrowserStopKind? StopKind { get; private set; }
         public void RequestStop(BrowserStopKind kind)
@@ -29,6 +31,8 @@ namespace QTP.Common
             {
                 if (StopKind != null) return;
                 StopKind = kind; handlers = StopRequested;
+                BrowserLifecycleLog.Write(UniqueId, "process.stop_requested", "ChromiumSession.RequestStop", BrowserLifecycleLog.Explain(kind),
+                    new { kind = kind.ToString(), process = BrowserLifecycleLog.Snapshot(this) });
             }
             if (handlers != null) foreach (Action<BrowserStopKind> handler in handlers.GetInvocationList())
                 try { handler(kind); } catch { }
@@ -126,7 +130,11 @@ namespace QTP.Common
             using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, _cts.Token);
             var ct = lifetime.Token;
             Process? proc = null;
+            bool processStarted = false;
+            var diagnostics = new ChromiumDiagnosticBuffer();
             bool directoryCreated = false;
+            BrowserLifecycleLog.Write(uniqueId, "process.launch_requested", "ChromiumSessionManager.StartChromium", "准备启动 Chromium",
+                new { executable = exePath, lifetimeMs = ttl.TotalMilliseconds, proxyEnabled = !string.IsNullOrWhiteSpace(proxyServer), readyTimeoutMs = (readyTimeout ?? TimeSpan.FromSeconds(10)).TotalMilliseconds });
             try
             {
                 ct.ThrowIfCancellationRequested();
@@ -134,29 +142,47 @@ namespace QTP.Common
                 directoryCreated = !Directory.Exists(userDataDir);
                 Directory.CreateDirectory(userDataDir);
                 File.Delete(Path.Combine(userDataDir, "DevToolsActivePort"));
-                proc = Process.Start(new ProcessStartInfo
+                proc = new Process { StartInfo = new ProcessStartInfo
                 {
                     FileName = exePath,
                     Arguments = $"{arguments} --user-data-dir=\"{userDataDir}\" --remote-debugging-port=0",
-                    UseShellExecute = false, CreateNoWindow = true
-                }) ?? throw new InvalidOperationException("Chromium process was not created.");
-                var endpoint = await WaitForDevToolsEndpointAsync(proc, userDataDir, readyTimeout ?? TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
+                } };
+                proc.ErrorDataReceived += (_, e) => diagnostics.Add(e.Data);
+                processStarted = proc.Start();
+                if (!processStarted) throw new InvalidOperationException("Chromium process was not created.");
+                BrowserLifecycleLog.Write(uniqueId, "process.started", "ChromiumSessionManager.StartChromium", "Chromium 进程已创建", new { pid = proc.Id });
+                proc.BeginErrorReadLine();
+                var endpoint = await WaitForDevToolsEndpointAsync(proc, userDataDir, readyTimeout ?? TimeSpan.FromSeconds(10), ct, diagnostics).ConfigureAwait(false);
                 var session = new ChromiumSession { UniqueId = uniqueId, Proxy = proxyServer, Process = proc,
                     DebugPort = endpoint.Port, CdpEndpoint = endpoint.WebSocketUrl, UserDir = userDataDir,
-                    ExpireAt = DateTime.UtcNow.Add(ttl), Lifetime = ttl };
+                    ExpireAt = DateTime.UtcNow.Add(ttl), Lifetime = ttl, Diagnostics = diagnostics };
                 lock (_startSync)
                 {
                     ThrowIfDisposed(); ct.ThrowIfCancellationRequested();
                     if (!_sessions.TryAdd(uniqueId, session)) throw new InvalidOperationException($"Failed to register Chromium: {uniqueId}");
                 }
+                proc.Exited += (_, _) => BrowserLifecycleLog.Write(uniqueId, "process.exited", "Process.Exited", "收到进程退出事件；回收期间的退出不代表闪退",
+                    new { cleanupInProgress = session.CloseStarted != 0, process = BrowserLifecycleLog.Snapshot(session), nativeDiagnostics = session.DiagnosticTail });
+                try { proc.EnableRaisingEvents = true; }
+                catch (Exception ex)
+                {
+                    BrowserLifecycleLog.Write(uniqueId, "process.exit_observer_failed", "ChromiumSessionManager.StartChromium", "进程退出事件监听不可用，保留现有周期扫描",
+                        new { error = ex.Message });
+                }
+                BrowserLifecycleLog.Write(uniqueId, "process.endpoint_ready", "ChromiumSessionManager.StartChromium", "CDP 自动端点已就绪",
+                    new { process = BrowserLifecycleLog.Snapshot(session), port = endpoint.Port });
                 return session;
             }
             catch (Exception startupError)
             {
-                if (proc != null)
+                BrowserLifecycleLog.Write(uniqueId, "process.launch_failed", "ChromiumSessionManager.StartChromium", "启动失败，进入已创建资源的清理",
+                    new { kind = BrowserFailureClassifier.Classify(startupError).ToString(), error = startupError.ToString(), nativeDiagnostics = diagnostics.Text });
+                if (proc != null && processStarted)
                 {
                     var failed = new ChromiumSession { UniqueId = uniqueId, Process = proc, UserDir = userDataDir,
-                        ExpireAt = DateTime.UtcNow.Add(ttl) };
+                        ExpireAt = DateTime.UtcNow.Add(ttl), Diagnostics = diagnostics };
+                    failed.RequestStop(BrowserFailureClassifier.Classify(startupError));
                     if (_sessions.TryAdd(uniqueId, failed))
                     {
                         try { await CloseAsync(uniqueId).ConfigureAwait(false); }
@@ -164,8 +190,12 @@ namespace QTP.Common
                     }
                     else await CloseInternalAsync(failed).ConfigureAwait(false);
                 }
-                else if (directoryCreated)
-                    ScheduleProfileCleanup(new ChromiumSession { UniqueId = uniqueId, UserDir = userDataDir });
+                else
+                {
+                    proc?.Dispose();
+                    proc = null;
+                    if (directoryCreated) ScheduleProfileCleanup(new ChromiumSession { UniqueId = uniqueId, UserDir = userDataDir });
+                }
                 throw;
             }
             finally
@@ -212,6 +242,8 @@ namespace QTP.Common
         private async Task CloseInternalAsync(ChromiumSession session)
         {
             session.RequestStop(BrowserStopKind.Completed);
+            BrowserLifecycleLog.Write(session.UniqueId, "process.reclaim_begin", "ChromiumSessionManager.CloseInternalAsync", "开始回收本次执行拥有的进程",
+                new { process = BrowserLifecycleLog.Snapshot(session) });
             var clock = Stopwatch.StartNew();
             bool forced = false; int? exitCode = null; string? error = null;
             try
@@ -221,6 +253,8 @@ namespace QTP.Common
                     if (!session.Process.HasExited)
                     {
                         forced = true;
+                        BrowserLifecycleLog.Write(session.UniqueId, "process.kill_requested", "ChromiumSessionManager.CloseInternalAsync", "程序主动结束所属进程树；此后的退出码不能单独作为闪退证据",
+                            new { process = BrowserLifecycleLog.Snapshot(session) });
                         session.Process.Kill(entireProcessTree: true);
                         using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                         await session.Process.WaitForExitAsync(wait.Token).ConfigureAwait(false);
@@ -237,7 +271,11 @@ namespace QTP.Common
             {
                 session.LastCloseResult = new(session.UniqueId, session.StopKind ?? BrowserStopKind.Completed,
                     session.ExitConfirmed, forced, exitCode, clock.Elapsed, error,
-                    session.DirectoryCleanup ?? Task.FromResult(new ProfileCleanupResult(session.UserDir, false, 0, "Process exit not confirmed")));
+                    session.DirectoryCleanup ?? Task.FromResult(new ProfileCleanupResult(session.UserDir, false, 0, "Process exit not confirmed")))
+                    { DiagnosticTail = session.DiagnosticTail };
+                BrowserLifecycleLog.Write(session.UniqueId, "process.reclaim_end", "ChromiumSessionManager.CloseInternalAsync", BrowserLifecycleLog.Explain(session.LastCloseResult.Reason),
+                    new { reason = session.LastCloseResult.Reason.ToString(), session.ExitConfirmed, forced, exitCode,
+                        elapsedMs = clock.Elapsed.TotalMilliseconds, error, nativeDiagnostics = session.DiagnosticTail });
                 Publish(Reclaimed, session.LastCloseResult);
             }
         }
@@ -250,6 +288,8 @@ namespace QTP.Common
         private async Task ObserveCleanupAsync(string path, string executionId, Task<ProfileCleanupResult> cleanup)
         {
             var result = await cleanup.ConfigureAwait(false);
+            BrowserLifecycleLog.Write(executionId, "profile.cleanup_end", "ChromiumSessionManager.ObserveCleanupAsync", result.Deleted ? "用户目录清理完成" : "用户目录清理失败，不等同于浏览器崩溃",
+                new { result.Deleted, result.Attempts, result.Error });
             if (result.Deleted) lock (_startSync)
             {
                 if (_ownedProfiles.TryGetValue(path, out var owner) && owner == executionId &&
@@ -288,7 +328,7 @@ namespace QTP.Common
             Process process,
             string userDataDir,
             TimeSpan timeout,
-            CancellationToken token)
+            CancellationToken token, ChromiumDiagnosticBuffer diagnostics)
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeoutCts.CancelAfter(timeout);
@@ -305,8 +345,10 @@ namespace QTP.Common
                     ct.ThrowIfCancellationRequested();
                     if (process.HasExited)
                     {
-                        throw new InvalidOperationException(
-                            $"Chromium exited before DevTools became ready. ExitCode={SafeGetExitCode(process)}");
+                        // Drain redirected stderr before publishing a short-lived process failure.
+                        await process.WaitForExitAsync(token).ConfigureAwait(false);
+                        throw new BrowserFailureException(BrowserStopKind.BrowserCrashed,
+                            $"Chromium exited before DevTools became ready. ExitCode={SafeGetExitCode(process)}, diagnostics={diagnostics.Text}");
                     }
 
                     try
@@ -328,7 +370,7 @@ namespace QTP.Common
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
             {
                 throw new TimeoutException(
-                    $"Timed out waiting for Chromium DevToolsActivePort after {stopwatch.Elapsed.TotalSeconds:N1}s. File={activePortFile}",
+                    $"Timed out waiting for Chromium DevToolsActivePort after {stopwatch.Elapsed.TotalSeconds:N1}s. File={activePortFile}, diagnostics={diagnostics.Text}",
                     lastError);
             }
         }
@@ -423,6 +465,8 @@ namespace QTP.Common
                         if (reason == null && Stopwatch.GetElapsedTime(session.CreatedTimestamp) >= session.Lifetime)
                             reason = BrowserStopKind.LifetimeExpired;
                         if (reason == null) continue;
+                        BrowserLifecycleLog.Write(session.UniqueId, "process.monitor_stop", "ChromiumSessionManager.ExpireScanLoopAsync", BrowserLifecycleLog.Explain(reason.Value),
+                            new { reason = reason.Value.ToString(), lifetimeMs = session.Lifetime.TotalMilliseconds, process = BrowserLifecycleLog.Snapshot(session) });
                         var reclaim = Task.Run(() => ReclaimExpiredAsync(session, reason.Value, token));
                         _reclaims[session.UniqueId] = reclaim;
                         _ = reclaim.ContinueWith(_ => _reclaims.TryRemove(session.UniqueId, out var removed),

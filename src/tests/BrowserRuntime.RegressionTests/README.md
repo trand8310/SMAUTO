@@ -6,6 +6,8 @@ Append a local Chromium executable path after `--` to exercise real processes, a
 
 The default checks use controlled process/connection doubles to verify races and failure cleanup without relying on browser timing. They also compile the production PipelineRunner source to verify cancellation and producer/consumer failure drain behavior.
 
+The independent `BrowserLifecycleLog` journal is written to the executable's `logs/browser-lifecycle` directory. Default checks also verify concurrent JSON lines, credential/URL redaction, locked-file failure isolation and recovery, and retention of the real early-exit code and native stderr. See `docs/SMAd-浏览器独立生命周期日志-20261013.md` for collecting production logs.
+
 Append `--stress` after the executable path for six rounds of two browsers, cancellation and process crash isolation, TTL notification before forced reclaim, real locked-profile cleanup/retry, CDP cache drain, host and owned Node-driver memory/handle samples, and final driver exit. Driver sampling currently targets Windows. Results are written to `artifacts/<id>/report.json`.
 
 Append `--touch-probe` for a standalone raw touch diagnostic and, when raw touch is verified, real v3 Tap and concurrent contact-order checks. A touch compatibility timeout is recorded separately from lifecycle check passes; inspect the JSON `Touch` object, not just the exit code. Chromium 145 headless still reproduces this timeout, while the local PC Chromium 135 fixture verifies touch.

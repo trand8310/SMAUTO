@@ -13,6 +13,14 @@ namespace SMAd.Models
             StartTime = DateTime.Now;
         }
         public TaskConfig Config { get; }
+        private readonly long _lifecycleStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        public string LifecycleStage { get; private set; } = "configuration";
+        public void RecordStage(string stage)
+        {
+            LifecycleStage = stage;
+            QTP.Common.BrowserLifecycleLog.Write(Config.UniqueId, "worker.stage", "SMAdTask", stage,
+                new { taskId = Config.TaskId, pv = PvIndex, url = Page?.Url, elapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(_lifecycleStarted).TotalMilliseconds });
+        }
         public SMAd.DeviceEmulation.DeviceTargetController? DeviceTargets { get; set; }
         public SMAd.PageActions.PageActionExecutor? Actions;
         public readonly System.Collections.Concurrent.ConcurrentDictionary<Task, byte> PageLifecycleTasks = new();
@@ -34,6 +42,10 @@ namespace SMAd.Models
         private readonly object _recordSync = new();
         public void RecordAction(SMAd.PageActions.PageActionRecord record)
         {
+            QTP.Common.BrowserLifecycleLog.Write(Config.UniqueId, "page.action_end", "PageActionExecutor", "页面动作执行结果",
+                new { stage = LifecycleStage, pv = PvIndex, record.Intent, record.BeforeUrl, record.AfterUrl, record.Dispatched,
+                    record.Succeeded, record.DurationMs, record.Reason, outcome = record.Outcome.ToString(), record.DestinationReadyMs,
+                    record.ObservationDelayMs, record.ObservationElapsedMs });
             lock (_recordSync)
             {
                 ActionRecords.Enqueue(record);

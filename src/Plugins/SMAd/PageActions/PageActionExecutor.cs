@@ -38,6 +38,8 @@ public sealed class PageActionExecutor
         IPage? popup = null;
         int downloaded = 0;
         int navigated = 0;
+        QTP.Common.BrowserLifecycleLog.Write(_ctx.Config.UniqueId, "page.action_begin", "PageActionExecutor.ExecuteAsync", "准备执行页面动作，等待输入协调",
+            new { stage = _ctx.LifecycleStage, intent, url = before, timeoutMs });
         EventHandler<IPage> onPopup = (_, page) => Interlocked.CompareExchange(ref popup, page, null);
         EventHandler<IDownload> onDownload = (_, _) => Interlocked.Exchange(ref downloaded, 1);
         EventHandler<IFrame> onNavigation = (_, frame) => { if (ReferenceEquals(frame, captured.Page.MainFrame)) Interlocked.Exchange(ref navigated, 1); };
@@ -54,6 +56,8 @@ public sealed class PageActionExecutor
             captured.Page.Download += onDownload;
             captured.Page.FrameNavigated += onNavigation;
             sent = await dispatch(captured, ct);
+            QTP.Common.BrowserLifecycleLog.Write(_ctx.Config.UniqueId, "page.input_dispatched", "PageActionExecutor.ExecuteAsync", "输入派发结束，尚未代表跳转成功",
+                new { intent, sent, elapsedMs = clock.Elapsed.TotalMilliseconds });
             if (!sent) return result = ClickResult.Fail("Target was not actionable");
             while (true)
             {
@@ -154,10 +158,19 @@ public sealed class PageActionExecutor
     {
         await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 5000 }).WaitAsync(token);
         await page.Locator("body").WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 5000 }).WaitAsync(token);
+        // The initial popup response may have no Request.Frame. Read the document's own navigation status once it is ready.
+        var status = await page.EvaluateAsync<int>("() => performance.getEntriesByType('navigation')[0]?.responseStatus ?? 0")
+            .WaitAsync(TimeSpan.FromSeconds(5), token);
+        if (status >= 400) throw new PageDocumentException(status);
     }
 
     private static async Task WaitExpectedAsync(IPage page, Func<IPage, CancellationToken, Task<bool>> effect, CancellationToken token)
     {
         while (!await effect(page, token)) await Task.Delay(50, token);
     }
+}
+
+public sealed class PageDocumentException(int status) : PlaywrightException($"Main document HTTP {status}")
+{
+    public int Status { get; } = status;
 }

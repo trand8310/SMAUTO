@@ -1,0 +1,24 @@
+神马搜索:ExecuteWorker:Start
+神马搜索:ExecuteWorker:PlaywrightException: Microsoft.Playwright.TargetClosedException: Frame for this navigation request is not available, because the request
+was issued before the frame is created. You can check whether the request
+is a navigation request by calling isNavigationRequest() method.
+ ---> Microsoft.Playwright.PlaywrightException: Frame for this navigation request is not available, because the request
+was issued before the frame is created. You can check whether the request
+is a navigation request by calling isNavigationRequest() method.
+   at Microsoft.Playwright.Core.Request.get_Frame() in D:\a\patchright-dotnet\patchright-dotnet\playwright-dotnet\src\Playwright\Core\Request.cs:line 76
+   at QTP.Plugins.SMAdTask.HandleDocumentResponse(WorkerRunContext ctx, IResponse response) in D:\workhome\SVNRoot\WUQIXIU_PROJECT\SMAUTO\src\Plugins\SMAd\SMAdTask.cs:line 1710
+   at QTP.Plugins.SMAdTask.<>c__DisplayClass39_0.<AttachLifecycleEventsAsync>b__1(Object _, IResponse response) in D:\workhome\SVNRoot\WUQIXIU_PROJECT\SMAUTO\src\Plugins\SMAd\SMAdTask.cs:line 1446
+   at Microsoft.Playwright.Core.BrowserContext.OnMessage(String method, JsonElement serverParams) in D:\a\patchright-dotnet\patchright-dotnet\playwright-dotnet\src\Playwright\Core\BrowserContext.cs:line 281
+   at Microsoft.Playwright.Transport.Connection.Dispatch(PlaywrightServerMessage message) in D:\a\patchright-dotnet\patchright-dotnet\playwright-dotnet\src\Playwright\Transport\Connection.cs:line 332
+   --- End of inner exception stack trace ---
+   at Microsoft.Playwright.Transport.Connection.InnerSendMessageToServerAsync[T](ChannelOwner object, String method, Dictionary`2 dictionary, Boolean keepNulls, Nullable`1 timeout) in D:\a\patchright-dotnet\patchright-dotnet\playwright-dotnet\src\Playwright\Transport\Connection.cs:line 159
+   at Microsoft.Playwright.Transport.Connection.WrapApiCallAsync[T](Func`1 action, Boolean isInternal, String title) in D:\a\patchright-dotnet\patchright-dotnet\playwright-dotnet\src\Playwright\Transport\Connection.cs:line 539
+   at Microsoft.Playwright.Core.APIRequest.Microsoft.Playwright.IAPIRequest.NewContextAsync(APIRequestNewContextOptions options) in D:\a\patchright-dotnet\patchright-dotnet\playwright-dotnet\src\Playwright\Core\APIRequest.cs:line 70
+   at QTP.Common.BrowserRuntimeManager.CheckDriverAfterFailureAsync(PlaywrightLease lease) in D:\workhome\SVNRoot\WUQIXIU_PROJECT\SMAUTO\src\Libraries\QTP.Common\BrowserRuntimeManager.cs:line 289
+   at QTP.Common.BrowserRuntimeManager.AcquireAsync(BrowserStartOptions options, CancellationToken token) in D:\workhome\SVNRoot\WUQIXIU_PROJECT\SMAUTO\src\Libraries\QTP.Common\BrowserRuntimeManager.cs:line 129
+   at QTP.Common.BrowserRuntimeManager.AcquireAsync(BrowserStartOptions options, CancellationToken token) in D:\workhome\SVNRoot\WUQIXIU_PROJECT\SMAUTO\src\Libraries\QTP.Common\BrowserRuntimeManager.cs:line 185
+   at QTP.Plugins.SMAdTask.StartAndConnectBrowserAsync(WorkerRunContext ctx, CancellationToken token) in D:\workhome\SVNRoot\WUQIXIU_PROJECT\SMAUTO\src\Plugins\SMAd\SMAdTask.cs:line 1264
+   at QTP.Plugins.SMAdTask.ExecuteWorkerCoreAsync(String uniqueId, JObject taskArgs, CancellationToken token) in D:\workhome\SVNRoot\WUQIXIU_PROJECT\SMAUTO\src\Plugins\SMAd\SMAdTask.cs:line 668
+Browser execution ending: executionId=full-flow-47f919aa7b994a44b773df2f3213d4f8, stage=browser launch and CDP connection, elapsed=1476ms, reason=StartupFailed, detail=Frame for this navigation request is not available, because the request
+was issued before the frame is created. You can check whether the request
+is a navigation request by calling isNavigationRequest() method.

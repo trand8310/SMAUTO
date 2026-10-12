@@ -7,7 +7,7 @@ using Microsoft.Playwright;
 
 namespace SMAd.DeviceEmulation;
 
-/// <summary>A flat CDP connection configures new page targets before releasing their startup pause.</summary>
+/// <summary>Native metrics are present at page creation; the CDP connection gates input readiness without pausing navigation.</summary>
 public sealed class DeviceTargetController : IAsyncDisposable
 {
     private readonly ClientWebSocket _socket = new();
@@ -16,20 +16,22 @@ public sealed class DeviceTargetController : IAsyncDisposable
     private readonly DeviceDisplayProfile _profile;
     private readonly int _touchPoints;
     private readonly Action<Exception> _failure;
+    private readonly Action<string>? _log;
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly ConcurrentDictionary<Task, byte> _jobs = new();
-    private readonly ConcurrentDictionary<string, Task> _ready = new();
+    private sealed record TargetReadiness(string Session, Task Ready);
+    private readonly ConcurrentDictionary<string, TargetReadiness> _ready = new();
     private readonly ConcurrentDictionary<string, string> _sessions = new();
     private Task _reader = Task.CompletedTask;
     private int _nextId, _disposed, _failed;
 
-    private DeviceTargetController(DeviceDisplayProfile profile, int touchPoints, Action<Exception> failure)
-    { _profile = profile; _touchPoints = touchPoints; _failure = failure; }
+    private DeviceTargetController(DeviceDisplayProfile profile, int touchPoints, Action<Exception> failure, Action<string>? log)
+    { _profile = profile; _touchPoints = touchPoints; _failure = failure; _log = log; }
 
     public static async Task<DeviceTargetController> CreateAsync(string endpoint, DeviceDisplayProfile profile,
-        int touchPoints, Action<Exception> failure, CancellationToken token)
+        int touchPoints, Action<Exception> failure, CancellationToken token, Action<string>? log = null)
     {
-        var controller = new DeviceTargetController(profile, touchPoints, failure);
+        var controller = new DeviceTargetController(profile, touchPoints, failure, log);
         try
         {
             using var connect = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -38,7 +40,7 @@ public sealed class DeviceTargetController : IAsyncDisposable
             controller._reader = controller.ReadAsync();
             await controller.SendAsync(null, "Target.setAutoAttach", new
             {
-                autoAttach = true, waitForDebuggerOnStart = true, flatten = true,
+                autoAttach = true, waitForDebuggerOnStart = false, flatten = true,
                 filter = new object[] { new { type = "page", exclude = false }, new { exclude = true } }
             }).WaitAsync(token);
             return controller;
@@ -97,7 +99,7 @@ public sealed class DeviceTargetController : IAsyncDisposable
         var target = payload.GetProperty("targetInfo").GetProperty("targetId").GetString()!;
         _sessions[session] = target;
         var job = InitializeAsync(session, target);
-        _ready[target] = job;
+        _ready[target] = new(session, job);
         _jobs.TryAdd(job, 0);
         _ = job.ContinueWith(t => { _ = t.Exception; _jobs.TryRemove(t, out _); }, TaskScheduler.Default);
     }
@@ -116,8 +118,11 @@ public sealed class DeviceTargetController : IAsyncDisposable
         {
             if (_disposed == 0 && _sessions.ContainsKey(session))
             {
-                ReportFailure(ex);
-                try { await SendAsync(null, "Target.closeTarget", new { targetId = target }); } catch { }
+                // A target may close while its commands are in flight. Other pages remain usable.
+                _log?.Invoke($"Device target initialization failed: target={target}, session={session}, error={ex.Message}");
+                // Never close by targetId here: it may already have a replacement session.
+                try { await SendAsync(session, "Runtime.runIfWaitingForDebugger", new { }); } catch { }
+                try { await SendAsync(null, "Target.detachFromTarget", new { sessionId = session }); } catch { }
             }
             throw;
         }
@@ -136,7 +141,7 @@ public sealed class DeviceTargetController : IAsyncDisposable
             await Task.Delay(10, token);
         }
         if (!_ready.TryGetValue(target, out var ready)) throw new InvalidOperationException("Device target closed during initialization.");
-        await ready.WaitAsync(TimeSpan.FromSeconds(10), token);
+        await ready.Ready.WaitAsync(TimeSpan.FromSeconds(10), token);
     }
 
     private async Task<JsonElement> SendAsync(string? session, string method, object parameters)
@@ -156,13 +161,16 @@ public sealed class DeviceTargetController : IAsyncDisposable
             finally { _sendGate.Release(); }
             return await completion.Task.WaitAsync(deadline.Token);
         }
+        catch (OperationCanceledException ex) when (!_shutdown.IsCancellationRequested)
+        { throw new TimeoutException($"Device CDP command timed out: method={method}, session={session}", ex); }
         finally { _pending.TryRemove(id, out _); }
     }
 
     private void OnDetached(JsonElement payload)
     {
         var session = payload.GetProperty("sessionId").GetString()!;
-        if (_sessions.TryRemove(session, out var target)) _ready.TryRemove(target, out _);
+        if (_sessions.TryRemove(session, out var target) && _ready.TryGetValue(target, out var ready) && ready.Session == session)
+            _ready.TryRemove(new KeyValuePair<string, TargetReadiness>(target, ready));
     }
 
     public async ValueTask DisposeAsync()

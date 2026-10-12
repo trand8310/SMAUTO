@@ -23,6 +23,8 @@ async Task Until(Func<bool> condition)
 }
 BrowserStartOptions Options(string id, string? profile = null) => new(id, "fake-chrome", profile ?? Path.Combine(Path.GetTempPath(), "runtime-regression", id), TimeSpan.FromMinutes(1));
 
+await LifecycleLogChecks.RunAsync(Check);
+
 // Provider generations, cancellation isolation and disposal ordering.
 {
     var created = new TaskCompletionSource<IPlaywright>(TaskCreationOptions.RunContinuationsAsynchronously);

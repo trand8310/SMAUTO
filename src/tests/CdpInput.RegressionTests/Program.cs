@@ -9,8 +9,24 @@ using QTP.Common;
 using QTP.Common.Models;
 
 int checks = 0;
+if (args.Contains("--full-page-flow"))
+{
+    await FullPageFlowDiagnostics.RunAsync(args);
+    return;
+}
+if (args.Contains("--startup-diagnostic"))
+{
+    await StartupDiagnostics.RunAsync(args);
+    return;
+}
 void Check(bool ok, string name) { if (!ok) throw new Exception(name); Console.WriteLine($"PASS {name}"); checks++; }
+if (args.Contains("--target-controller-baseline"))
+{
+    await DeviceTargetFailureChecks.Run(Check, args[1]);
+    return;
+}
 V3Checks.Run(Check);
+await DeviceTargetFailureChecks.Run(Check);
 await ProxyFailureChecks.Run(Check);
 await PageActionChecks.Run(Check);
 async Task Throws<T>(Func<Task> work, string name) where T : Exception
@@ -147,6 +163,7 @@ public class Stub : DispatchProxy
     public List<string> TouchTypes = new();
     public Action<string>? OnTouch;
     public string? FailTouch;
+    public object DisplayMetrics = new { width = 400, height = 800, availWidth = 400, availHeight = 720, dpr = 1 };
     public Func<Task<ICDPSession>>? NewSession;
     public int SessionCreates, Detaches;
     private readonly Dictionary<string, Delegate?> _events = new();
@@ -188,8 +205,8 @@ public class Stub : DispatchProxy
             }
             if (command == "Browser.getWindowBounds")
                 return Task.FromResult<JsonElement?>(JsonSerializer.SerializeToElement(new { bounds = new { width = _windowWidth, height = _windowHeight } }));
-            if (command == "Runtime.evaluate" && ((Dictionary<string, object>)args[1]!)["expression"].ToString()!.StartsWith("screen.width ==="))
-                return Task.FromResult<JsonElement?>(JsonSerializer.SerializeToElement(new { result = new { value = true } }));
+            if (command == "Runtime.evaluate" && ((Dictionary<string, object>)args[1]!)["expression"].ToString()!.StartsWith("({width:screen.width"))
+                return Task.FromResult<JsonElement?>(JsonSerializer.SerializeToElement(new { result = new { value = DisplayMetrics } }));
             if (command == "Input.dispatchTouchEvent")
             {
                 var type = (string)((Dictionary<string, object>)args[1]!)["type"];

@@ -41,14 +41,16 @@ public sealed class BrowserRuntimeLease : IAsyncDisposable
         {
             var kind = BrowserStopKind.CdpDisconnected;
             try { if (process.Process.HasExited && process.Process.ExitCode != 0) kind = BrowserStopKind.BrowserCrashed; } catch { }
-            RequestStop(kind, "Browser disconnected");
+            BrowserLifecycleLog.Write(ExecutionId, "connection.disconnected", "IBrowser.Disconnected", "CDP 连接断开，记录此时进程状态",
+                new { process = BrowserLifecycleLog.Snapshot(process), IsClosing });
+            RequestStop(kind, "Browser disconnected", "IBrowser.Disconnected");
         };
         if (_browser != null) _browser.Disconnected += _disconnected;
-        _processStopped = kind => RequestStop(kind);
+        _processStopped = kind => RequestStop(kind, "Chromium process manager requested stop", "ChromiumSession.StopRequested");
         process.StopRequested += _processStopped;
         if (process.StopKind is { } stopped) RequestStop(stopped);
-        _driverStopped = driver.DriverToken.Register(() => RequestStop(BrowserStopKind.DriverDisconnected, "Playwright driver invalidated"));
-        _callerStopped = callerToken.Register(() => RequestStop(BrowserStopKind.Canceled, "Task canceled"));
+        _driverStopped = driver.DriverToken.Register(() => RequestStop(BrowserStopKind.DriverDisconnected, "Playwright driver invalidated", "PlaywrightLease.DriverToken"));
+        _callerStopped = callerToken.Register(() => RequestStop(BrowserStopKind.Canceled, "Task canceled", "CallerToken"));
     }
     public void RegisterCleanup(Func<Task> cleanup)
     {
@@ -60,12 +62,17 @@ public sealed class BrowserRuntimeLease : IAsyncDisposable
     }
     public void RequestStop(string reason)
         => RequestStop(BrowserStopKind.CleanupFailed, reason);
-    public void RequestStop(BrowserStopKind kind, string? reason = null)
+    public void RequestStop(BrowserStopKind kind, string? reason = null, [System.Runtime.CompilerServices.CallerMemberName] string source = "")
     {
         lock (_sync)
         {
             if (StopKind == null || (StopKind == BrowserStopKind.CdpDisconnected && kind == BrowserStopKind.BrowserCrashed))
-                { StopKind = kind; StopReason = reason ?? kind.ToString(); }
+            {
+                var previous = StopKind;
+                StopKind = kind; StopReason = reason ?? kind.ToString();
+                BrowserLifecycleLog.Write(ExecutionId, "session.stop_requested", source, BrowserLifecycleLog.Explain(kind),
+                    new { reason = kind.ToString(), detail = StopReason, previous = previous?.ToString(), process = BrowserLifecycleLog.Snapshot(ProcessSession) });
+            }
         }
         try { _lifetime.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
     }
@@ -93,6 +100,8 @@ public sealed class BrowserRuntimeLease : IAsyncDisposable
     private async Task CloseAsync()
     {
         var clock = Stopwatch.StartNew();
+        BrowserLifecycleLog.Write(ExecutionId, "session.reclaim_begin", "BrowserRuntimeLease.CloseAsync", "开始执行页面、连接和进程回收",
+            new { reason = StopKind?.ToString(), detail = StopReason, process = BrowserLifecycleLog.Snapshot(ProcessSession) });
         RequestStop(BrowserStopKind.Completed, "Session closing");
         ProcessSession.RequestStop(StopKind ?? BrowserStopKind.Completed);
         if (_browser != null) _browser.Disconnected -= _disconnected;
