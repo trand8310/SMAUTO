@@ -118,6 +118,7 @@ MainClient 直接引用 SMAd，由 `SmAdExecutor` 创建独立执行对象。QTP
 - 生命周期操作走已有 runtime/lease，禁止在业务策略中重复创建浏览器启动、端口分配和销毁体系。
 - 使用 `WorkerRunContext.ActivePage` 的页面/session 整体绑定和现有 CDP 缓存，关注页面关闭、创建中释放、迟到创建及监听去重。
 - 单个目标初始化失败只隔离故障 session，不直接关闭整个浏览器或按旧 targetId 关闭恢复后的页面；旧 session 的分离事件不得清掉新 session 的就绪状态。
+- 设备控制连接仅使用 Target 事件；超大无关 CDP 消息有界排空，不恢复 Page.enable 订阅或超限即取消整个任务。关键协议失败与真正断连分别记录 DeviceProtocolFailed 和 CdpDisconnected。
 - 当前原生屏幕方案不在自动附加新目标时暂停导航；输入前仍等待触屏初始化。新页面请求可能尚无 Frame，网络事件不能因此抛出异常到驱动；页面就绪后补查主文档 HTTP 状态。
 - 每次执行隔离配置、取消令牌、用户目录和触屏状态。单任务失败不得取消其他任务或销毁共享驱动。
 - Tap、Swipe、文本输入和后台动作遵守现有输入协调器；原生触屏任务不降级为 JS 点击或直接修改滚动位置。

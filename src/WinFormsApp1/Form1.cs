@@ -1,6 +1,7 @@
 using BrowserVisionAgent;
 using Microsoft.Playwright;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 
 namespace WinFormsApp1
@@ -178,6 +179,112 @@ namespace WinFormsApp1
 
 
 
+        }
+
+        private async Task TestBrowserAsync(string executablePath)
+        {
+            using var playwright = await Playwright.CreateAsync();
+            IBrowser? browser = null;
+
+            try
+            {
+                Debug.WriteLine("STEP 1: LaunchAsync");
+
+                browser = await playwright.Chromium.LaunchAsync(
+                    new BrowserTypeLaunchOptions
+                    {
+                        Headless = false,
+                        ExecutablePath = executablePath,
+                        Timeout = 60000,
+
+                        Args = new[]
+                        {
+                    "--window-position=0,0",
+                    "--window-size=428,915",
+                    "--device-pixel-ratio=2.625",
+                    "--screen-size=412,915",
+                    "--screen-avail-size=412,829",
+                    "--screen-color-depth=24",
+                    "--max-touch-points=5",
+                    "--platform=Android",
+                    "--platform-version=16.0.0",
+                    "--product-model=23117RK66C",
+                    "--full-version=125.0.6422.136",
+                        }
+                    });
+
+                Debug.WriteLine("STEP 2: NewContextAsync");
+
+                var context = await browser.NewContextAsync(
+                    new BrowserNewContextOptions
+                    {
+                        IsMobile = true,
+                        HasTouch = true,
+
+                        UserAgent =
+                            "Mozilla/5.0 (Linux; U; Android 16; zh-cn; " +
+                            "23117RK66C Build/BP2A.250605.031.A3) " +
+                            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                            "Chrome/125.0.0.0 Mobile Safari/537.36",
+
+                        ViewportSize = new ViewportSize
+                        {
+                            Width = 412,
+                            Height = 915
+                        },
+
+                        DeviceScaleFactor = 2.625f
+                    });
+
+                context.SetDefaultTimeout(30000);
+                context.SetDefaultNavigationTimeout(30000);
+
+                Debug.WriteLine("STEP 3: NewPageAsync");
+
+                var page = await context.NewPageAsync();
+
+                Debug.WriteLine("STEP 4: GotoAsync");
+
+                await page.GotoAsync(
+                    "https://adtomall.cn/content/pixelscan/r2",
+                    new PageGotoOptions
+                    {
+                        Timeout = 60000,
+                        WaitUntil = WaitUntilState.DOMContentLoaded
+                    });
+
+                Debug.WriteLine("STEP 5: Success");
+
+                await Task.Delay(5000);
+                // 向上滑动
+                await TouchHelper.SwipeAsync(
+                    page, 200, 750, 200, 250);
+                await Task.Delay(1000);
+                // 向上滑动
+                await TouchHelper.SwipeAsync(  page, 200, 750, 200, 250);
+                await Task.Delay(1000);
+                // 向上滑动
+                await TouchHelper.SwipeAsync(page, 200, 750, 200, 250);
+
+                await Task.Delay(TimeSpan.FromSeconds(180));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("========== PLAYWRIGHT ERROR ==========");
+                Debug.WriteLine(ex.ToString());
+            }
+            finally
+            {
+                if (browser != null)
+                    await browser.CloseAsync();
+            }
+        }
+
+
+        private async void button4_Click(object sender, EventArgs e)
+        {
+            var executablePath = textBox1.Text;
+            await TestBrowserAsync(executablePath);
         }
     }
 }

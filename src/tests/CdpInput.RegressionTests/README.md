@@ -15,3 +15,7 @@
 完整流程调试：从 src 执行 `CdpInput.RegressionTests.exe --full-page-flow --rounds=2`，使用真实 `SMAdTask.ExecuteWorkerWithResultAsync`，覆盖入口浏览、首次触屏点击、落地页策略浏览、当前可视候选二跳、详情停留和执行资源回收。两轮分别验证爱采购首次新页/二跳同页、1688 首次同页/二跳新页。
 
 完整流程沿用保存的内核、显示模式、隐身、TTL、加载和阅读设置及本地设备样本；使用一个 PV、100% 点击分支和 8–12 秒详情停留。所有浏览器请求在导航前拦截并返回受控页面，不访问广告网络，不启动统计上传，也不走 `isTest` 的停留捷径。当前夹具要求 `HompageTrigger=0`。报告写入 artifacts/full-page-flow-*；入口、两次跳转、停留、PV/点击结算和退出确认全部通过才返回零退出码，不能仅以 worker 成功判断完整流程成功。
+
+`--headless=true/false` 可覆盖完整流程测试的显示模式，不写回保存配置。默认协议检查包含超过 6 MiB 的 UTF-8 WebSocket 分片，验证超大无关事件、Target 附加/分离、命令响应隔离、关键启动保护、后续连接断开及诊断不记录正文。
+
+`--device-large-messages` 只运行上述大消息协议检查，不启动 Chromium，适合单独验证设备连接及诊断调整。

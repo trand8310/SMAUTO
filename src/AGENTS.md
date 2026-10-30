@@ -34,6 +34,7 @@
 - CDP session 使用现有缓存、失效和释放机制。关注页面关闭、创建中释放、迟到创建和重复初始化，避免泄漏及重复监听。
 - 单个目标初始化失败不得直接关闭整个浏览器；故障 session 与健康页面隔离。旧 session 的分离事件不能清掉同目标新 session 的状态，真正的 CDP 连接故障仍须传播。
 - 当前原生屏幕配置下，新目标自动附加不暂停页面启动；输入前仍等待目标的触屏初始化完成，避免导航与初始化互相等待。
+- 设备控制 CDP 连接只使用 Target 事件，不订阅业务 Page 事件。超大无关消息按有界内存排空到 EndOfMessage，不直接取消执行；关键响应、附加/分离元信息不完整及真实断连仍明确报告故障，不能盲目丢弃关键状态。
 - 跨页面输入使用同一触屏会话的输入协调器。Tap、Swipe、文本输入以及导航观察期间的后台动作必须遵守现有互斥机制。
 - 浏览器回收只针对本次执行拥有的资源，记录结束原因、进程退出确认、强制终止及清理错误。不要用全局进程名结束 Chromium 或 Node。
 - 独立诊断日志使用 `BrowserLifecycleLog`，按 executionId 关联启动、原始停止来源、执行阶段和回收结果，位于程序目录 `logs/browser-lifecycle`。日志写入失败不得影响业务；不记录完整任务参数或带凭据的命令行。强制终止后的退出码不能单独判为原生崩溃。
@@ -123,6 +124,7 @@ $msbuild = 'C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Cur
 - `docs/SMAd-代理故障与页面错误处理-20261009.md`
 - `docs/SMAd-浏览器退出诊断与页面故障隔离-20261012.md`
 - `docs/SMAd-浏览器独立生命周期日志-20261013.md`
+- `docs/SMAd-CDP大消息处理-20261013.md`
 - `Libraries/HumanTouchP2_Enhancedv3/README.md`
 - `tests/*/README.md`
 

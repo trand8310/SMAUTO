@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Playwright;
+using QTP.Common;
 
 namespace SMAd.DeviceEmulation;
 
@@ -17,7 +18,10 @@ public sealed class DeviceTargetController : IAsyncDisposable
     private readonly int _touchPoints;
     private readonly Action<Exception> _failure;
     private readonly Action<string>? _log;
-    private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
+    private const int MaximumBufferedMessage = 4 * 1024 * 1024;
+    private const int RoutingPrefixLength = 64 * 1024;
+    private sealed record PendingCommand(string? Session, string Method, TaskCompletionSource<JsonElement> Completion);
+    private readonly ConcurrentDictionary<int, PendingCommand> _pending = new();
     private readonly ConcurrentDictionary<Task, byte> _jobs = new();
     private sealed record TargetReadiness(string Session, Task Ready);
     private readonly ConcurrentDictionary<string, TargetReadiness> _ready = new();
@@ -56,38 +60,122 @@ public sealed class DeviceTargetController : IAsyncDisposable
             while (!_shutdown.IsCancellationRequested)
             {
                 using var message = new MemoryStream();
+                long messageBytes = 0;
                 WebSocketReceiveResult received;
                 do
                 {
                     received = await _socket.ReceiveAsync(new ArraySegment<byte>(buffer), _shutdown.Token);
-                    if (received.MessageType == WebSocketMessageType.Close) throw new IOException("Device CDP connection closed.");
-                    message.Write(buffer, 0, received.Count);
-                    if (message.Length > 4 * 1024 * 1024) throw new IOException("Device CDP message exceeded the limit.");
+                    if (received.MessageType == WebSocketMessageType.Close)
+                        throw new BrowserFailureException(BrowserStopKind.CdpDisconnected, "Device CDP connection closed.");
+                    if (received.MessageType != WebSocketMessageType.Text)
+                        throw new BrowserFailureException(BrowserStopKind.DeviceProtocolFailed, "Device CDP received a non-text message.");
+                    messageBytes += received.Count;
+                    // Drain every fragment to EndOfMessage, retaining no more than the existing memory budget.
+                    int keep = (int)Math.Min(received.Count, MaximumBufferedMessage - message.Length);
+                    if (keep > 0) message.Write(buffer, 0, keep);
                 } while (!received.EndOfMessage);
-                using var document = JsonDocument.Parse(message.ToArray());
+                if (messageBytes > MaximumBufferedMessage)
+                {
+                    HandleOversizedMessage(ReadRouting(message.GetBuffer().AsSpan(0, (int)Math.Min(message.Length, RoutingPrefixLength))), messageBytes);
+                    continue;
+                }
+                using var document = JsonDocument.Parse(message.GetBuffer().AsMemory(0, (int)message.Length));
                 var data = document.RootElement;
                 if (data.TryGetProperty("id", out var id))
                 {
                     if (_pending.TryGetValue(id.GetInt32(), out var completion))
                     {
                         if (data.TryGetProperty("error", out var error))
-                            completion.TrySetException(new InvalidOperationException("Device CDP: " + error.GetRawText()));
-                        else completion.TrySetResult(data.GetProperty("result").Clone());
+                            completion.Completion.TrySetException(new InvalidOperationException("Device CDP: " + error.GetRawText()));
+                        else completion.Completion.TrySetResult(data.GetProperty("result").Clone());
                     }
                 }
                 else if (data.TryGetProperty("method", out var method))
                 {
-                    var payload = data.GetProperty("params");
-                    if (method.GetString() == "Target.attachedToTarget") OnAttached(payload);
-                    else if (method.GetString() == "Target.detachedFromTarget") OnDetached(payload);
+                    if (method.GetString() == "Target.attachedToTarget") OnAttached(data.GetProperty("params"));
+                    else if (method.GetString() == "Target.detachedFromTarget") OnDetached(data.GetProperty("params"));
                 }
             }
         }
         catch (Exception ex)
         {
-            foreach (var pending in _pending.Values) pending.TrySetException(ex);
-            ReportFailure(ex);
+            var failure = ex is BrowserFailureException ? ex : new BrowserFailureException(
+                ex is WebSocketException ? BrowserStopKind.CdpDisconnected
+                    : ex is OutOfMemoryException ? BrowserStopKind.ResourceExhausted : BrowserStopKind.DeviceProtocolFailed,
+                "Device CDP reader failed: " + ex.Message, ex);
+            foreach (var pending in _pending.Values) pending.Completion.TrySetException(failure);
+            ReportFailure(failure);
         }
+    }
+
+    private sealed record Routing(int? Id, string? Method, string? Session, string? Target, string? TargetType);
+
+    // The CDP envelope precedes potentially huge URLs/bodies. Incomplete string tokens are never copied or logged.
+    private static Routing ReadRouting(ReadOnlySpan<byte> prefix)
+    {
+        int? id = null; string? method = null, session = null, target = null, type = null;
+        var reader = new Utf8JsonReader(prefix, isFinalBlock: false, state: default);
+        bool inParams = false, inTarget = false;
+        try
+        {
+            while (reader.Read())
+            {
+                if (reader.TokenType != JsonTokenType.PropertyName) continue;
+                int depth = reader.CurrentDepth;
+                bool isId = depth == 1 && reader.ValueTextEquals("id");
+                bool isMethod = depth == 1 && reader.ValueTextEquals("method");
+                bool isSession = (depth == 1 || depth == 2 && inParams) && reader.ValueTextEquals("sessionId");
+                bool isTarget = depth == 3 && inParams && inTarget && reader.ValueTextEquals("targetId");
+                bool isType = depth == 3 && inParams && inTarget && reader.ValueTextEquals("type");
+                if (depth == 1) inParams = reader.ValueTextEquals("params");
+                if (depth == 2) inTarget = inParams && reader.ValueTextEquals("targetInfo");
+                if (!reader.Read()) break;
+                if (isId && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var number)) id = number;
+                if (reader.TokenType != JsonTokenType.String || reader.ValueSpan.Length > 256) continue;
+                if (isMethod) method = reader.GetString();
+                if (isSession) session = reader.GetString();
+                if (isTarget) target = reader.GetString();
+                if (isType) type = reader.GetString();
+            }
+        }
+        catch (JsonException) { } // Preserve only routing tokens that were fully decoded.
+        return new(id, method, session, target, type);
+    }
+
+    private void HandleOversizedMessage(Routing route, long bytes)
+    {
+        PendingCommand? command = null;
+        if (route.Id is { } responseId) _pending.TryGetValue(responseId, out command);
+        string metadata = $"bytes={bytes}, method={route.Method ?? command?.Method ?? "unknown"}, id={route.Id?.ToString() ?? "none"}, session={route.Session ?? command?.Session ?? "none"}";
+        if (route.Id is { } id)
+        {
+            _log?.Invoke("Device CDP oversized response rejected: " + metadata);
+            // A target command fails locally; a required startup command propagates to its caller.
+            if (_pending.TryGetValue(id, out var response))
+                response.Completion.TrySetException(new BrowserFailureException(BrowserStopKind.DeviceProtocolFailed,
+                    "Device CDP required response exceeded the buffering limit: " + metadata));
+            return;
+        }
+        if (route.Method == "Target.attachedToTarget" && route.Session != null && route.Target != null && route.TargetType != null)
+        {
+            OnAttached(JsonSerializer.SerializeToElement(new { sessionId = route.Session, targetInfo = new { targetId = route.Target, type = route.TargetType } }));
+            _log?.Invoke("Device CDP oversized target event routed without payload: " + metadata);
+            return;
+        }
+        if (route.Method == "Target.detachedFromTarget" && route.Session != null)
+        {
+            OnDetached(JsonSerializer.SerializeToElement(new { sessionId = route.Session }));
+            _log?.Invoke("Device CDP oversized target event routed without payload: " + metadata);
+            return;
+        }
+        if (route.Method != null && route.Method != "Target.attachedToTarget" && route.Method != "Target.detachedFromTarget")
+        {
+            _log?.Invoke("Device CDP oversized unrelated event drained and ignored: " + metadata);
+            return;
+        }
+        // Do not guess and silently lose a required target transition or an unidentifiable response.
+        throw new BrowserFailureException(BrowserStopKind.DeviceProtocolFailed,
+            "Device CDP oversized message has incomplete required routing metadata: " + metadata);
     }
 
     private void ReportFailure(Exception ex)
@@ -111,7 +199,7 @@ public sealed class DeviceTargetController : IAsyncDisposable
             // Preserve the screen and viewport initialized by the native kernel.
             if (_profile.Mobile)
                 await SendAsync(session, "Emulation.setTouchEmulationEnabled", new { enabled = true, maxTouchPoints = Math.Clamp(_touchPoints, 1, 16) });
-            await SendAsync(session, "Page.enable", new { });
+            // This connection only consumes Target events. Page.enable belongs to the page's business session.
             await SendAsync(session, "Runtime.runIfWaitingForDebugger", new { });
         }
         catch (Exception ex)
@@ -148,7 +236,7 @@ public sealed class DeviceTargetController : IAsyncDisposable
     {
         int id = Interlocked.Increment(ref _nextId);
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending[id] = completion;
+        _pending[id] = new(session, method, completion);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
         try
@@ -178,13 +266,13 @@ public sealed class DeviceTargetController : IAsyncDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         try
         {
-            if (_socket.State == WebSocketState.Open)
+            if (_failed == 0 && _socket.State == WebSocketState.Open)
                 await SendAsync(null, "Target.setAutoAttach", new { autoAttach = false, waitForDebuggerOnStart = false, flatten = true });
         }
         finally
         {
             _shutdown.Cancel(); _socket.Abort();
-            foreach (var pending in _pending.Values) pending.TrySetCanceled();
+            foreach (var pending in _pending.Values) pending.Completion.TrySetCanceled();
             await _reader;
             try { await Task.WhenAll(_jobs.Keys).WaitAsync(TimeSpan.FromSeconds(6)); } catch { }
             _socket.Dispose(); _shutdown.Dispose(); _sendGate.Dispose();

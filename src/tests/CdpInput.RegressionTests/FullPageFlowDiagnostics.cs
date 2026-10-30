@@ -19,6 +19,7 @@ internal static class FullPageFlowDiagnostics
         string Option(string key, string fallback) => args.FirstOrDefault(a => a.StartsWith(key + "="))?[(key.Length + 1)..] ?? fallback;
         var root = Path.GetFullPath(Option("--base", "Build/publish"));
         var settings = JObject.Parse(await File.ReadAllTextAsync(Path.Combine(root, "appsettings.user.json")))["AppSettings"]!.ToObject<AppSettings>()!;
+        settings.IsHiddenMode = bool.Parse(Option("--headless", settings.IsHiddenMode.ToString()));
         if (settings.HompageTrigger != 0) throw new InvalidOperationException("This fixture uses direct entry navigation; homepage-trigger fixtures are not implemented.");
         var rounds = Math.Clamp(int.Parse(Option("--rounds", "4")), 1, 12);
         var samples = File.ReadLines(Path.Combine(root, "Data", $"dev_{settings.UsingDevIndex}.log")).Take(1500).Select(JObject.Parse)

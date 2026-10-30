@@ -57,6 +57,7 @@ public static class BrowserLifecycleLog
         BrowserStopKind.ProxyFailed => "确认代理故障，本次执行停止并回收浏览器",
         BrowserStopKind.ExecutionFailed => "页面业务流程失败，程序在执行结束时回收浏览器",
         BrowserStopKind.DeviceConfigurationFailed => "原生屏幕或设备配置验证失败，停止本次执行",
+        BrowserStopKind.DeviceProtocolFailed => "设备控制连接的关键协议数据不可用，停止本次执行",
         _ => kind.ToString()
     };
 

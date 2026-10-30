@@ -6,7 +6,7 @@ public enum BrowserStopKind
 {
     Completed, Canceled, RuntimeStopping, LifetimeExpired, BrowserCrashed, CdpDisconnected,
     DriverDisconnected, OperationTimedOut, ResourceExhausted, StartupFailed, CleanupFailed, ProxyFailed,
-    ExecutionFailed, DeviceConfigurationFailed
+    ExecutionFailed, DeviceConfigurationFailed, DeviceProtocolFailed
 }
 public sealed record ProfileCleanupResult(string UserDataDir, bool Deleted, int Attempts, string? Error = null);
 public sealed record ChromiumCloseResult(string ExecutionId, BrowserStopKind Reason, bool ExitConfirmed,

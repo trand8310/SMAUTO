@@ -1448,8 +1448,13 @@ namespace QTP.Plugins
             ctx.DeviceTargets = await DeviceTargetController.CreateAsync(ctx.BrowserSession!.ProcessSession.CdpEndpoint, display, ctx.Config.MaxTouchPoints,
                 ex =>
                 {
-                    ctx.LastFailureReason = "Device initialization failed: " + ex.Message;
-                    ctx.BrowserSession?.RequestStop(BrowserStopKind.StartupFailed, ctx.LastFailureReason);
+                    var kind = BrowserFailureClassifier.Classify(ex);
+                    if (kind == BrowserStopKind.StartupFailed) kind = BrowserStopKind.DeviceProtocolFailed;
+                    ctx.LastFailureReason = "Device control connection failed: " + ex.Message;
+                    ctx.BrowserFailureKind = kind;
+                    BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.device_connection_failed", "DeviceTargetController", "设备控制连接发生执行级故障",
+                        new { stage = ctx.LifecycleStage, reason = kind.ToString(), error = ex.ToString() });
+                    ctx.BrowserSession?.RequestStop(kind, ctx.LastFailureReason, "DeviceTargetController.ReadAsync");
                     CancelLinkedContext(ctx, ctx.LastFailureReason);
                 }, token, message =>
                 {

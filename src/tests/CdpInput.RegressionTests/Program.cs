@@ -20,6 +20,13 @@ if (args.Contains("--startup-diagnostic"))
     return;
 }
 void Check(bool ok, string name) { if (!ok) throw new Exception(name); Console.WriteLine($"PASS {name}"); checks++; }
+if (args.Contains("--device-large-messages"))
+{
+    await DeviceLargeMessageChecks.RunAsync(Check);
+    await DeviceLargeMessageChecks.RunAsync(Check, requiredStartupResponse: true);
+    Console.WriteLine($"All {checks} large CDP message checks passed.");
+    return;
+}
 if (args.Contains("--target-controller-baseline"))
 {
     await DeviceTargetFailureChecks.Run(Check, args[1]);
@@ -27,6 +34,8 @@ if (args.Contains("--target-controller-baseline"))
 }
 V3Checks.Run(Check);
 await DeviceTargetFailureChecks.Run(Check);
+await DeviceLargeMessageChecks.RunAsync(Check);
+await DeviceLargeMessageChecks.RunAsync(Check, requiredStartupResponse: true);
 await ProxyFailureChecks.Run(Check);
 await PageActionChecks.Run(Check);
 async Task Throws<T>(Func<Task> work, string name) where T : Exception
