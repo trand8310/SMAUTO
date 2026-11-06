@@ -1,5 +1,7 @@
 # SMAd 屏幕、视口和新页面初始化
 
+2026-11-06：生产启动参数使用 `DeviceDisplayProfile` 的独立窗口和可用屏幕尺寸，并传入 `--force-device-scale-factor=1`，防止宿主 Windows 显示缩放再次乘到定制内核的 `--device-pixel-ratio`。手机 DPR 仍由后者指定。125.0.6422.136 在本机有窗口、隔离用户目录下，屏幕、可用屏幕、DPR 和触屏启动诊断通过。外窗为 640×1040 的显示夹具中，首个脚本测得视觉视口 622×944，与设定目标 412×800 不一致；该内核的完整移动视口行为尚未通过验证，不能由启动成功推断。`viewportTarget` 日志是目标配置而不是实测视口。
+
 本轮将手机屏幕、可用屏幕、网页视口及 Windows 外部窗口分别配置。所有页面复用任务创建时确定的同一份 `DeviceDisplayProfile`，不再根据页面重新抽取栏位高度。
 
 当前实现已移除 SMAd 中两处 CDP 尺寸覆盖调用。屏幕、可用区域、DPR、视口及移动布局由启动参数和定制 Chromium 原生实现提供；CDP 仍用于触摸配置、目标管理、窗口调整和只读校验，不包含 JavaScript 属性覆盖。原生屏幕、可用屏幕或 DPR 与档案不符时，初始化明确失败。JS 仅用于读取校验值。
@@ -12,13 +14,13 @@
 | `dev.dpr` | 可选明确 DPR；提供时按物理分辨率除以 DPR 并四舍五入生成 CSS 屏幕尺寸 |
 | `dev.cssWidth/cssHeight` | 可选明确 CSS 屏幕尺寸，优先于匹配或物理分辨率换算 |
 | `screen.width/height` | CSS 像素，通过 `--screen-size` 和定制内核设置 |
-| `dev.availWidth/availHeight` | CSS 像素，默认等于完整屏幕；可以按目标设备档案覆盖，不能扣浏览器工具栏 |
+| `dev.availWidth/availHeight` | CSS 像素；默认宽度为屏幕宽度，高度为屏幕高度减导航栏和工具栏，可按目标设备档案覆盖 |
 | `dev.viewportWidth/viewportHeight` | CSS 像素；保留配置计算，当前不再通过 CDP 应用，也未新增视口启动参数，需由内核实现实际视口 |
 | `dev.windowWidth/windowHeight` | Windows DIP 外部窗口尺寸，与 DPR、手机物理像素分开 |
 
-Android 默认状态栏 24、导航栏 24、Chrome 工具栏 56 CSS 像素。这是固定测试档案，不保证对应任意真机。UA 包含 `; wv` 的 WebView 默认工具栏为 0。可用 `dev.statusBarHeight/navigationBarHeight/browserToolbarHeight` 明确覆盖；全屏模式可设为 0。桌面默认不扣 Android 栏位。
+Android 默认状态栏 24、导航栏 24、浏览器工具栏 56 CSS 像素。这是固定测试档案，不保证对应任意真机；当前 WebView 使用相同默认值。可用 `dev.statusBarHeight/navigationBarHeight/browserToolbarHeight` 明确覆盖；全屏模式可设为 0。桌面默认不扣 Android 栏位。
 
-Windows 外部窗口默认宽度 `max(500, CSS屏幕宽度 + 32)`、高度 `CSS屏幕高度 + 128`，用于显示和调试。它不会绘制 Android 系统栏。连接后通过 `Browser.setWindowBounds` 设置，并回读实际边界、等待更新、有限校正边框差值。如果 Windows 限制窗口大小，以日志记录的实际值为准；网页视口由内核和实际内容区布局决定，不再通过 CDP 独立控制。
+Windows 外部窗口默认宽高与 CSS 屏幕宽高相同，也可通过 `dev.windowWidth/windowHeight` 指定。它不会绘制 Android 系统栏。连接后通过 `Browser.setWindowBounds` 设置，并回读实际边界、等待更新、有限校正边框差值。如果 Windows 限制窗口大小，以日志记录的实际值为准；网页视口由内核和实际内容区布局决定，不再通过 CDP 独立控制。
 
 示例字段可合并到原有任务的 `dev` 中，UA 等原有字段仍需保留：
 

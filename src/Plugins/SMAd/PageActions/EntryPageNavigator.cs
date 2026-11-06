@@ -44,7 +44,7 @@ public static class EntryPageNavigator
                 Volatile.Write(ref downloadObserved, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
                 try
                 {
-                    var response = await page.GotoAsync(url, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = timeoutMs }).WaitAsync(token);
+                    var response = await PlaywrightTaskWait.WithCancellation(page.GotoAsync(url, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = timeoutMs }), token);
                     if (response is { Status: >= 400 })
                         return new(false, false, $"Entry HTTP {response.Status}: {response.Url}", response.Status);
                     await PageActionExecutor.WaitReadyAsync(page, token);

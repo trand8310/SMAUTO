@@ -71,7 +71,7 @@ namespace QTP
         private static ConcurrentQueue<JToken> iOS_QUEUE = new();
         private readonly SemaphoreSlim iOS_SIGNAL = new(1, 1);
         private readonly SemaphoreSlim ANDROID_SIGNAL = new(1, 1);
-        private async Task<string?> GetDevByOSInternal(OSType os, int count)
+        private async Task<string?> GetDevByOSInternal(OSType os, int count, CancellationToken token)
         {
             try
             {
@@ -82,38 +82,40 @@ namespace QTP
                 var type = os == OSType.IOS ? "ios" : os == OSType.PC ? "win" : "android";
 
                 var url = $"{devApiUrl}?type={type}&count={count}&t={System.DateTime.Now.Ticks}";
-                HttpResponseMessage response = await client.GetAsync(url);
+                HttpResponseMessage response = await client.GetAsync(url, token);
                 response.EnsureSuccessStatusCode();
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadAsStringAsync();
+                    return await response.Content.ReadAsStringAsync(token);
                 }
             }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, ex.Message);
             }
             return null;
         }
-        public async Task<JToken?> GetDevByOS(OSType os, int count = 5)
+        public async Task<JToken?> GetDevByOS(OSType os, int count = 5, CancellationToken token = default)
         {
             (ConcurrentQueue<JToken> devs, SemaphoreSlim sem) =
                 os == OSType.IOS ?
                 (iOS_QUEUE, iOS_SIGNAL) :
                 (ANDROID_QUEUE, ANDROID_SIGNAL);
 
+            token.ThrowIfCancellationRequested();
             if (devs.TryDequeue(out var cached))
             {
                 return cached;
             }
-            await sem.WaitAsync();
+            await sem.WaitAsync(token);
             try
             {
                 if (devs.TryDequeue(out cached))
                 {
                     return cached;
                 }
-                var text = await GetDevByOSInternal(os, count);
+                var text = await GetDevByOSInternal(os, count, token);
                 if (string.IsNullOrWhiteSpace(text))
                 {
                     return null;
@@ -132,6 +134,7 @@ namespace QTP
 
                 return first;
             }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError($"GetDevByOS error: {ex.Message}");
@@ -152,13 +155,14 @@ namespace QTP
                 _ => OSType.ANDROID
             };
         }
-        public async Task<JToken?> GetDeviceAsync(OSType os, int count)
+        public async Task<JToken?> GetDeviceAsync(OSType os, int count, CancellationToken token = default)
         {
             int retry = 0;
             JToken? dev = null;
             while (retry++ < 5)
             {
-                dev = await GetDevByOS(os, count);
+                token.ThrowIfCancellationRequested();
+                dev = await GetDevByOS(os, count, token);
                 if (dev != null) break;
             }
             return dev;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -74,10 +74,14 @@ namespace SMAd
             ICDPSession cdpSession,
             string handleSelector,
             string trackSelector,
+            HumanTouchP3.Input.HumanTouchOperator human,
             CancellationToken token = default)
         {
             if (page == null) throw new ArgumentNullException(nameof(page));
             if (cdpSession == null) throw new ArgumentNullException(nameof(cdpSession));
+            ArgumentNullException.ThrowIfNull(human);
+            using var input = await HumanTouchP3.Input.HumanInputCoordinator.AcquireAsync(human.Session, token);
+            if (!human.Engine.IsCurrentBinding(page, cdpSession)) return false;
 
             var handle = page.Locator(handleSelector).First;
             var track = page.Locator(trackSelector).First;
@@ -106,9 +110,11 @@ namespace SMAd
             // 步数可以稍多一点，更平滑
             int steps = Random.Shared.Next(15, 25);
 
-            await global::PlaywrightHumanInput.CdpTouchRuntime.InitializeAsync(page, cdpSession, token: token);
-            using var lease = await global::PlaywrightHumanInput.CdpTouchRuntime.AcquireAsync(cdpSession, token);
+            if (page.IsClosed || !human.Engine.IsCurrentBinding(page, cdpSession)) return false;
+            await global::HumanTouchP3.Input.CdpTouchRuntime.InitializeAsync(page, cdpSession, token: token);
+            using var lease = await global::HumanTouchP3.Input.CdpTouchRuntime.AcquireAsync(cdpSession, token);
             token.ThrowIfCancellationRequested();
+            if (page.IsClosed || !human.Engine.IsCurrentBinding(page, cdpSession)) return false;
             bool completed = false;
             try
             {
@@ -119,6 +125,7 @@ namespace SMAd
                 for (int i = 1; i <= steps; i++)
                 {
                     token.ThrowIfCancellationRequested();
+                    if (page.IsClosed || !human.Engine.IsCurrentBinding(page, cdpSession)) return false;
 
                     double t = (double)i / steps;
 
@@ -158,8 +165,8 @@ namespace SMAd
             }
             finally
             {
-                if (completed) await global::PlaywrightHumanInput.CdpTouchRuntime.ReleaseTouchAsync(cdpSession);
-                else { try { await global::PlaywrightHumanInput.CdpTouchRuntime.ReleaseTouchAsync(cdpSession, true); } catch { } }
+                if (completed) await global::HumanTouchP3.Input.CdpTouchRuntime.ReleaseTouchAsync(cdpSession);
+                else { try { await global::HumanTouchP3.Input.CdpTouchRuntime.ReleaseTouchAsync(cdpSession, true); } catch { } }
             }
             return true;
         }

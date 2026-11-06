@@ -1,0 +1,13 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-46f1131fc9444b46b44d8c8fb456248d, pid=25660, kernel=125.0.6422.136, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:Touch posture=LeftHandOneHanded
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html;charset=utf-8, content-disposition=, location=
+神马搜索:ExecuteWorker: 10.03
+神马搜索:Touch Prepare: 195ms
+神马搜索:Touch Fling/Up (79,769)->(33,518) duration=108ms release=4699px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=10
+神马搜索:Touch Reading/Up (83,679)->(45,499) duration=540ms release=31px/s
+神马搜索:ExecuteWorker:Canceled: Device control connection failed: Device CDP reader failed: The remote party closed the WebSocket connection without completing the close handshake.
+Browser execution ending: executionId=full-flow-46f1131fc9444b46b44d8c8fb456248d, stage=page visit, elapsed=28600ms, reason=CdpDisconnected, detail=Device control connection failed: Device CDP reader failed: The remote party closed the WebSocket connection without completing the close handshake.

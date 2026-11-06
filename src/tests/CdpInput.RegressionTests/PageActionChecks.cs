@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 using SMAd.Models;
 using SMAd.PageActions;
 using SMAd.LandingPolicy;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 
 internal static class PageActionChecks
 {
@@ -258,6 +258,20 @@ internal static class PageActionChecks
             catch (OperationCanceledException) { entryCancelled = true; }
             check(entryCancelled && entryAttempts == 1 && entryState.Count("Download") == 0,
                 "入口下载重试期间任务取消立即传播并清理监听");
+        }
+        using (var lateCancellation = new CancellationTokenSource())
+        {
+            var pendingNavigation = new TaskCompletionSource<IResponse?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            entryAttempts = 0;
+            entryState.Navigate = () => { entryAttempts++; return pendingNavigation.Task; };
+            var waiting = EntryPageNavigator.NavigateAsync(entryPage, "https://example.test/search", 5000, lateCancellation.Token, _ => { });
+            lateCancellation.Cancel();
+            bool lateCancelled = false;
+            try { await waiting; } catch (OperationCanceledException) { lateCancelled = true; }
+            pendingNavigation.SetException(new PlaywrightException("Target page, context or browser has been closed"));
+            await Task.Yield();
+            check(lateCancelled && entryAttempts == 1 && entryState.Count("Download") == 0,
+                "取消导航立即返回，迟到故障不触发重试且监听已清理");
         }
 
         state.Url = "https://unknown.test/";

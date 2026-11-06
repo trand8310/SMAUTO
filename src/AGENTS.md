@@ -18,8 +18,9 @@
 | `MainClient` | Windows WinForms 客户端，任务调度、并发控制、代理准备、配置与结果处理。通过项目引用和 `SmAdExecutor` 执行 SMAd，每次执行创建独立任务对象。 |
 | `Plugins/SMAd` | 页面访问主流程、页面生命周期、站点策略、页面动作与执行结果。主要入口是 `SMAdTask`。 |
 | `Libraries/QTP.Common` | 浏览器运行时、Chromium 进程、Playwright 驱动、资源回收、公共结果模型及代理检测。 |
-| `Libraries/HumanTouchP2_Enhancedv3` | 当前使用的强化触屏实现，程序集为 `HumanTouchP2.Enhancedv3`，API 命名空间保留 `PlaywrightHumanInput`。 |
-| `Libraries/HumanTouchP2_Enhanced`、`Libraries/HumanTouchP2` | 历史版本与迁移参考；新增强化功能放在 v3，不默认同步修改旧版本。 |
+| `Libraries/HumanTouchP3` | SMAd 使用的独立触屏实现，程序集为 `HumanTouchP3`，API 命名空间为 `HumanTouchP3` 和 `HumanTouchP3.Input`。 |
+| `Libraries/HumanTouchP2_Enhancedv3` | P3 的历史源码基础，旧接口保留供迁移参考。 |
+| `Libraries/HumanTouchP2_Enhanced`、`Libraries/HumanTouchP2` | 历史版本与迁移参考；新增强化功能放在 P3，不默认同步修改旧版本。 |
 | `tests` | 回归与真实浏览器测试。根据改动选择对应项目。 |
 | `docs` | 架构决策、行为说明、故障诊断及验证记录。 |
 
@@ -29,7 +30,7 @@
 
 - 使用现有 `BrowserRuntimeManager`、`BrowserRuntimeLease`、`ChromiumSessionManager` 和 Playwright provider/lease 管理资源，不在业务策略中另建独立的启动、连接和销毁链路。
 - CDP 地址使用运行时获取的实际端点和自动端口机制，不恢复人工固定端口分配。
-- 每次执行隔离配置、取消令牌、用户目录、页面状态和触屏会话。单次任务失败不得取消其他执行或关闭共享 Playwright 驱动。
+- 每次执行隔离配置、取消令牌、用户目录、页面状态和触屏会话。MainClient 的每个消费循环各自持有 Playwright provider，按需创建驱动并跨任务复用；不同消费者的驱动故障相互隔离。单次执行只归还租约，不能关闭消费者仍需使用的驱动。流水线结束后先回收受管浏览器，再释放消费者 provider；全局启动和运行并发仍由同一个运行时管理。
 - 页面和 CDP session 必须配对，使用 `WorkerRunContext.ActivePage` 的整体绑定；输入前检查绑定是否变化，不继续操作失效页面。
 - CDP session 使用现有缓存、失效和释放机制。关注页面关闭、创建中释放、迟到创建和重复初始化，避免泄漏及重复监听。
 - 单个目标初始化失败不得直接关闭整个浏览器；故障 session 与健康页面隔离。旧 session 的分离事件不能清掉同目标新 session 的状态，真正的 CDP 连接故障仍须传播。
@@ -43,11 +44,12 @@
 
 ## 页面操作与触屏规则
 
-- 业务触屏操作优先走 v3、`SmAdTouch` 和现有 `PageActionExecutor`，不绕过协调器随意发送输入。
+- 业务触屏操作优先走 P3、`SmAdTouch` 和现有 `PageActionExecutor`，不绕过协调器随意发送输入。
 - JavaScript 可用于只读的定位、命中测试、遮挡检查和滚动状态采样；不以 `element.click()`、直接修改滚动位置等方式替代要求的原生触屏动作。
 - 定位不等于可点击。检查元素连接状态、尺寸、可见区域、滚动容器裁剪、遮挡和稳定性；坐标必须与实际输入所用主视口一致，注意 iframe 坐标。
 - 移动到目标后检查操作结果；未到位不能继续假定点击成功。目标失效时重新定位应有明确预算。
 - 爱采购、1688 及推荐词采用当前站点策略中的模式：触屏浏览并阅读后，从当前视口可见且未遮挡的候选随机选一个直接点击；不重新引入寻找屏外目标的长滚动链路。
+- 未指定姿势时每次执行按右手单手 69%、左手单手 13%、左手持机右手操作 18% 独立抽样；显式有效姿势优先。详情在原有停留预算内优先阅读且偶尔回看；长列表增加有界的向下浏览，仍遵守当前视口候选规则。
 - 点击输入派发完成、导航发生、页面就绪和业务成功分别记录。不要把输入完成直接当成访问、跳转或业务成功。
 - 点击效果不确定时，不自动重放点击。下载、同页面导航、新页面和已验证 DOM 效果按各自结果处理。
 - 导航或新页面就绪后，按现有规则随机观察 `2000–6000` 毫秒，再开始后续动作。观察期遵守输入锁，任务取消、页面关闭和绑定变化应及时退出。
@@ -81,9 +83,12 @@
 
 ## 屏幕与视口
 
+- MainClient 仅为 Android/iOS 手机任务选择设备；设备筛选使用实际配置计算得到的 CSS 屏幕，要求竖屏、宽度 240–600 CSS 像素且高宽比至少 1.3，并排除明确的平板标识。无效或非手机设备记录脱敏原始设备数据后有界尝试下一个，不能伪造屏幕尺寸。CPU 缺失或非正数使用 8，存储缺失或非正数使用 128 GiB，内存不可用使用 8 GiB；校验及默认值须在设备数据使用前完成。
+
 - 当前方案由定制 Chromium 在原生层处理屏幕、可用屏幕、DPR、视口和移动布局。生产 SMAd 不重新引入 `Emulation.setDeviceMetricsOverride`。
 - 不增加 JavaScript Screen/Window 属性覆盖或尺寸回退。只读检测和记录实际值可以保留。
 - 区分物理像素、CSS 像素、Windows DIP、外窗尺寸、内容视口和可用屏幕。外窗尺寸应围绕目标内容视口推导，不能把它们当作同一个值。
+- 启动参数分别使用配置的窗口尺寸和可用屏幕尺寸；通过 `--force-device-scale-factor=1` 隔离宿主显示缩放，手机 DPR 由定制内核的 `--device-pixel-ratio` 设置，仍须按实际内核验证。
 - 现有命令行参数依赖定制内核实现，标准 Chromium 不保证支持其全部语义。连接 CDP、初始化 TouchEmulator 或设置实际窗体边界不等于已完成原生移动布局。
 - 显示行为验证应覆盖首个脚本、新标签、弹窗、再次导航和实际窗体边界。不同内核版本的结果不能互相替代。
 
@@ -125,6 +130,8 @@ $msbuild = 'C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Cur
 - `docs/SMAd-浏览器退出诊断与页面故障隔离-20261012.md`
 - `docs/SMAd-浏览器独立生命周期日志-20261013.md`
 - `docs/SMAd-CDP大消息处理-20261013.md`
+- `docs/SMAd-P3触屏接入-20261030.md`
+- `docs/HumanTouchP3-真机样本校准-20261030.md`
 - `Libraries/HumanTouchP2_Enhancedv3/README.md`
 - `tests/*/README.md`
 

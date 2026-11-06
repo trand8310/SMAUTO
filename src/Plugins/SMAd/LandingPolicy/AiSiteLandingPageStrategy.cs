@@ -1,4 +1,4 @@
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using QTP.Common;
 using QTP.Plugins;
 using SMAd.Models;

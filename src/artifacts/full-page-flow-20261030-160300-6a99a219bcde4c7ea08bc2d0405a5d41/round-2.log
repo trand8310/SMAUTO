@@ -1,0 +1,60 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-4bc85fa2071a4268b6d0dd2678ecf2cc, pid=17224, kernel=145.0.7632.110, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:Touch posture=RightHandOneHanded
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html;charset=utf-8, content-disposition=, location=
+神马搜索:ExecuteWorker: 9.07
+神马搜索:Touch Prepare: 198ms
+神马搜索:Touch Reading/Up (297,804)->(374,564) duration=595ms release=34px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=48
+神马搜索:Touch Preview/Up (256,771)->(330,486) duration=228ms release=127px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=17
+神马搜索:Touch Fling/Up (215,654)->(283,412) duration=169ms release=2589px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=15
+神马搜索:Touch BackReview/Down (254,501)->(161,816) duration=267ms release=41px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=19
+神马搜索:Touch FastScan/Up (257,738)->(333,460) duration=107ms release=3372px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=8
+神马搜索:Touch Preview/Up (171,661)->(254,341) duration=331ms release=165px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=30
+神马搜索:Touch Preview/Up (251,786)->(334,404) duration=314ms release=81px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=27
+神马搜索:Touch Fling/Up (224,740)->(278,528) duration=157ms release=1981px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=14
+点击比率:0.00%
+神马搜索:Touch Reading/Up (319,612)->(386,358) duration=856ms release=81px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=52
+神马搜索:Touch Move target: Ready, 
+触发广告位:本地测试目标，点击进入落地页:(12,268.69565,386.08698,140)
+Navigation ready: 300ms, observe=2185ms, url=https://m.1688.com/list
+Navigation observation: planned=2185ms, actual=2190ms
+Action Navigate: success=True, dispatched=True, 2490ms, 
+神马搜索:ExecuteWorker:Clickthrough
+1688: 浏览滑动=Up，实际滚动=True
+1688: 浏览滑动=Up，实际滚动=True
+1688: 浏览滑动=Up，实际滚动=True
+1688: 浏览滑动=Up，实际滚动=True
+1688: 浏览滑动=Up，实际滚动=True
+1688: 当前可点候选=5，随机选择[16]，直接触屏点击
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Navigation ready: 516ms, observe=2660ms, url=https://detail.fixture.invalid/item?id=16
+Navigation observation: planned=2660ms, actual=2664ms
+Action Navigate: success=True, dispatched=True, 3180ms, 
+1688: 候选[16]点击结果=OpenedPage, 原因=
+神马搜索:Touch Reading/Up (207,789)->(258,576) duration=684ms release=18px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=60
+延时停留
+滑动操作
+神马搜索:Touch Prepare: 215ms
+神马搜索:Touch Preview/Up (290,775)->(363,484) duration=247ms release=173px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=20
+滑动操作
+神马搜索:Touch Preview/Up (291,806)->(374,444) duration=408ms release=121px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=36
+滑动操作
+神马搜索:Touch MicroAdjust/Up (269,739)->(293,625) duration=229ms release=53px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=18
+动作完成
+神马搜索:ExecuteWorker:Complete
+Browser execution ending: executionId=full-flow-4bc85fa2071a4268b6d0dd2678ecf2cc, stage=page visit, elapsed=82562ms, reason=Completed, detail=

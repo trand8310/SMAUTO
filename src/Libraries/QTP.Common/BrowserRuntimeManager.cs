@@ -61,8 +61,12 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
             _lifetime = new(); _accepting = true; _stop = null; _admissionStopKind = null;
         }
     }
-    public async Task<BrowserRuntimeLease> AcquireAsync(BrowserStartOptions options, CancellationToken token = default)
+    public Task<BrowserRuntimeLease> AcquireAsync(BrowserStartOptions options, CancellationToken token = default)
+        => AcquireAsync(options, _provider, token);
+
+    public async Task<BrowserRuntimeLease> AcquireAsync(BrowserStartOptions options, IPlaywrightProvider provider, CancellationToken token = default)
     {
+        ArgumentNullException.ThrowIfNull(provider);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.ExecutionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.UserDataDir);
         var profile = Path.TrimEndingDirectorySeparator(Path.GetFullPath(options.UserDataDir));
@@ -99,7 +103,7 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
             lock (_sync) { _waiting--; _opening++; openingCounted = true; }
             lock (_sync) if (!_accepting) throw new InvalidOperationException("Browser admission was stopped.");
             ct.ThrowIfCancellationRequested();
-            driver = await _provider.AcquireAsync(ct).ConfigureAwait(false);
+            driver = await provider.AcquireAsync(ct).ConfigureAwait(false);
             sessionLifetime = CancellationTokenSource.CreateLinkedTokenSource(token, stopToken, driver.DriverToken);
             var sessionToken = sessionLifetime.Token;
             startupAttempted = true;
@@ -114,7 +118,7 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
             sessionToken.ThrowIfCancellationRequested();
             if (!browser.IsConnected || browser.Contexts.Count == 0)
                 throw new InvalidOperationException("Browser connection has no usable default context.");
-            var lease = new BrowserRuntimeLease(this, process, driver, browser, browser.Contexts[0], sessionLifetime, token);
+            var lease = new BrowserRuntimeLease(this, process, driver, provider, browser, browser.Contexts[0], sessionLifetime, token);
             preparedLease = lease;
             sessionToken.ThrowIfCancellationRequested();
             lock (_sync)
@@ -128,7 +132,7 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
         catch (PlaywrightException ex)
         {
             startupFailure = ex;
-            if (driver != null) await CheckDriverAfterFailureAsync(driver).ConfigureAwait(false);
+            if (driver != null) await CheckDriverAfterFailureAsync(provider, driver, options.ExecutionId).ConfigureAwait(false);
             throw;
         }
         catch (Exception ex)
@@ -163,7 +167,7 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
                 // If a process could not be terminated, retain its ownership and permit in a quarantine lease.
                 if (closeError != null && process != null && driver != null)
                 {
-                    var quarantine = new BrowserRuntimeLease(this, process, driver, browser,
+                    var quarantine = new BrowserRuntimeLease(this, process, driver, provider, browser,
                         browser?.Contexts.FirstOrDefault(), sessionLifetime!);
                     lock (_sync) _sessions[options.ExecutionId] = quarantine;
                     quarantine.RequestStop(startupFailure == null ? BrowserStopKind.CleanupFailed : BrowserFailureClassifier.Classify(startupFailure), "Process cleanup failed");
@@ -287,9 +291,9 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
     }
     private static async Task CloseLateConnectionAsync(Task<IBrowser> connecting)
     { try { await (await connecting.ConfigureAwait(false)).CloseAsync().ConfigureAwait(false); } catch { } }
-    private async Task CheckDriverAfterFailureAsync(PlaywrightLease lease)
+    internal static async Task CheckDriverAfterFailureAsync(IPlaywrightProvider provider, PlaywrightLease lease, string executionId)
     {
-        if (_provider is not PlaywrightProvider managed) return;
+        if (provider is not PlaywrightProvider managed) return;
         try
         {
             // A browser disconnection alone does not prove that the shared driver is broken.
@@ -299,9 +303,22 @@ public sealed class BrowserRuntimeManager : IAsyncDisposable
             catch (TimeoutException) { _ = CloseLateProbeAsync(creating); throw; }
             await probe.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
-        catch (PlaywrightException ex) when (ex.Message.Contains("Connection closed", StringComparison.OrdinalIgnoreCase))
-        { managed.Invalidate(lease); }
+        catch (PlaywrightException ex) when (IsDriverTransportFailure(ex))
+        {
+            BrowserLifecycleLog.Write(executionId, "runtime.driver_retired", "BrowserRuntimeManager.CheckDriverAfterFailureAsync",
+                "驱动健康检查确认通信故障，后续任务将使用新驱动", new { errorType = ex.GetType().Name, innerType = ex.InnerException?.GetType().Name });
+            managed.Invalidate(lease);
+        }
         catch { } // Busy or cancelled probes are not evidence of driver death.
+    }
+    private static bool IsDriverTransportFailure(PlaywrightException error)
+    {
+        if (error.Message.Contains("Connection closed", StringComparison.OrdinalIgnoreCase)) return true;
+        // This probe talks only to the driver, not a browser or an external site. A broken
+        // stdio pipe or an aborted stdio operation proves this driver cannot serve it.
+        for (Exception? cause = error.InnerException; cause != null; cause = cause.InnerException)
+            if (cause is IOException or System.Threading.ThreadAbortException) return true;
+        return false;
     }
     private static async Task CloseLateProbeAsync(Task<IAPIRequestContext> creating)
     { try { await (await creating.ConfigureAwait(false)).DisposeAsync().ConfigureAwait(false); } catch { } }

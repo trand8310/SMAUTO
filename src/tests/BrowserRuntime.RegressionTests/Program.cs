@@ -72,7 +72,126 @@ await LifecycleLogChecks.RunAsync(Check);
     await Throws<ObjectDisposedException>(async () => await acquire, "初始化期间退出不会返回已停止的驱动");
     await stop; Check(disposed == 1, "退出期间完成的初始化也被清理");
 }
+// Consumer-scoped providers share runtime admission while keeping driver generations separate.
+{
+    int firstCreated = 0, secondCreated = 0, firstDisposed = 0, secondDisposed = 0;
+    await using var first = new PlaywrightProvider(() =>
+    {
+        firstCreated++;
+        return Task.FromResult(Fake.Create<IPlaywright>((m, _) => { if (m.Name == "Dispose") Interlocked.Increment(ref firstDisposed); return null; }));
+    });
+    await using var second = new PlaywrightProvider(() =>
+    {
+        secondCreated++;
+        return Task.FromResult(Fake.Create<IPlaywright>((m, _) => { if (m.Name == "Dispose") Interlocked.Increment(ref secondDisposed); return null; }));
+    });
+    var processes = new Processes();
+    await using var runtime = new BrowserRuntimeManager(first, processes, new(2, 1), (_, _, _) => Task.FromResult(new Browser().Value));
+    var a = await runtime.AcquireAsync(Options("consumer-a1"), first);
+    var b = await runtime.AcquireAsync(Options("consumer-b1"), second);
+    var driverA = a.Playwright;
+    Check(!ReferenceEquals(driverA, b.Playwright) && firstCreated == 1 && secondCreated == 1, "消费者使用不同驱动");
+    await a.DisposeAsync();
+    var a2 = await runtime.AcquireAsync(Options("consumer-a2"), first);
+    Check(ReferenceEquals(driverA, a2.Playwright) && firstCreated == 1, "同一消费者跨执行复用驱动");
+    using var borrowed = new CancellationTokenSource();
+    var failed = await first.AcquireAsync(borrowed.Token);
+    first.Invalidate(failed);
+    Check(a2.Token.IsCancellationRequested && !b.Token.IsCancellationRequested, "驱动失效仅影响所属消费者");
+    await failed.DisposeAsync();
+    await a2.DisposeAsync();
+    var a3 = await runtime.AcquireAsync(Options("consumer-a3"), first);
+    Check(!ReferenceEquals(driverA, a3.Playwright) && ReferenceEquals(b.Playwright, (await second.GetAsync())) && firstCreated == 2 && secondCreated == 1, "故障后仅重建所属消费者驱动");
+    await a3.DisposeAsync(); await b.DisposeAsync();
+    await runtime.StopAsync();
+    await first.DisposeAsync(); await second.DisposeAsync();
+    Check(firstDisposed == 2 && secondDisposed == 1, "消费者驱动全部释放");
+}
+{
+    int created = 0;
+    var aborted = (Exception)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(ThreadAbortException));
+    var api = Fake.Create<IAPIRequest>((m, _) => m.Name == "NewContextAsync"
+        ? Task.FromException<IAPIRequestContext>(new PlaywrightException("System error", aborted))
+        : throw new NotSupportedException(m.Name));
+    await using var provider = new PlaywrightProvider(() =>
+    {
+        created++;
+        return Task.FromResult(Fake.Create<IPlaywright>((m, _) => m.Name switch
+        { "get_APIRequest" => api, "Dispose" => null, _ => throw new NotSupportedException(m.Name) }));
+    });
+    await using var other = new PlaywrightProvider(() => Task.FromResult(Fake.Create<IPlaywright>((_, _) => null)));
+    var processes = new Processes();
+    int connects = 0;
+    await using var runtime = new BrowserRuntimeManager(provider, processes, new(2, 1), (_, _, _) =>
+        ++connects == 1 ? Task.FromException<IBrowser>(new PlaywrightException("browser connection failed")) : Task.FromResult(new Browser().Value));
+    var otherLease = await other.AcquireAsync();
+    await Throws<PlaywrightException>(async () => await runtime.AcquireAsync(Options("broken-probe")), "驱动管道故障保留启动异常");
+    var recovered = await runtime.AcquireAsync(Options("recovered-probe"));
+    Check(created == 2 && !otherLease.DriverToken.IsCancellationRequested, "健康检查发现驱动管道异常后重建当前消费者，不影响其他消费者");
+    await recovered.DisposeAsync();
+    await otherLease.DisposeAsync();
+}
+{
+    int created = 0, connects = 0;
+    var api = Fake.Create<IAPIRequest>((m, _) => m.Name == "NewContextAsync"
+        ? Task.FromException<IAPIRequestContext>(new PlaywrightException("Target page, context or browser has been closed"))
+        : throw new NotSupportedException(m.Name));
+    await using var provider = new PlaywrightProvider(() =>
+    {
+        created++;
+        return Task.FromResult(Fake.Create<IPlaywright>((m, _) => m.Name switch
+        { "get_APIRequest" => api, "Dispose" => null, _ => throw new NotSupportedException(m.Name) }));
+    });
+    var processes = new Processes();
+    await using var runtime = new BrowserRuntimeManager(provider, processes, new(1, 1), (_, _, _) =>
+        ++connects == 1 ? Task.FromException<IBrowser>(new PlaywrightException("browser target closed")) : Task.FromResult(new Browser().Value));
+    await Throws<PlaywrightException>(async () => await runtime.AcquireAsync(Options("closed-page")), "普通页面关闭保留原始连接失败");
+    var next = await runtime.AcquireAsync(Options("closed-page-next"));
+    Check(created == 1, "仅浏览器或页面关闭不足以淘汰驱动");
+    await next.DisposeAsync();
+}
 // Process exit, rather than connection closure, controls the running permit.
+{
+    int created = 0;
+    var aborted = (Exception)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(ThreadAbortException));
+    var api = Fake.Create<IAPIRequest>((m, _) => m.Name == "NewContextAsync"
+        ? Task.FromException<IAPIRequestContext>(new PlaywrightException("System error", aborted))
+        : throw new NotSupportedException(m.Name));
+    await using var provider = new PlaywrightProvider(() =>
+    {
+        created++;
+        return Task.FromResult(Fake.Create<IPlaywright>((m, _) => m.Name switch
+        { "get_APIRequest" => api, "Dispose" => null, _ => throw new NotSupportedException(m.Name) }));
+    });
+    var processes = new Processes();
+    await using var runtime = new BrowserRuntimeManager(provider, processes, new(1, 1), (_, _, _) => Task.FromResult(new Browser().Value));
+    var first = await runtime.AcquireAsync(Options("runtime-broken-driver"));
+    first.RequestStop(BrowserStopKind.CdpDisconnected, "connection lost");
+    await first.DisposeAsync();
+    var next = await runtime.AcquireAsync(Options("runtime-new-driver"));
+    Check(created == 2, "运行期间连接断开且健康检查确认管道故障后重建驱动");
+    await next.DisposeAsync();
+}
+{
+    int created = 0;
+    var api = Fake.Create<IAPIRequest>((m, _) => m.Name == "NewContextAsync"
+        ? Task.FromException<IAPIRequestContext>(new PlaywrightException("Target page, context or browser has been closed"))
+        : throw new NotSupportedException(m.Name));
+    await using var provider = new PlaywrightProvider(() =>
+    {
+        created++;
+        return Task.FromResult(Fake.Create<IPlaywright>((m, _) => m.Name switch
+        { "get_APIRequest" => api, "Dispose" => null, _ => throw new NotSupportedException(m.Name) }));
+    });
+    var processes = new Processes();
+    await using var runtime = new BrowserRuntimeManager(provider, processes, new(1, 1), (_, _, _) => Task.FromResult(new Browser().Value));
+    var first = await runtime.AcquireAsync(Options("runtime-page-closed"));
+    first.RequestStop(BrowserStopKind.CdpDisconnected, "browser closed");
+    await first.DisposeAsync();
+    var next = await runtime.AcquireAsync(Options("runtime-same-driver"));
+    Check(created == 1, "运行期间浏览器断开本身不淘汰驱动");
+    await next.DisposeAsync();
+}
 {
     await using var provider = new PlaywrightProvider(() => Task.FromResult(Fake.Create<IPlaywright>((_, _) => null)));
     var processes = new Processes();
@@ -232,6 +351,21 @@ else if (args.Length > 0)
     await Task.WhenAll(sessions.Select(s => s.DisposeAsync().AsTask())); await stop;
     Check(processes.Count == 0 && sessions.All(s => s.ProcessSession.ExitConfirmed) && provider.ActiveLeases == 0,
         "真实停止确认进程退出并归还全部驱动租约");
+
+    manager.BeginRun(new(2, 1));
+    await using var otherProvider = new PlaywrightProvider();
+    var separate = await Task.WhenAll(new[] { provider, otherProvider }.Select((p, i) => manager.AcquireAsync(new BrowserStartOptions(
+        $"separate-{i}", Path.GetFullPath(args[0]), Path.Combine(root, "separate", i.ToString()), TimeSpan.FromMinutes(2),
+        "--headless=new --no-first-run --no-default-browser-check --disable-background-networking about:blank"), p, timeout.Token)));
+    Check(!ReferenceEquals(separate[0].Playwright, separate[1].Playwright) && separate.All(s => s.Browser.IsConnected),
+        "真实 Chromium 通过各自消费者驱动连接");
+    await separate[0].DisposeAsync();
+    Check(separate[1].Browser.IsConnected && await separate[1].Context.Pages[0].EvaluateAsync<int>("() => 42") == 42,
+        "关闭一个消费者的浏览器不影响另一个驱动");
+    await separate[1].DisposeAsync();
+    await manager.StopAsync();
+    Check(processes.Count == 0 && provider.ActiveLeases == 0 && otherProvider.ActiveLeases == 0,
+        "独立驱动会话均确认退出并归还租约");
 }
 Console.WriteLine($"All {checks} browser runtime checks passed.");
 

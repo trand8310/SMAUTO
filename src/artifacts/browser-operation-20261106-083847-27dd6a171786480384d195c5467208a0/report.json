@@ -1,0 +1,27 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Build\\publish\\File\\chrome-win\\125.0.6422.136\\chrome.exe",
+  "KernelVersion": "125.0.6422.136",
+  "IsHiddenMode": false,
+  "Incognito": true,
+  "Proxy": false,
+  "ActualUrl": "",
+  "Reports": [
+    {
+      "Round": 1,
+      "Model": "24129RT7CC",
+      "Stage": "production page initialization",
+      "Outcome": "failed",
+      "ElapsedMs": 10900,
+      "Error": "QTP.Common.BrowserFailureException: Native display mismatch: expected screen=424x943, available=424x863, DPR=2.875; actual={\u0022result\u0022:{\u0022type\u0022:\u0022object\u0022,\u0022value\u0022:{\u0022width\u0022:424,\u0022height\u0022:943,\u0022availWidth\u0022:424,\u0022availHeight\u0022:943,\u0022dpr\u0022:3.59375}}}. The kernel must implement these values; JavaScript fallback is disabled.\r\n   at SMAd.DeviceEmulation.DevicePageDisplay.ApplyAsync(ICDPSession session, DeviceDisplayProfile display, CancellationToken token) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Plugins\\SMAd\\DeviceEmulation\\DevicePageDisplay.cs:line 50\r\n   at QTP.Plugins.SMAdTask.InitPageCoreAsync(WorkerRunContext ctx, IPage page, CancellationToken token) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Plugins\\SMAd\\SMAdTask.cs:line 1725\r\n   at QTP.Plugins.SMAdTask.InitPageAsync(WorkerRunContext ctx, IPage page, CancellationToken token) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Plugins\\SMAd\\SMAdTask.cs:line 1709\r\n   at QTP.Plugins.SMAdTask.ActivatePageAsync(WorkerRunContext ctx, IPage page, CancellationToken token) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Plugins\\SMAd\\SMAdTask.cs:line 1699\r\n   at QTP.Plugins.SMAdTask.ConfigureContextAsync(WorkerRunContext ctx, CancellationToken token) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Plugins\\SMAd\\SMAdTask.cs:line 1608\r\n   at StartupDiagnostics.RunAsync(String[] args) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 92",
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 1,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[28156:16284:1106/083850.366:WARNING:chrome_main_delegate.cc(742)] This is Chrome version 125.0.6422.136 (not a warning)\r\n[28156:16284:1106/083850.691:WARNING:browser_management_service.cc(128)] EnterpriseLogoUrl fetch failed with error code -1 and MIME type \r\n[28156:16284:1106/083850.695:WARNING:chrome_browser_main_win.cc(681)] Command line too long for RegisterApplicationRestart:  --device-pixel-ratio=2.875 --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-blink-features=AutomationControlled --disable-breakpad --disable-dev-shm-usage --disable-edgeupdater --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion,DnsOverHttps,UseDnsHttpsSvcbAlpn --disable-field-trial-config --disable-hang-monitor --disable-http2-grease-settings --disable-infobars --disable-prompt-on-repost --disable-quic --disable-renderer-backgrounding --disable-search-engine-choice-screen --edge-\r\n[28156:34312:1106/083850.696:ERROR:external_registry_loader_win.cc(158)] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:52909/devtools/browser/6ea41156-87c1-44a0-b473-0bffc77f52d4\r\n[28156:16284:1106/083850.831:WARNING:browser_management_service.cc(128)] EnterpriseLogoUrl fetch failed with error code -1 and MIME type "
+      }
+    }
+  ]
+}

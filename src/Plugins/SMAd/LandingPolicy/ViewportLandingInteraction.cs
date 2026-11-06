@@ -1,5 +1,5 @@
 using Microsoft.Playwright;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using QTP.Plugins;
 using SMAd.Models;
 
@@ -23,25 +23,41 @@ internal static class ViewportLandingInteraction
         var page = ctx.Page;
         if (page == null || page.IsClosed) return false;
         var initialUrl = page.Url;
-        var directions = new[] { HumanSwipeDirection.Up, HumanSwipeDirection.Down,
-            HumanSwipeDirection.Up, HumanSwipeDirection.Up };
-        foreach (var direction in directions)
+        var binding = ctx.ActivePage;
+        if (binding == null || !ReferenceEquals(binding.Page, page)) return false;
+        // Only measure page length; candidates are still selected exclusively from the final viewport.
+        bool longPage = false;
+        try
+        {
+            longPage = await page.EvaluateAsync<bool>("() => { const e=document.scrollingElement; return !!e && e.scrollHeight > e.clientHeight * 4; }")
+                .WaitAsync(TimeSpan.FromSeconds(2), token);
+        }
+        catch (TimeoutException) { }
+        var desired = longPage ? Random.Shared.Next(5, 7) : Random.Shared.Next(3, 5);
+        bool allowBack = Random.Shared.Next(100) < 15;
+        int backAt = allowBack ? Random.Shared.Next(2, desired) : -1;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        for (int i = 0; i < desired; i++)
         {
             token.ThrowIfCancellationRequested();
-            if (page.IsClosed || !ReferenceEquals(ctx.Page, page) || page.Url != initialUrl) return false;
-            var trace = await ctx.human!.Engine.SwipeAsync(page, ctx.CdpSession!, new HumanTouchRequest
+            if (page.IsClosed || !ReferenceEquals(ctx.ActivePage, binding) || page.Url != initialUrl) return false;
+            // Reserve time for a final gesture within the existing overall list budget.
+            if (clock.Elapsed >= TimeSpan.FromSeconds(17)) break;
+            var direction = i == backAt ? HumanSwipeDirection.Down : HumanSwipeDirection.Up;
+            var trace = await ctx.human!.Engine.SwipeAsync(page, binding.Session, new HumanTouchRequest
             {
                 Direction = direction,
-                Intent = SwipeIntent.Reading,
+                Intent = direction == HumanSwipeDirection.Up ? SwipeIntent.Preview : SwipeIntent.BackReview,
                 CheckScrollableBeforeSwipe = true,
                 VerifyScrollChanged = true
             }, token);
             owner.LogWriteLine($"{name}: 浏览滑动={direction}，实际滚动={trace?.ScrollChanged == true}");
-            var reading = TimeSpan.FromMilliseconds(Random.Shared.Next(1000, 2001));
+            if (trace == null || !trace.ScrollChanged) break;
+            var reading = TimeSpan.FromMilliseconds(Random.Shared.Next(800, 1401));
             await Task.Delay(reading, token);
             ctx.human.Session.RecordObserve(reading);
         }
-        return !page.IsClosed && ReferenceEquals(ctx.Page, page) && page.Url == initialUrl;
+        return !page.IsClosed && ReferenceEquals(ctx.ActivePage, binding) && page.Url == initialUrl;
     }
     internal static Task<int[]> GetVisibleCandidateIndicesAsync(ILocator offers, CancellationToken token)
         => offers.EvaluateAllAsync<int[]>("""
@@ -58,6 +74,9 @@ internal static class ViewportLandingInteraction
                 for (let parent = el.parentElement; parent; parent = parent.parentElement) {
                     const s = win.getComputedStyle(parent), p = parent.getBoundingClientRect();
                     if (Number(s.opacity) === 0) return [];
+                    // The document scrolling element's rectangle moves with the page;
+                    // the viewport bounds above already represent its visible clip.
+                    if (parent === doc.documentElement || parent === doc.scrollingElement) continue;
                     if (/auto|scroll|hidden|clip/.test(s.overflowX)) {
                         left = Math.max(left, p.left + parent.clientLeft);
                         right = Math.min(right, p.left + parent.clientLeft + parent.clientWidth);

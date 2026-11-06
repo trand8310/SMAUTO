@@ -1,6 +1,6 @@
 using System.Reflection;
 using Microsoft.Playwright;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using QTP.Common;
 using QTP.Common.Models;
 using QTP.Common.Infrastructure;

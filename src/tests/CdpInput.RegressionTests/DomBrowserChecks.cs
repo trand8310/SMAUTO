@@ -1,5 +1,5 @@
 using Microsoft.Playwright;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using QTP.Common;
 
 internal static class DomBrowserChecks

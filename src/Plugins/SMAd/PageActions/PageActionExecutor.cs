@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Playwright;
 using SMAd.Models;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 
 namespace SMAd.PageActions;
 
@@ -156,8 +156,8 @@ public sealed class PageActionExecutor
 
     public static async Task WaitReadyAsync(IPage page, CancellationToken token)
     {
-        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 5000 }).WaitAsync(token);
-        await page.Locator("body").WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 5000 }).WaitAsync(token);
+        await PlaywrightTaskWait.WithCancellation(page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 5000 }), token);
+        await PlaywrightTaskWait.WithCancellation(page.Locator("body").WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 5000 }), token);
         // The initial popup response may have no Request.Frame. Read the document's own navigation status once it is ready.
         var status = await page.EvaluateAsync<int>("() => performance.getEntriesByType('navigation')[0]?.responseStatus ?? 0")
             .WaitAsync(TimeSpan.FromSeconds(5), token);

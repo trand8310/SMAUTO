@@ -1255,7 +1255,7 @@ namespace MainClient
             }
         }
 
-        private async Task ConsumerAsync(int consumerId, JToken task, CancellationToken token)
+        private async Task ConsumerAsync(int consumerId, JToken task, CancellationToken token, IPlaywrightProvider playwrightProvider)
         {
             try
             {
@@ -1317,7 +1317,7 @@ namespace MainClient
                             pluginArgs,
                             consumerId,
                             uvIndex,
-                            consumerToken);
+                            consumerToken, playwrightProvider);
 
                         if (stopRemainingUv)
                             break;
@@ -1542,7 +1542,9 @@ namespace MainClient
                 }
                 catch (Exception ex)
                 {
-                    LogWriteLine($"IP异常,{ex.Message}");
+                    BrowserLifecycleLog.Write($"proxy-{ctx.TaskId}", "proxy.prepare_failed", "PrepareRemoteProxyAsync", "代理获取或预检查异常",
+                        new { taskId = ctx.TaskId, attempt = retry, error = ex.ToString() });
+                    LogWriteLine($"IP异常,{ex.GetType().Name}，详情见浏览器独立诊断日志");
 
                     if (ex.Message.Contains("没有满足您选择的条件IP"))
                         await Task.Delay(Random.Shared.Next(2000, 3000), token);
@@ -1603,7 +1605,7 @@ namespace MainClient
         /// </summary>
         /// <param name="ctx"></param>
         /// <param name="ipEntity"></param>
-        private void FillProxyServerFromEntity(ConsumerTaskContext ctx, dynamic ipEntity)
+        private void FillProxyServerFromEntity(ConsumerTaskContext ctx, IpEntity ipEntity)
         {
             if (ipEntity.format == IPFormat.JSON)
             {
@@ -1699,13 +1701,33 @@ namespace MainClient
         /// <returns></returns>
         private async Task<JToken?> GetDeviceForTaskAsync(OSType os, int taskId, int uvIndex, CancellationToken token)
         {
+            if (os is not (OSType.ANDROID or OSType.IOS))
+            {
+                _logger.LogWarning("仅支持手机设备，跳过非手机任务。taskId={TaskId}, os={Os}", taskId, os);
+                return null;
+            }
             for (int retry = 0; retry < 5; retry++)
             {
                 token.ThrowIfCancellationRequested();
 
-                var dev = await _adeHelper.GetDeviceAsync(os, 1);
-                if (dev != null)
-                    return dev;
+                var dev = await _adeHelper.GetDeviceAsync(os, 1, token);
+                if (dev == null) continue;
+                var original = dev.DeepClone();
+                try
+                {
+                    if (SMAd.DeviceValidation.TryPrepare(dev, (int)os, out var reason, out var repaired))
+                    {
+                        if (repaired) SMAd.DeviceValidation.LogDevice(taskId, uvIndex + 1, reason, original);
+                        return dev;
+                    }
+                    SMAd.DeviceValidation.LogDevice(taskId, uvIndex + 1, reason, original);
+                    _logger.LogWarning("设备被跳过: {Reason}; taskId={TaskId}, uv={Uv}, attempt={Attempt}", reason, taskId, uvIndex + 1, retry + 1);
+                }
+                catch (Exception ex)
+                {
+                    SMAd.DeviceValidation.LogDevice(taskId, uvIndex + 1, "设备校验异常: " + ex.GetType().Name, original);
+                    _logger.LogWarning(ex, "设备校验失败，尝试下一个设备。taskId={TaskId}, uv={Uv}", taskId, uvIndex + 1);
+                }
             }
 
             _logger.LogWarning(
@@ -1782,6 +1804,7 @@ namespace MainClient
             var args = new JObject
             {
                 ["task"] = task,
+                ["touchPosture"] = task["touchPosture"]?.DeepClone(),
                 ["dev"] = dev,
                 ["ipInfo"] = ctx.IpInfo,
                 ["isProxyMode"] = _appSettings.IsProxyMode,
@@ -1824,13 +1847,13 @@ namespace MainClient
         /// <param name="token"></param>
         /// <returns></returns>
         private async Task<bool> ExecuteSmAdOnceAsync(
-            ConsumerTaskContext ctx, JObject args, int consumerId, int uvIndex, CancellationToken token)
+            ConsumerTaskContext ctx, JObject args, int consumerId, int uvIndex, CancellationToken token, IPlaywrightProvider playwrightProvider)
         {
             var executionId = Guid.NewGuid().ToString("D");
             LogWriteLine(
                 $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
 
-            var result = await _smAdExecutor.ExecuteAsync(executionId, args, token, e => LogWriteLine(e));
+            var result = await _smAdExecutor.ExecuteAsync(executionId, args, token, e => LogWriteLine(e), playwrightProvider);
             if (result.ProxyFailure != null)
             {
                 LogWriteLine($"代理无法继续当前任务，停止剩余UV: type={result.ProxyFailure}, reason={result.FailureReason}");
@@ -1846,7 +1869,7 @@ namespace MainClient
             return ctx.TotalUV > 1 && result.PageTriggerClick && _appSettings.UVsTriggerOne;
         }
 
-        private void InitPipelineRunner()
+        private void InitPipelineRunner(PlaywrightProvider[] providers)
         {
             int capacity = _appSettings.TaskQueueCapacity > 0 ? _appSettings.TaskQueueCapacity
                 : (int)Math.Clamp((long)Math.Max(1, _appSettings.Multiple) * Math.Max(1, _appSettings.MaximumConcurrency), 1, int.MaxValue);
@@ -1855,7 +1878,7 @@ namespace MainClient
                 capacity,
                 consumerCount,
                 ProducerAsync,
-                ConsumerAsync
+                (id, task, token) => ConsumerAsync(id, task, token, providers[id])
             );
             _pipeline.ProgressChanged += _ =>
             {
@@ -1933,9 +1956,30 @@ namespace MainClient
             _browserRuntime.BeginRun(new(Math.Max(1, _appSettings.MaximumConcurrency), Math.Max(1, _appSettings.BrowserLaunchConcurrency)));
             Interlocked.Exchange(ref _resourcePauseLogged, 0);
             await _aggregator.StartAsync();
-            InitPipelineRunner();
+            var providers = Enumerable.Range(0, Math.Max(1, _appSettings.MaximumConcurrency))
+                .Select(_ => new PlaywrightProvider()).ToArray();
+            InitPipelineRunner(providers);
 
-            var runner = new UiTaskRunner(token => _pipeline!.RunAsync(token));
+            var runner = new UiTaskRunner(async token =>
+            {
+                try { await _pipeline!.RunAsync(token); }
+                finally
+                {
+                    try { await _browserRuntime.StopAsync(); }
+                    finally
+                    {
+                        // Disposal waits for outstanding leases, including quarantined sessions.
+                        // Do not block runner shutdown if process cleanup could not release one.
+                        foreach (var provider in providers)
+                        {
+                            var disposal = provider.DisposeAsync().AsTask();
+                            if (provider.ActiveLeases == 0) await disposal;
+                            else _ = disposal.ContinueWith(t => _logger.LogError(t.Exception, "Playwright provider disposal failed"),
+                                CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+                        }
+                    }
+                }
+            });
 
             ConfigureRunner(runner);
 

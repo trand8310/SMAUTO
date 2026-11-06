@@ -196,9 +196,9 @@ namespace MainClient.Common
 
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                throw new Exception(ex.Message);
+                throw;
                 //_logger.LogError($"GetIpUrl => {url},{ex.InnerException?.Message}");
             }
             finally

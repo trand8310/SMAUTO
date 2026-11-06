@@ -1,0 +1,36 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-68680ee427d54a008fc7fe9385a22faf, pid=17364, kernel=145.0.7632.110, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:Touch posture=RightHandOneHanded
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html;charset=utf-8, content-disposition=, location=
+神马搜索:ExecuteWorker: 10.19
+神马搜索:Touch Prepare: 197ms
+神马搜索:Touch MicroAdjust/Up (240,738)->(253,684) duration=168ms release=24px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=16
+神马搜索:Touch Reading/Up (298,693)->(371,440) duration=761ms release=82px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=48
+神马搜索:Touch Preview/Up (284,801)->(361,493) duration=296ms release=215px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=28
+神马搜索:Touch Fling/Up (275,766)->(333,531) duration=163ms release=2999px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=16
+神马搜索:Touch Reading/Up (193,819)->(269,551) duration=455ms release=77px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=31
+点击比率:0.00%
+神马搜索:Touch Reading/Up (294,779)->(343,598) duration=420ms release=22px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=33
+神马搜索:Touch Move target: Ready, 
+触发广告位:本地测试目标，点击进入落地页:(12,282.9565,386.08698,140.00003)
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Action Navigate: success=False, dispatched=True, 5418ms, Timeout 5000ms exceeded.
+=========================== logs ===========================
+  "NetworkIdle" event fired
+============================================================
+延时停留
+滑动操作
+神马搜索:Touch Reading/Up (245,674)->(284,477) duration=679ms release=80px/s
+Optional action skipped: Stay swipe, local timeout: The operation was canceled.
+停留滑动未完成，本轮剩余时间改为静态阅读
+动作完成
+神马搜索:ExecuteWorker:Complete
+Browser execution ending: executionId=full-flow-68680ee427d54a008fc7fe9385a22faf, stage=page visit, elapsed=59399ms, reason=Completed, detail=

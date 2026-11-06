@@ -3,7 +3,7 @@
 namespace QTP.Plugins
 {
     using Microsoft.Playwright;
-    using PlaywrightHumanInput;
+    using HumanTouchP3.Input;
     using System;
     using System.Collections.Concurrent;
     using System.Collections.Generic;

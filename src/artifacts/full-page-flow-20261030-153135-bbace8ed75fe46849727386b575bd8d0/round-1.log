@@ -1,0 +1,56 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-d7aaab3d333a49e48ccd277d60a5bab4, pid=12224, kernel=145.0.7632.110, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:Touch posture=RightHandOneHanded
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html;charset=utf-8, content-disposition=, location=
+神马搜索:ExecuteWorker: 8.69
+神马搜索:Touch Prepare: 172ms
+神马搜索:Touch MicroAdjust/Up (261,710)->(287,599) duration=209ms release=20px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=19
+神马搜索:Touch Reading/Up (187,712)->(241,464) duration=531ms release=35px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=49
+神马搜索:Touch BackReview/Down (310,452)->(214,778) duration=353ms release=10px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=34
+神马搜索:Touch Preview/Up (241,674)->(307,382) duration=271ms release=230px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=19
+神马搜索:Touch Preview/Up (326,786)->(386,481) duration=223ms release=73px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=19
+点击比率:0.00%
+神马搜索:Touch Reading/Up (170,761)->(216,586) duration=361ms release=15px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=24
+神马搜索:Touch Move target: Ready, 
+触发广告位:本地测试目标，点击进入落地页:(12,372.34784,386.08698,140)
+Display: screen=424x943, available=424x863, viewport=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Navigation ready: 642ms, observe=4813ms, url=https://b2b.baidu.com/m/aitf/list
+Navigation observation: planned=4813ms, actual=4822ms
+Action Navigate: success=True, dispatched=True, 5466ms, 
+神马搜索:ExecuteWorker:Clickthrough
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Down，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 当前可点候选=6，随机选择[4]，直接触屏点击
+Navigation ready: 289ms, observe=5535ms, url=https://detail.fixture.invalid/item?id=4
+Navigation observation: planned=5535ms, actual=5545ms
+Action Navigate: success=True, dispatched=True, 5834ms, 
+百度爱采购: 候选[4]点击结果=Navigated, 原因=
+神马搜索:Touch Reading/Up (188,774)->(248,554) duration=534ms release=59px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=45
+延时停留
+滑动操作
+神马搜索:Touch Prepare: 189ms
+神马搜索:Touch Reading/Up (222,690)->(281,478) duration=649ms release=22px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=49
+滑动操作
+神马搜索:Touch Reading/Up (223,753)->(257,578) duration=537ms release=6px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=36
+滑动操作
+神马搜索:Touch MicroAdjust/Up (253,768)->(279,679) duration=224ms release=34px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=18
+滑动操作
+神马搜索:Touch Reading/Up (177,746)->(241,520) duration=427ms release=16px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=30
+动作完成
+神马搜索:ExecuteWorker:Complete
+Browser execution ending: executionId=full-flow-d7aaab3d333a49e48ccd277d60a5bab4, stage=page visit, elapsed=71720ms, reason=Completed, detail=

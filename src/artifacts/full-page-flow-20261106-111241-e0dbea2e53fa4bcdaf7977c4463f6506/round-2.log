@@ -1,0 +1,27 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-d6d7bba52c0044468b515007f0a54732, pid=28952, kernel=125.0.6422.136, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:Touch posture=LeftHandOneHanded
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html;charset=utf-8, content-disposition=, location=
+神马搜索:ExecuteWorker: 11.42
+神马搜索:Touch Prepare: 231ms
+神马搜索:Touch Preview/Up (76,738)->(24,354) duration=344ms release=226px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=25
+神马搜索:Touch Reading/Up (69,813)->(30,564) duration=475ms release=45px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=30
+神马搜索:Touch Fling/Up (101,573)->(64,312) duration=166ms release=3085px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=16
+神马搜索:Touch MicroAdjust/Up (48,669)->(35,575) duration=135ms release=0px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=11
+神马搜索:Touch FastScan/Up (48,580)->(24,305) duration=164ms release=2635px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=15
+神马搜索:Touch Preview/Up (52,626)->(24,224) duration=304ms release=165px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=22
+神马搜索:Touch Preview/Up (89,617)->(45,345) duration=311ms release=124px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=27
+点击比率:0.00%
+神马搜索:Touch Reading/Up (31,607)->(24,345) duration=643ms release=33px/s
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=51
+神马搜索:ExecuteWorker:Canceled: Device control connection failed: Device CDP reader failed: The remote party closed the WebSocket connection without completing the close handshake.
+Browser execution ending: executionId=full-flow-d6d7bba52c0044468b515007f0a54732, stage=page visit, elapsed=36318ms, reason=CdpDisconnected, detail=Device control connection failed: Device CDP reader failed: The remote party closed the WebSocket connection without completing the close handshake.

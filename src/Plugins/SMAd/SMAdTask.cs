@@ -1,14 +1,17 @@
+using HumanTouchP3;
+using HumanTouchP3.Input;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
-using PlaywrightHumanInput;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Common.Models;
 using SMAd;
+using SMAd.DeviceEmulation;
 using SMAd.LandingPolicy;
 using SMAd.Models;
-using SMAd.DeviceEmulation;
 using SMAd.PlaywrightHumanInput;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace QTP.Plugins
 {
@@ -104,6 +107,10 @@ namespace QTP.Plugins
         private ChromiumSessionManager _processManager;
         private ChineseNameGenerator _nameGenerator;
         private readonly IPlaywrightProvider _playwrightProvider;
+        private IPlaywrightProvider? _executionPlaywrightProvider;
+
+        public void SetExecutionPlaywrightProvider(IPlaywrightProvider provider)
+            => _executionPlaywrightProvider = provider ?? throw new ArgumentNullException(nameof(provider));
         private BrowserRuntimeManager? _browserRuntime;
         private bool _ownsBrowserRuntime;
         public SMAdTask(
@@ -340,17 +347,16 @@ namespace QTP.Plugins
             var result = new List<string>();
             uint fingerprint = 0;
             var dev_hash = Math.Abs($"{taskArgs.SelectToken("dev")}".GetHashCode());
+            var ipinfo_hash = Math.Abs($"{taskArgs.SelectToken("ipinfo")}".GetHashCode());
 
-            if (taskArgs.SelectToken("dev.fingerprint") != null)
+            if (uint.TryParse(taskArgs.SelectToken("dev.fingerprint")?.ToString(), out var parsedFingerprint))
             {
-                fingerprint = taskArgs.SelectToken("dev.fingerprint").Value<uint>();
+                fingerprint = parsedFingerprint;
             }
             else
             {
                 fingerprint = CommonHelper.RandomNumber();
             }
-
-
 
             #region 指纹参数设置
 
@@ -390,16 +396,16 @@ namespace QTP.Plugins
              */
             #endregion
 
-            var gpu = taskArgs.SelectToken("dev.gpu").Value<string>();
-            var vendor = taskArgs.SelectToken("dev.vendor").Value<string>();
-            var useragent = taskArgs.SelectToken("dev.ua").Value<string>();
+            var renderer = taskArgs.SelectToken("dev.renderer")?.Value<string>() ?? taskArgs.SelectToken("dev.gpu")?.Value<string>();
+            var vendor = taskArgs.SelectToken("dev.vendor")?.Value<string>() ?? "";
+            var useragent = taskArgs.SelectToken("dev.ua")?.Value<string>() ?? "";
 
             var os = taskArgs.SelectToken("os").Value<int>();
 
             if (os == 2)
             {
                 result.Add("--platform=\"iOS\"");
-                result.Add("--screen-color-depth=32");
+                result.Add("--screen-color-depth=24");
             }
             else if (os == 7)
             {
@@ -410,32 +416,40 @@ namespace QTP.Plugins
                 result.Add("--platform=\"Android\"");
                 result.Add("--screen-color-depth=24");
             }
-            var make = taskArgs.SelectToken("dev.make")?.Value<string>().ToLower();
+            var make = taskArgs.SelectToken("dev.make")?.Value<string>()?.ToLowerInvariant() ?? "";
+            result.Add($"--make=\"{make}\"");
 
-            var full_version = taskArgs.SelectToken("dev.full_version").Value<string>();
+            var full_version = taskArgs.SelectToken("dev.full_version")?.Value<string>() ?? taskArgs.SelectToken("kernelVersion")?.Value<string>() ?? "";
             var full_version_values = full_version.Split(new string[] { "." }, StringSplitOptions.RemoveEmptyEntries);
-
-            result.Add($"--platform-version=\"{taskArgs.SelectToken("dev.osv").Value<string>()}\"");
             result.Add($"--full-version={full_version}");
-            var brand = "Google Chrome";
-            if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand")?.Value<string>()))
+            if (full_version.EndsWith(".0.0.0"))
             {
-                brand = taskArgs.SelectToken("dev.brand")?.Value<string>();
-                if (!string.IsNullOrWhiteSpace(make))
-                {
-                    result.Add($"--make=\"{make}\"");
-                }
+                result.Add($"--disable-full-version");
+            }
+
+            var platform_version = taskArgs.SelectToken("dev.osv")?.Value<string>() ?? "";
+            if (Regex.IsMatch(platform_version, @"^\d+(\.\d+)*$"))
+            {
+                result.Add($"--platform-version=\"{platform_version}\"");
+            }
+            else
+            {
+                result.Add($"--platform-version=\"\"");
+            }
+            var brand = taskArgs.SelectToken("dev.brand")?.Value<string>() ?? "";
+            if (!string.IsNullOrWhiteSpace(brand))
+            {
                 result.Add($"--brand=\"{brand}\"");
-                result.Add($"--brand-name=\"{brand}\"");
-                if ((make ?? "default").GetHashCode() % 2 == 0)
+
+                if (make == "xiaomi" || make == "oppo" || make == "vivo" || make == "honor" || make == "samsung")
+                {
+
+                }
+                else
                 {
                     result.Add($"--disable-full-version-list");
                     result.Add($"--disable-brand-version-list");
-                }
-                if (make == "xiaomi")
-                {
-                    if (!string.IsNullOrWhiteSpace(taskArgs.SelectToken("dev.brand_version")?.Value<string>()))
-                        result.Add($"--brand-version=\"{taskArgs.SelectToken("dev.brand_version")?.Value<string>()}\"");
+                    result.Add($"--disable-chrome-runtime");
                 }
 
                 if (os == 1 || os == 2)
@@ -451,7 +465,9 @@ namespace QTP.Plugins
             }
             else
             {
-                result.Add($"--brand=\"{brand}\"");
+                result.Add($"--disable-full-version-list");
+                result.Add($"--disable-brand-version-list");
+                result.Add($"--disable-chrome-runtime");
             }
 
 
@@ -464,9 +480,8 @@ namespace QTP.Plugins
             result.Add($"--ssl-grease-cipher={grease_cipher}");
             if (os == 1 || os == 2)
             {
-                result.Add($"--netinfo-type={new string[] { "wifi", "4g" }[CommonHelper.RandomRange(0, 2)]}");
-                result.Add($"--netinfo-effective=4g");
-                result.Add($"--netinfo-rtt={CommonHelper.RandomRange(100, 300)}");
+                //--netinfo = 4g,cellular,200,1.7
+                result.Add($"--netinfo=\"4g,{new[] { "wifi", "cellular" }[CommonHelper.RandomRange(0, 2)]},{CommonHelper.RandomRange(100, 300)},{CommonHelper.RandomRange(170, 200) / 100.0,2}\"");
             }
 
             result.Add($"--force-webrtc-ip-handling-policy");
@@ -488,17 +503,17 @@ namespace QTP.Plugins
             if (dev_hash % 2 == 0)
             {
                 result.Add($"--webgl-vendor=\"Google Inc. ({vendor})\"");
-                result.Add($"--webgl-renderer=\"ANGLE ({vendor}, {gpu}, OpenGL ES 3.2)\"");
+                result.Add($"--webgl-renderer=\"ANGLE ({vendor}, {renderer}, OpenGL ES 3.2)\"");
             }
             else
             {
                 result.Add($"--webgl-vendor=\"{vendor}\"");
-                result.Add($"--webgl-renderer=\"{gpu}\"");
+                result.Add($"--webgl-renderer=\"{renderer}\"");
             }
 
             #endregion
 
-            if (dev_hash % 2 == 0)
+            if (ipinfo_hash % 2 == 0)
             {
                 result.Add($"--geolocation-permission=allow");
             }
@@ -508,10 +523,13 @@ namespace QTP.Plugins
             }
 
 
-            result.Add($"--hardware-concurrency={(taskArgs.SelectToken("dev.cpu")?.Value<int>() ?? 8)}");
+            var cpuText = taskArgs.SelectToken("dev.cpu")?.ToString();
+            var cpu = int.TryParse(cpuText, out var parsedCpu) && parsedCpu > 0 ? parsedCpu : 8;
+            result.Add($"--hardware-concurrency={cpu}");
 
-            var ram = taskArgs.SelectToken("dev.ram").Value<string>().Split(',', StringSplitOptions.RemoveEmptyEntries);
-            int deviceMemory = Convert.ToInt32(ram[CommonHelper.RandomRange(0, ram.Length)].Trim());
+            var ram = (taskArgs.SelectToken("dev.ram")?.ToString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var validRam = ram.Select(x => int.TryParse(x, out var value) ? value : 0).Where(x => x > 0).ToArray();
+            int deviceMemory = validRam.Length == 0 ? 8 : validRam[CommonHelper.RandomRange(0, validRam.Length)];
             if (deviceMemory < 4) deviceMemory = 4;
             result.Add($"--device-memory={(deviceMemory > 8 ? 8 : deviceMemory)}");
             var js_memory_info = new string[] { "10000000|10000000|1136000000", "29400000|31200000|1130000000", "10000000|10000000|1136000000", "29400000|31200000|1130000000", "29400000|31200000|1130000000" };
@@ -525,15 +543,15 @@ namespace QTP.Plugins
             //268435456
             //2147483648
             //69250036530
-            var storage = taskArgs.SelectToken("dev.storage").Value<long>() * 1024 * 1024 * 1024;
-            var usage_storage = (long)Math.Ceiling(storage * (CommonHelper.RandomRange(30, 80) * 0.01));
+            var storageText = taskArgs.SelectToken("dev.storage")?.ToString();
+            var storageGb = long.TryParse(storageText, out var parsedStorage) && parsedStorage > 0 && parsedStorage <= long.MaxValue / (1024L * 1024 * 1024) ? parsedStorage : 128;
+            var storage = storageGb * 1024L * 1024 * 1024;
+            var usage_storage = (long)Math.Ceiling(storage * (CommonHelper.RandomRange(20, 90) * 0.01));
 
 
             result.Add($"--storage-quota=\"0|{(storage - usage_storage)}\"");
 
-            result.Add("--enable-rects-noise");
             result.Add("--enable-canvas-noise");
-            result.Add("--enable-text-noise");
             result.Add("--enable-audio-noise");
             if (dev_hash % 2 == 0)
             {
@@ -541,25 +559,91 @@ namespace QTP.Plugins
             }
             if (os == 1 || os == 2)
             {
-                int level = CommonHelper.RandomRange(10, 101);
                 if (new bool[] { false, false, true, false, false, true, false, false, true, false }[CommonHelper.RandomRange(0, 10)])
                 {
-                    result.Add($"--enable-battery-charging=1");
-                    result.Add($"--battery-level={Convert.ToDecimal((level * 0.01).ToString("f2"))}");
-                    result.Add($"--battery-charging-time=0");
-                    result.Add($"--battery-discharging-time=0");
+                    result.Add(GenerateChargingBatteryArgument());
                 }
                 else
                 {
-                    result.Add($"--enable-battery-charging=0");
-                    result.Add($"--battery-level={Convert.ToDecimal((level * 0.01).ToString("f2"))}");
-                    result.Add($"--battery-charging-time=0");
-                    result.Add($"--battery-discharging-time=0");
+                    result.Add(GenerateBatteryArgument());
                 }
             }
 
             return result;
         }
+
+
+        public static string GenerateChargingBatteryArgument()
+        {
+            // 电池电量：25% ~ 95%
+            int percent = CommonHelper.RandomRange(25, 96);
+
+            // 模拟充电速度：从 0% 到 80% 需要 30~90 分钟
+            int fastChargeSeconds = CommonHelper.RandomRange(1800, 5401);
+
+            // 模拟后 20% 的充电时间：20~60 分钟
+            int slowChargeSeconds = CommonHelper.RandomRange(1200, 3601);
+
+            double remainingSeconds;
+
+            if (percent < 80)
+            {
+                remainingSeconds =
+                    (80 - percent) / 80.0 * fastChargeSeconds
+                    + slowChargeSeconds;
+            }
+            else
+            {
+                remainingSeconds =
+                    (100 - percent) / 20.0 * slowChargeSeconds;
+            }
+
+            // 以 15 分钟为粒度取整
+            int chargingTime = Math.Max(
+                900,
+                (int)Math.Round(remainingSeconds / 900.0) * 900
+            );
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "--battery=1,{0},Infinity,{1:0.00}",
+                chargingTime,
+                percent / 100.0
+            );
+        }
+        public static string GenerateBatteryArgument()
+        {
+            // 当前电量：25% ~ 95%
+            int batteryPercent = CommonHelper.RandomRange(25, 96);
+
+            // 假设满电续航：4 ~ 12 小时
+            int fullBatterySeconds = CommonHelper.RandomRange(
+                4 * 3600,
+                12 * 3600 + 1
+            );
+
+            // 根据剩余电量估计放电时间
+            int remainingSeconds = (int)Math.Round(
+                fullBatterySeconds * batteryPercent / 100.0
+            );
+
+            // 按15分钟粒度取整
+            remainingSeconds = Math.Max(
+                900,
+                (int)Math.Round(remainingSeconds / 900.0) * 900
+            );
+
+            double level = batteryPercent / 100.0;
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "--battery=0,Infinity,{0},{1:0.00}",
+                remainingSeconds,
+                level
+            );
+        }
+
+
 
         private static int ParseSleepMilliseconds(JToken taskArgs, int defaultMinMs = 8000, int defaultMaxMs = 15000)
         {
@@ -616,9 +700,13 @@ namespace QTP.Plugins
                 canceled ? WorkerExecutionStatus.Canceled
                     : success ? WorkerExecutionStatus.Succeeded : WorkerExecutionStatus.Failed,
                 ctx?.PageTriggerClick == true || ctx?.CompletedClickPvs > 0, ctx?.PageAdsCount ?? 0, reason)
-            { CompletedPvs = ctx?.CompletedPvs ?? 0, ActionLogPath = ctx?.ActionLogPath,
-                ClickRequested = ctx?.ClickRequested ?? false, CompletedClickPvs = ctx?.CompletedClickPvs ?? 0,
-                ProxyFailure = ctx?.ProxyFailure };
+            {
+                CompletedPvs = ctx?.CompletedPvs ?? 0,
+                ActionLogPath = ctx?.ActionLogPath,
+                ClickRequested = ctx?.ClickRequested ?? false,
+                CompletedClickPvs = ctx?.CompletedClickPvs ?? 0,
+                ProxyFailure = ctx?.ProxyFailure
+            };
         }
 
         private BrowserReclaimResult? _lastBrowserReclaim;
@@ -635,9 +723,17 @@ namespace QTP.Plugins
                 FailureReason = _lastBrowserReclaim?.ExitConfirmed == false ? result.FailureReason ?? "Browser process exit not confirmed" : result.FailureReason
             };
             BrowserLifecycleLog.Write(uniqueId, "worker.result", "SMAdTask.ExecuteWorkerWithResultAsync", "执行已结束，记录最终业务结果与关闭原因",
-                new { status = finalResult.Status.ToString(), finalResult.FailureReason, finalResult.CompletedPvs, finalResult.CompletedClickPvs,
-                    finalResult.ClickRequested, reason = finalResult.BrowserStopKind?.ToString(), finalResult.ActionLogPath,
-                    exitConfirmed = finalResult.BrowserReclaim?.ExitConfirmed });
+                new
+                {
+                    status = finalResult.Status.ToString(),
+                    finalResult.FailureReason,
+                    finalResult.CompletedPvs,
+                    finalResult.CompletedClickPvs,
+                    finalResult.ClickRequested,
+                    reason = finalResult.BrowserStopKind?.ToString(),
+                    finalResult.ActionLogPath,
+                    exitConfirmed = finalResult.BrowserReclaim?.ExitConfirmed
+                });
             return finalResult;
         }
         private async Task<WorkerExecutionResult> ExecuteWorkerCoreAsync(string uniqueId, JObject taskArgs, CancellationToken token)
@@ -648,8 +744,13 @@ namespace QTP.Plugins
             var stage = "configuration";
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             BrowserLifecycleLog.Write(uniqueId, "worker.begin", "SMAdTask.ExecuteWorkerCoreAsync", "开始本次独立执行",
-                new { taskId = taskArgs.SelectToken("task.id")?.ToString(), kernel = taskArgs.SelectToken("kernelVersion")?.ToString(),
-                    headless = taskArgs.SelectToken("isHiddenMode")?.ToString(), proxy = taskArgs.SelectToken("isProxyMode")?.ToString() });
+                new
+                {
+                    taskId = taskArgs.SelectToken("task.id")?.ToString(),
+                    kernel = taskArgs.SelectToken("kernelVersion")?.ToString(),
+                    headless = taskArgs.SelectToken("isHiddenMode")?.ToString(),
+                    proxy = taskArgs.SelectToken("isProxyMode")?.ToString()
+                });
 
             try
             {
@@ -664,6 +765,7 @@ namespace QTP.Plugins
                         new AiStudyLandingPageStrategy(this),
                         new AliLandingPageStrategy(this),
                         new BaiduB2BLandingPageStrategy(this),
+                        new BaiduSJHLandingPageStrategy(this),
                         new DefaultLandingPageStrategy(this),
                     })
                 };
@@ -778,6 +880,8 @@ namespace QTP.Plugins
             catch (PlaywrightException ex)
             {
                 RecordExecutionException(uniqueId, ctx, stage, ex, token.IsCancellationRequested);
+                if (!token.IsCancellationRequested && ctx?.BrowserSession is { } failedSession)
+                    await failedSession.CheckDriverAfterFailureAsync().ConfigureAwait(false);
                 if (ctx != null && BrowserFailureClassifier.Classify(ex) == BrowserStopKind.OperationTimedOut)
                     ctx.BrowserFailureKind = BrowserStopKind.OperationTimedOut;
                 if (ctx != null)
@@ -801,6 +905,8 @@ namespace QTP.Plugins
             catch (Exception ex)
             {
                 RecordExecutionException(uniqueId, ctx, stage, ex, token.IsCancellationRequested);
+                if (stage == "configuration" || (stage == "browser launch and CDP connection" && ex is InvalidCastException or FormatException or ArgumentException))
+                    DeviceValidation.LogDevice(ctx?.Config.TaskId ?? 0, 0, $"设备或启动参数异常: {ex.GetType().Name}", taskArgs["dev"], uniqueId);
                 if (ctx != null && ex is BrowserFailureException failure) ctx.BrowserFailureKind = failure.Kind;
                 if (ctx != null && BrowserFailureClassifier.Classify(ex) == BrowserStopKind.OperationTimedOut)
                     ctx.BrowserFailureKind = BrowserStopKind.OperationTimedOut;
@@ -832,11 +938,22 @@ namespace QTP.Plugins
                 LogWriteLine($"Browser execution ending: executionId={uniqueId}, stage={stage}, elapsed={executionClock.ElapsedMilliseconds}ms, " +
                     $"reason={ctx?.BrowserSession?.StopKind ?? endKind}, detail={ctx?.LastFailureReason ?? _lastBrowserFailure?.ToString()}");
                 BrowserLifecycleLog.Write(uniqueId, "worker.ending", "SMAdTask.ExecuteWorkerCoreAsync.finally", BrowserLifecycleLog.Explain(ctx?.BrowserSession?.StopKind ?? endKind),
-                    new { stage = ctx?.LifecycleStage ?? stage, elapsedMs = executionClock.ElapsedMilliseconds,
-                        reason = (ctx?.BrowserSession?.StopKind ?? endKind).ToString(), detail = ctx?.BrowserSession?.StopReason ?? ctx?.LastFailureReason ?? _lastBrowserFailure?.ToString(),
-                        flowSucceeded, callerCanceled = token.IsCancellationRequested, executionCanceled = linkedCts.IsCancellationRequested,
-                        leaseCanceled = ctx?.BrowserSession?.Token.IsCancellationRequested, pv = ctx?.PvIndex, url = ctx?.Page?.Url,
-                        ctx?.CompletedPvs, ctx?.CompletedClickPvs, process = BrowserLifecycleLog.Snapshot(ctx?.BrowserSession?.ProcessSession) });
+                    new
+                    {
+                        stage = ctx?.LifecycleStage ?? stage,
+                        elapsedMs = executionClock.ElapsedMilliseconds,
+                        reason = (ctx?.BrowserSession?.StopKind ?? endKind).ToString(),
+                        detail = ctx?.BrowserSession?.StopReason ?? ctx?.LastFailureReason ?? _lastBrowserFailure?.ToString(),
+                        flowSucceeded,
+                        callerCanceled = token.IsCancellationRequested,
+                        executionCanceled = linkedCts.IsCancellationRequested,
+                        leaseCanceled = ctx?.BrowserSession?.Token.IsCancellationRequested,
+                        pv = ctx?.PvIndex,
+                        url = ctx?.Page?.Url,
+                        ctx?.CompletedPvs,
+                        ctx?.CompletedClickPvs,
+                        process = BrowserLifecycleLog.Snapshot(ctx?.BrowserSession?.ProcessSession)
+                    });
                 ctx?.BrowserSession?.RequestStop(endKind, ctx.LastFailureReason ?? (flowSucceeded ? "Page flow completed" : "Page flow did not complete"), "SMAdTask.finally");
                 try
                 {
@@ -869,8 +986,16 @@ namespace QTP.Plugins
 
         private static void RecordExecutionException(string id, WorkerRunContext? ctx, string stage, Exception error, bool callerCanceled)
             => BrowserLifecycleLog.Write(id, "worker.exception", "SMAdTask.ExecuteWorkerCoreAsync", "执行异常；保留原始异常和取消来源",
-                new { stage = ctx?.LifecycleStage ?? stage, callerCanceled, leaseReason = ctx?.BrowserSession?.StopKind?.ToString(),
-                    ctx?.LastFailureReason, error = error.ToString(), pv = ctx?.PvIndex, url = ctx?.Page?.Url });
+                new
+                {
+                    stage = ctx?.LifecycleStage ?? stage,
+                    callerCanceled,
+                    leaseReason = ctx?.BrowserSession?.StopKind?.ToString(),
+                    ctx?.LastFailureReason,
+                    error = error.ToString(),
+                    pv = ctx?.PvIndex,
+                    url = ctx?.Page?.Url
+                });
 
         private async Task<bool> RunMainFlowAsync(WorkerRunContext ctx, CancellationToken token)
         {
@@ -885,9 +1010,12 @@ namespace QTP.Plugins
             var device = ctx.Config.TaskArgs["dev"] as JObject
                 ?? throw new ArgumentException("任务参数缺少 dev 设备对象");
             int accountSeed = StableSeed.Create(device);
-            var user = HumanUserProfile.CreateRandom(
-            seed: accountSeed,
-            handedness: HumanHandedness.Right);
+            var postureToken = ctx.Config.TaskArgs["touchPosture"];
+            var postureText = postureToken?.Type == JTokenType.String ? postureToken.Value<string>() : null;
+            var posture = SMAd.TouchPostureSelector.Resolve(postureText);
+            var handedness = posture == HandPosture.LeftHandOneHanded ? HumanHandedness.Left : HumanHandedness.Right;
+            var user = PostureProfiles.Apply(posture, HumanUserProfile.CreateRandom(accountSeed, handedness));
+            LogWriteLine($"{Title}:Touch posture={posture}");
             // 2) 不指定 sessionSeed：每次启动都会生成新的会话随机序列。
             //    因此长期画像一致，但不会重启后重复同一套轨迹。
             var session = new HumanTouchSession(
@@ -908,6 +1036,11 @@ namespace QTP.Plugins
 
 
             ctx.human.Engine.IsActivePage = p => ReferenceEquals(ctx.Page, p);
+            ctx.human.Engine.IsActiveBinding = (p, cdp) =>
+            {
+                var active = ctx.ActivePage;
+                return active != null && ReferenceEquals(active.Page, p) && ReferenceEquals(active.Session, cdp);
+            };
             ctx.human.Engine.InputExecuted += input => ctx.RecordAction(new(
                 DateTimeOffset.UtcNow, input.Kind, input.Page.Url, input.Page.Url, true,
                 input.EffectVerified, input.DurationMs,
@@ -917,7 +1050,7 @@ namespace QTP.Plugins
                 var cdp = await ctx.CdpManager!.GetOrCreateSessionAsync(page);
                 SmAdTouch.Bind(page, cdp, token, ctx.human);
             }
- 
+
 
 
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
@@ -978,7 +1111,7 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://pixelscan.net/fingerprint-check";
                     //entry.FirstPageUrl = "https://so.m.sm.cn/s?q=%E9%B1%BF%E9%B1%BC%E6%B8%B8%E6%88%8F&from=751111&safe=1&by=suggest&snum=6";
-                    entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs";
+                    entry.FirstPageUrl = "https://sjh.baidu.com/site/wjzv/80cafc4f-5d44-4757-950c-6a71f363318a?q=%E7%B2%BE%E7%A5%9E%E7%A7%91&pm_key=154396464&multi_key=5_211663238_70005&page_scene=323&bword=%E9%9D%92%E6%98%A5%E6%9C%9F%E5%BF%83%E7%90%86%E9%97%AE%E9%A2%98&intent=%E5%A4%8D%E5%88%B6-3&adGroupId=125014746&campaignId=1569975097&planname=20260630_%E7%A5%9E%E9%A9%AC_ocpc_%E7%B2%BE%E7%A5%9E%E7%A7%91_wise&kid=-1&ip=117.189.11.92&clickid=10098600845577734617&uctrackid=czoxMzA3MDI4MzI3MjExNjgyNzY2MjtjOjExNjIzOTI3MzMyO2Q6ZG1wXy01MjI4NzQwNDg3MjA1MzIyOTU7cDp3bA%3D%3D&flowfrom=shenma&wid=129ebaad3c0f4ea4bc4fdb2712557817_0_0";
                 }
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1169,14 +1302,21 @@ namespace QTP.Plugins
             var os = taskArgs.SelectToken("os")!.Value<int>();
             var make = taskArgs.SelectToken("dev.make")?.Value<string>() ?? "default";
             var model = taskArgs.SelectToken("dev.model")?.Value<string>() ?? "default";
-            var sw1 = taskArgs.SelectToken("dev.sw")?.Value<int>() ?? 1080;
-            var sh1 = taskArgs.SelectToken("dev.sh")?.Value<int>() ?? 1920;
+            var sw1 = taskArgs.SelectToken("dev.sw")?.Value<int?>() ?? 1080;
+            var sh1 = taskArgs.SelectToken("dev.sh")?.Value<int?>() ?? 1920;
             float deviceScale = 1.0f;
             int sw = 0;
             int sh = 0;
             if (os == 1 || os == 2)
             {
+                var ratio = taskArgs.SelectToken("dev.ratio")?.Value<float?>() ?? 0.0f;
                 var profileResult = AndroidViewportMatcher.Match(sw1, sh1, make, model);
+                if (ratio > 0)
+                {
+                    profileResult.DeviceScaleFactor = ratio;
+                    profileResult.CssWidth = (int)(sw1 / ratio);
+                    profileResult.CssHeight = (int)(sh1 / ratio);
+                }
                 deviceScale = profileResult.DeviceScaleFactor;
                 sw = profileResult.CssWidth;
                 sh = profileResult.CssHeight;
@@ -1192,7 +1332,7 @@ namespace QTP.Plugins
 
 
 
-            var explicitDpr = taskArgs.SelectToken("dev.dpr")?.Value<float>();
+            var explicitDpr = taskArgs.SelectToken("dev.dpr")?.Value<float?>();
             if (explicitDpr.HasValue)
             {
                 if (!float.IsFinite(explicitDpr.Value) || explicitDpr.Value <= 0)
@@ -1201,8 +1341,8 @@ namespace QTP.Plugins
                 sw = checked((int)Math.Round(sw1 / (double)deviceScale, MidpointRounding.AwayFromZero));
                 sh = checked((int)Math.Round(sh1 / (double)deviceScale, MidpointRounding.AwayFromZero));
             }
-            sw = taskArgs.SelectToken("dev.cssWidth")?.Value<int>() ?? sw;
-            sh = taskArgs.SelectToken("dev.cssHeight")?.Value<int>() ?? sh;
+            sw = taskArgs.SelectToken("dev.cssWidth")?.Value<int?>() ?? sw;
+            sh = taskArgs.SelectToken("dev.cssHeight")?.Value<int?>() ?? sh;
 
             var maxTouchPoints = os == 1 || os == 2 ? CommonHelper.RandomRange(5, 6) : 0;
 
@@ -1296,7 +1436,7 @@ namespace QTP.Plugins
             {
                 lease = await _browserRuntime.AcquireAsync(new(ctx.Config.UniqueId, chromePath, ctx.Config.UserDataDir,
                     TimeSpan.FromSeconds(_appSettings.IpTtl), $"about:blank {string.Join(" ", args)}", proxyServer,
-                    TimeSpan.FromSeconds(15)), token);
+                    TimeSpan.FromSeconds(15)), _executionPlaywrightProvider ?? _playwrightProvider, token);
             }
             catch (Exception ex) { _lastBrowserFailure = BrowserFailureClassifier.Classify(ex); throw; }
             ctx.BrowserSession = lease;
@@ -1374,7 +1514,7 @@ namespace QTP.Plugins
                 "--disable-search-engine-choice-screen",
                 "--edge-skip-compat-layer-relaunch",
                 "--disable-infobars",
-                "--disable-sync",
+                //"--disable-sync",
                 "--disable-blink-features=AutomationControlled",
                 "--enable-logging=stderr",
                 "--log-level=1",
@@ -1392,12 +1532,13 @@ namespace QTP.Plugins
                 $"--user-agent=\"{config.UserAgent}\"",
                 $"--window-position=0,0",
                 $"--window-size={display.WindowWidth},{display.WindowHeight}",
+                "--force-device-scale-factor=1",
                 $"--device-pixel-ratio={display.DprArgument}",
                 $"--screen-size={display.ScreenWidth},{display.ScreenHeight}",
                 $"--screen-avail-size={display.AvailableWidth},{display.AvailableHeight}",
                 $"--screen-color-depth=24",
             }).Distinct().ToList();
-            
+
 
             if (config.Os == 1 || config.Os == 2)
             {
@@ -1593,9 +1734,20 @@ namespace QTP.Plugins
             var display = ctx.Config.DisplayProfile ??= DeviceDisplayProfile.From(ctx.Config);
             var actualWindow = await DevicePageDisplay.ApplyAsync(cdpSession, display, token);
             BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.device_ready", "SMAdTask.InitPageCoreAsync", "原生显示验证及窗口设置完成",
-                new { stage = ctx.LifecycleStage, url = page.Url, display.ScreenWidth, display.ScreenHeight,
-                    display.AvailableWidth, display.AvailableHeight, display.ViewportWidth, display.ViewportHeight, dpr = display.DprArgument, actualWindow });
-            LogWriteLine($"Display: screen={display.ScreenWidth}x{display.ScreenHeight}, available={display.AvailableWidth}x{display.AvailableHeight}, viewport={display.ViewportWidth}x{display.ViewportHeight}, DPR={display.DprArgument}, window(DIP)={actualWindow}");
+                new
+                {
+                    stage = ctx.LifecycleStage,
+                    url = page.Url,
+                    display.ScreenWidth,
+                    display.ScreenHeight,
+                    display.AvailableWidth,
+                    display.AvailableHeight,
+                    display.ViewportWidth,
+                    display.ViewportHeight,
+                    dpr = display.DprArgument,
+                    actualWindow
+                });
+            LogWriteLine($"Display: screen={display.ScreenWidth}x{display.ScreenHeight}, available={display.AvailableWidth}x{display.AvailableHeight}, viewportTarget={display.ViewportWidth}x{display.ViewportHeight}, DPR={display.DprArgument}, window(DIP)={actualWindow}");
             await cdpSession.SendAsync("Page.enable").WaitAsync(TimeSpan.FromSeconds(5), token);
 
             await CdpTouchRuntime.InitializeAsync(page, cdpSession, ctx.Config.MaxTouchPoints, token);
@@ -2166,13 +2318,14 @@ namespace QTP.Plugins
                 }
 
                 int score = 0;
-                if (dataUrl.Contains("baidu.com")) score = 50;
-                else if (dataUrl.Contains("jd.com")) score = 60;
-                else if (dataUrl.Contains("qq.com")) score = 70;
-                else if (dataUrl.Contains("pinduoduo.com")) score = 80;
-                else if (dataUrl.Contains("1688.com")) score = 800;
-                else if (dataUrl.Contains("taobao.com")) score = 900;
 
+                if (dataUrl.Contains("jd.com")) score = 50;
+                else if (dataUrl.Contains("qq.com")) score = 60;
+                else if (dataUrl.Contains("sjh.baidu.com")) score = 70;
+                else if (dataUrl.Contains("baidu.com")) score = 80;
+                else if (dataUrl.Contains("1688.com")) score = 300;
+                else if (dataUrl.Contains("taobao.com")) score = 400;
+                else if (dataUrl.Contains("pinduoduo.com")) score = 500;
 
 
 
@@ -2412,12 +2565,14 @@ namespace QTP.Plugins
                     LogWriteLine("滑动操作");
                     using var remaining = CancellationTokenSource.CreateLinkedTokenSource(token);
                     remaining.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(1, ctx.Config.SleepMs - stay.ElapsedMilliseconds)));
-                    canSwipe = await TryOptionalPageOperationAsync(ctx, "Stay swipe", () =>
-                        ctx.human.BrowseOnceAsync(ctx.Page!, ctx.CdpSession!, remaining.Token), token);
+                    HumanSwipeTrace? detailTrace = null;
+                    var operationOk = await TryOptionalPageOperationAsync(ctx, "Stay swipe", async () =>
+                        detailTrace = await ctx.human.BrowseDetailOnceAsync(ctx.Page!, ctx.CdpSession!, remaining.Token), token);
+                    canSwipe = operationOk && detailTrace?.ScrollChanged == true;
                     if (!canSwipe) LogWriteLine("停留滑动未完成，本轮剩余时间改为静态阅读");
                 }
                 if (stay.ElapsedMilliseconds >= ctx.Config.SleepMs) break;
-                await Task.Delay((int)Math.Min(1500, Math.Max(0, ctx.Config.SleepMs - stay.ElapsedMilliseconds)), token);
+                await Task.Delay((int)Math.Min(Random.Shared.Next(1600, 2401), Math.Max(0, ctx.Config.SleepMs - stay.ElapsedMilliseconds)), token);
                 if (ctx.TriggerDownloadSign > 0) return FlowControl.EndTask;
             }
 
@@ -2954,19 +3109,8 @@ namespace QTP.Plugins
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
             LogWriteLine("huadong");
-            //await Task.Delay(2000, token);
-            ////var traces =  await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 3, maxTimes: 5);
-
-            //// HumanSwipeGifExporter.ExportAll(
-            //// traces,
-            //// @"./traces");
-
-            //await ctx.Page!.ScreenshotAsync(new PageScreenshotOptions
-            //{
-            //    Path = "screenshot.png",
-            //    FullPage = false
-            //});
-            //LogWriteLine("jieping");
+            await Task.Delay(5000);
+            await HandleLandingPageAsync(ctx, token);
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 
         }

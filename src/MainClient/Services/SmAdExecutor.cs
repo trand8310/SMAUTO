@@ -30,7 +30,7 @@ public sealed class SmAdExecutor
 
     public async Task<WorkerExecutionResult> ExecuteAsync(
         string executionId, JObject args, CancellationToken token,
-        Action<PluginLogEventArgs>? onLog = null)
+        Action<PluginLogEventArgs>? onLog = null, IPlaywrightProvider? playwrightProvider = null)
     {
         if (token.IsCancellationRequested)
             return new WorkerExecutionResult(WorkerExecutionStatus.Canceled, FailureReason: "任务已取消");
@@ -46,7 +46,9 @@ public sealed class SmAdExecutor
         try
         {
             token.ThrowIfCancellationRequested();
-            service = _createTask();
+            var task = _createTask();
+            if (playwrightProvider != null) task.SetExecutionPlaywrightProvider(playwrightProvider);
+            service = task;
             service.OnLogEventHandler += logHandler;
             service.OnStateChangedEventHandler += stateHandler;
             service.OnTaskAdWordEventHandler += adWordHandler;

@@ -2,7 +2,9 @@ using System.Reflection;
 using MainClient.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json.Linq;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
+using HumanTouchP3;
+using SMAd;
 using QTP;
 using QTP.Common;
 using QTP.Common.Infrastructure;
@@ -27,6 +29,40 @@ Check(StableSeed.Create(dev) != StableSeed.Create(other), "不同设备身份区
 var normalized = (JObject)dev.DeepClone();
 normalized["make"] = " SAMSUNG ";
 Check(StableSeed.Create(dev) == StableSeed.Create(normalized), "设备字段规范化");
+
+var phone = JObject.Parse("{ua:'Mozilla Android Mobile',sw:1080,sh:2400,ratio:3,cpu:null,ram:null,storage:null}");
+Check(DeviceValidation.TryPrepare(phone, 1, out _, out var repaired) && repaired &&
+      (int)phone["cpu"]! == 8 && (string)phone["ram"]! == "8" && (int)phone["storage"]! == 128,
+      "手机设备缺失字段采用 CPU 8、内存 8 和存储 128");
+phone["cpu"] = 0; phone["storage"] = 0;
+Check(DeviceValidation.TryPrepare(phone, 1, out _, out _) && (int)phone["cpu"]! == 8 && (int)phone["storage"]! == 128,
+      "零值设备字段使用默认值");
+var tablet = (JObject)phone.DeepClone(); tablet["cssWidth"] = 858; tablet["cssHeight"] = 938;
+Check(!DeviceValidation.TryPrepare(tablet, 1, out _, out _), "平板尺寸设备被拒绝");
+var ipad = (JObject)phone.DeepClone(); ipad["ua"] = "Mozilla iPad";
+Check(!DeviceValidation.TryPrepare(ipad, 2, out _, out _) && !DeviceValidation.TryPrepare(phone, 7, out _, out _), "平板标识及 PC 被拒绝");
+var invalidScreen = (JObject)phone.DeepClone(); invalidScreen["sw"] = 0;
+Check(!DeviceValidation.TryPrepare(invalidScreen, 1, out _, out _), "无效屏幕数据被拒绝而不使用伪造屏幕");
+var invalidDpr = (JObject)phone.DeepClone(); invalidDpr["dpr"] = 0;
+Check(!DeviceValidation.TryPrepare(invalidDpr, 1, out _, out _), "无效 DPR 被拒绝");
+var loggedDevice = (JObject)phone.DeepClone(); loggedDevice["password"] = "device-test-secret";
+DeviceValidation.LogDevice(-998, 1, "device-test", loggedDevice);
+var logEntry = File.ReadLines(BrowserLifecycleLog.CurrentFilePath).Last(x => x.Contains("device-test"));
+Check(logEntry.Contains("\"device\"") && logEntry.Contains("\"sw\"") && !logEntry.Contains("device-test-secret"),
+    "设备诊断记录字段并隐藏凭据");
+
+var proportions = Enumerable.Range(0, 100).Select(TouchPostureSelector.FromRoll).ToArray();
+Check(proportions.Count(p => p == HandPosture.RightHandOneHanded) == 69 &&
+      proportions.Count(p => p == HandPosture.LeftHandOneHanded) == 13 &&
+      proportions.Count(p => p == HandPosture.LeftHandHoldRightIndex) == 18 &&
+      TouchPostureSelector.Resolve("LeftHandOneHanded", new Random(1)) == HandPosture.LeftHandOneHanded &&
+      TouchPostureSelector.Resolve("LeftHandHoldRightIndex", new Random(1)) == HandPosture.LeftHandHoldRightIndex,
+      "姿势随机权重为 69/13/18 且显式姿势优先");
+var originalProfile = HumanUserProfile.CreateRandom(123, HumanHandedness.Left);
+var calibratedProfile = PostureProfiles.Apply(HandPosture.LeftHandOneHanded, originalProfile);
+Check(calibratedProfile.Seed == originalProfile.Seed && calibratedProfile.SpeedBias == originalProfile.SpeedBias &&
+      calibratedProfile.Handedness == HumanHandedness.Left && calibratedProfile.VerticalUpStartXRatio == .18,
+      "姿势校准保留设备的长期随机画像");
 
 var clock = new TestClock();
 var session = new HumanTouchSession(HumanUserProfile.CreateRandom(123), null, 456, clock);

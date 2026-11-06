@@ -51,7 +51,7 @@ namespace SMAd.LandingPolicy
                     await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
                     if (await TouchDragHelper.WaitAllVisibleWithTextsAsync(ctx.Page!, 5000))
                     {
-                        if (await TouchDragHelper.DragSliderAsync(ctx.Page!, ctx.CdpSession!, ".btn_slide", ".slidetounlock", token))
+                        if (await TouchDragHelper.DragSliderAsync(ctx.Page!, ctx.CdpSession!, ".btn_slide", ".slidetounlock", ctx.human, token))
                         {
                             await Task.Delay(CommonHelper.RandomRange(3500, 5500), token);
                         }

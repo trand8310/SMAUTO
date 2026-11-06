@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using QTP.Common;
 using QTP.Common.Infrastructure;
 using QTP.Plugins;

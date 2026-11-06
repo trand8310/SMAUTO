@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Playwright;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using QTP.Plugins;
 using SMAd.Models;
 using QTP.Common.Infrastructure;
@@ -20,6 +20,19 @@ if (args.Contains("--startup-diagnostic"))
     return;
 }
 void Check(bool ok, string name) { if (!ok) throw new Exception(name); Console.WriteLine($"PASS {name}"); checks++; }
+{
+    var classify = typeof(SMAd.LandingPolicy.BaiduSJHLandingPageStrategy).GetMethod("ClassifyTitle", BindingFlags.Static | BindingFlags.NonPublic)!;
+    string Kind(string title) => classify.Invoke(null, new object[] { title })!.ToString()!;
+    Check(Kind(" 百度健康季 ") == "HealthSeason" && Kind("百度健康季助手") == "Assistant" &&
+        Kind("咨询助手") == "Assistant" && Kind("其他页面") == "Other" && Kind("") == "Other",
+        "健康季精确匹配，助手标题优先，其他标题不进入健康季流程");
+}
+if (args.Contains("--sjh-filter"))
+{
+    await MovementBrowserChecks.RunAsync(args[0], Check, headed: true, filterOnly: true);
+    Console.WriteLine($"All {checks} SJH filter checks passed.");
+    return;
+}
 if (args.Contains("--device-large-messages"))
 {
     await DeviceLargeMessageChecks.RunAsync(Check);
@@ -51,6 +64,36 @@ await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => CdpTouchRuntime.Initializ
 Check(sent.Commands.Count(x => x == "Emulation.setTouchEmulationEnabled") == 1, "并发初始化只配置一次");
 await Throws<InvalidOperationException>(() => CdpTouchRuntime.InitializeAsync(other, cdp), "拒绝错误页面与会话配对");
 
+// Slider drag participates in the same per-session input lock and rejects stale pages.
+{
+    var dragHuman = new HumanTouchOperator();
+    using (await HumanInputCoordinator.AcquireAsync(dragHuman.Session, CancellationToken.None))
+    using (var cancelDrag = new CancellationTokenSource(50))
+        await Throws<OperationCanceledException>(() => SMAd.TouchDragHelper.DragSliderAsync(
+            page, cdp, "#handle", "#track", dragHuman, cancelDrag.Token), "滑块拖动排队可取消且不绕过会话输入锁");
+    dragHuman.Engine.IsActivePage = _ => false;
+    Check(!await SMAd.TouchDragHelper.DragSliderAsync(page, cdp, "#handle", "#track", dragHuman), "页面绑定变化时拒绝滑块触摸");
+    Check(sent.TouchTypes.Count == 0, "取消或失效页面未派发滑块触摸");
+}
+
+// A replacement CDP session on the same page invalidates input through the old binding.
+{
+    var replacement = Stub.Create<ICDPSession>();
+    var bindingEngine = new HumanTouchEngine { IsActiveBinding = (p, session) => ReferenceEquals(p, page) && ReferenceEquals(session, replacement) };
+    Check(!await bindingEngine.TapAtAsync(page, cdp, 50, 50), "同页面 CDP 会话替换后拒绝旧会话点击");
+    Check(await bindingEngine.SwipeAsync(page, cdp, new HumanTouchRequest()) == null, "同页面 CDP 会话替换后拒绝旧会话滑动");
+    Check(sent.TouchTypes.Count == 0, "旧页面绑定没有派发触摸");
+    bool active = true;
+    bindingEngine.IsActiveBinding = (_, _) => active;
+    Task<bool> pendingBindingTap;
+    using (await HumanInputCoordinator.AcquireAsync(bindingEngine.Session, CancellationToken.None))
+    {
+        pendingBindingTap = bindingEngine.TapAtAsync(page, cdp, 50, 50);
+        active = false;
+    }
+    Check(!await pendingBindingTap && sent.TouchTypes.Count == 0, "输入排队期间 CDP 绑定变化不会派发触摸");
+}
+
 // Tap cancellation diagnostics must distinguish the local budget from upstream cancellation.
 {
     var diagnosticEngine = new HumanTouchEngine();
@@ -81,6 +124,16 @@ var plan = new GesturePlan { StartHoldMs = 40 };
 await Task.WhenAll(dispatcher.DispatchAsync(cdp, samples, plan, new()), dispatcher.DispatchAsync(cdp, samples, plan, new()));
 Check(sent.TouchTypes.SequenceEqual(new[] { "touchStart", "touchEnd", "touchStart", "touchEnd" }), "并发手势按完整接触串行执行");
 sent.TouchTypes.Clear();
+{
+    bool bindingActive = true;
+    sent.OnTouch = type => { if (type == "touchStart") bindingActive = false; };
+    await Throws<OperationCanceledException>(() => dispatcher.DispatchAsync(cdp, samples, plan, new(),
+        bindingValid: () => bindingActive), "触摸期间绑定变化取消输入");
+    Check(sent.TouchTypes.SequenceEqual(new[] { "touchStart", "touchCancel" }), "绑定变化后取消触点且不继续派发");
+    sent.OnTouch = null;
+    sent.TouchTypes.Clear();
+}
+
 using (var cancel = new CancellationTokenSource())
 {
     sent.OnTouch = t => { if (t == "touchStart") cancel.Cancel(); };
@@ -158,7 +211,7 @@ using (var cancellation = new CancellationTokenSource())
 
 if (args.Length > 0)
 {
-    if (args.Contains("--movement")) await MovementBrowserChecks.RunAsync(args[0], Check);
+    if (args.Contains("--movement")) await MovementBrowserChecks.RunAsync(args[0], Check, args.Contains("--headed"));
     else if (args.Contains("--dom-only")) await DomBrowserChecks.RunAsync(args[0], Check);
     else
     await BrowserChecks.RunAsync(args[0], Check, args.Contains("--raw-touch"));

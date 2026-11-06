@@ -9,6 +9,7 @@ public sealed class BrowserRuntimeLease : IAsyncDisposable
     private readonly List<Func<Task>> _cleanups = new();
     private readonly BrowserRuntimeManager _owner;
     private readonly PlaywrightLease _driver;
+    private readonly IPlaywrightProvider _provider;
     private readonly CancellationTokenSource _lifetime;
     private readonly CancellationToken _token;
     private readonly CancellationTokenRegistration _driverStopped;
@@ -30,12 +31,14 @@ public sealed class BrowserRuntimeLease : IAsyncDisposable
     public BrowserStopKind? StopKind { get; private set; }
     public BrowserReclaimResult? ReclaimResult { get; private set; }
     public IReadOnlyList<Exception> CleanupErrors { get { lock (_sync) return _errors.ToArray(); } }
+    public Task CheckDriverAfterFailureAsync() => _driver.DriverToken.IsCancellationRequested
+        ? Task.CompletedTask : BrowserRuntimeManager.CheckDriverAfterFailureAsync(_provider, _driver, ExecutionId);
     private readonly List<Exception> _errors = new();
     internal PlaywrightLease DriverLease => _driver;
-    internal BrowserRuntimeLease(BrowserRuntimeManager owner, ChromiumSession process, PlaywrightLease driver,
+    internal BrowserRuntimeLease(BrowserRuntimeManager owner, ChromiumSession process, PlaywrightLease driver, IPlaywrightProvider provider,
         IBrowser? browser, IBrowserContext? context, CancellationTokenSource lifetime, CancellationToken callerToken = default)
     {
-        _owner = owner; ProcessSession = process; _driver = driver; _browser = browser; _context = context; _lifetime = lifetime;
+        _owner = owner; ProcessSession = process; _driver = driver; _provider = provider; _browser = browser; _context = context; _lifetime = lifetime;
         _token = lifetime.Token;
         _disconnected = (_, _) =>
         {
@@ -102,6 +105,10 @@ public sealed class BrowserRuntimeLease : IAsyncDisposable
         var clock = Stopwatch.StartNew();
         BrowserLifecycleLog.Write(ExecutionId, "session.reclaim_begin", "BrowserRuntimeLease.CloseAsync", "开始执行页面、连接和进程回收",
             new { reason = StopKind?.ToString(), detail = StopReason, process = BrowserLifecycleLog.Snapshot(ProcessSession) });
+        // A browser disconnect can be caused by either the browser or the shared driver.
+        // Probe before returning the lease so a confirmed broken driver is not reused.
+        if (StopKind is BrowserStopKind.CdpDisconnected or BrowserStopKind.DriverDisconnected)
+            await CheckDriverAfterFailureAsync().ConfigureAwait(false);
         RequestStop(BrowserStopKind.Completed, "Session closing");
         ProcessSession.RequestStop(StopKind ?? BrowserStopKind.Completed);
         if (_browser != null) _browser.Disconnected -= _disconnected;

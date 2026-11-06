@@ -1,0 +1,3 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+ROUND 1 FAIL stage=production page initialization: Native display mismatch: expected screen=424x943, available=424x863, DPR=2.875; actual={"result":{"type":"object","value":{"width":424,"height":943,"availWidth":424,"availHeight":943,"dpr":3.59375}}}. The kernel must implement these values; JavaScript fallback is disabled.
+ROUND 1: failed, stage=production page initialization, exitedBeforeCleanup=False, connectedBeforeCleanup=True

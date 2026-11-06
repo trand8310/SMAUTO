@@ -1,0 +1,66 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>触摸与惯性诊断</title><style>body{margin:0;font:16px system-ui;background:#edf2f7;color:#182738}header{position:sticky;top:0;z-index:3;background:#fff;padding:3px 6px;box-shadow:0 2px 8px #0002}.toolbar{display:flex;align-items:center;gap:8px;min-height:32px;font-size:13px}.toolbar label{white-space:nowrap}.toolbar button{font-size:13px;padding:5px 8px;margin:0}.toolbar input[type=checkbox]{margin:0 3px 0 0;vertical-align:middle}#status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.controls{max-height:50vh;overflow:auto;border-top:1px solid #dbe4ec;padding:4px 0}.controls button,.controls input,.controls select{font-size:13px;padding:5px;margin:2px}.controls input[type=checkbox]{padding:0}button,input,select{font-size:15px;padding:8px;margin:3px;border:1px solid #aab8c5;border-radius:6px}button{background:#1764ab;color:white}#status{font-size:13px}main{max-width:700px;margin:auto;padding:16px}article{background:white;border-radius:10px;margin:12px 0;padding:18px;min-height:120px;line-height:1.8}#target{background:#ddf1ff;color:#123;padding:18px}#inner{height:220px;overflow:auto;overscroll-behavior:contain;background:#eff8ee;padding:12px;border:2px solid #6a9}#inner div{height:95px;border-bottom:1px solid #abc}
+#stopPad{position:fixed;right:8px;bottom:8px;z-index:3;padding:7px 10px;border:1px dashed #6c4b9d;border-radius:8px;background:#f7f0ff;color:#543875;font-size:12px;user-select:none}
+#touchTrace{position:fixed;inset:0;width:100%;height:100%;z-index:4;pointer-events:none}#traceStatus{font-size:12px;color:#704076}
+#postureOverlay{position:fixed;inset:0;width:100vw;height:100vh;z-index:2;pointer-events:none}
+#postureOverlay .zone,#postureOverlay .gesture{display:none}
+#postureOverlay[data-mode="right"] .right,#postureOverlay[data-mode="left"] .left,#postureOverlay[data-mode="index"] .index{display:block}
+#postureOverlay .zone{stroke-width:.45;stroke-dasharray:1.8 1.2}
+#postureOverlay .gesture{fill:none;stroke-width:.8;stroke-linecap:round;stroke-linejoin:round}
+.legend{font-size:12px;line-height:1.4;color:#405268}.legend strong{color:#8d3100}</style></head><body><header><div class="toolbar"><button type="button" id="toggleControls" aria-expanded="false" aria-controls="controls">设置 ▾</button><label><input type="checkbox" id="showInner">内部容器</label><span id="status" role="status">未采集</span></div><div class="controls" id="controls" hidden><div><input id="label" placeholder="设备/姿势/动作标签"><button onclick="diag.start()">开始新采集</button><button onclick="diag.stop()">停止</button><button onclick="diag.download()">下载 JSON</button></div><div><label for="postureMode">触达示意：</label><select id="postureMode" aria-label="选择触达示意"><option value="right">右手单手 · 右拇指（蓝）</option><option value="left">左手单手 · 左拇指（橙）</option><option value="index">左手持机 · 右食指（绿）</option><option value="off">隐藏示意</option></select></div><div><label><input type="checkbox" id="traceEnabled" checked>显示手指轨迹</label><button type="button" id="clearTrace">清除轨迹</button><span id="traceStatus">粉色轨迹显示页面收到的触摸点</span></div><div class="legend">色块：大致活动范围；箭头：手指上下滑动方向。<strong>示意范围未经过真机校准，不表示实际可触达边界。</strong></div></div></header><svg id="postureOverlay" data-mode="right" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+<path class="zone right" d="M 40 38 C 55 28 78 31 100 45 L 100 100 L 31 100 C 24 79 27 55 40 38 Z" fill="#1684d9" fill-opacity=".16" stroke="#1684d9"/>
+<path class="zone left" d="M 60 38 C 45 28 22 31 0 45 L 0 100 L 69 100 C 76 79 73 55 60 38 Z" fill="#ed8624" fill-opacity=".16" stroke="#d36b0b"/>
+<path class="zone index" d="M 10 26 Q 50 18 90 26 L 94 90 Q 50 95 6 90 Z" fill="#0b9b70" fill-opacity=".12" stroke="#0b9b70"/>
+<path class="gesture right" stroke="#0871c1" d="M 80 82 Q 45 62 70 43 M 65 44 L 70 43 L 69 48 M 75 81 L 80 82 L 79 77"/>
+<path class="gesture left" stroke="#c55c00" d="M 20 82 Q 55 62 30 43 M 35 44 L 30 43 L 31 48 M 25 81 L 20 82 L 21 77"/>
+<path class="gesture index" stroke="#078660" d="M 46 82 L 46 40 M 41 45 L 46 40 L 51 45 M 57 40 L 57 82 M 52 77 L 57 82 L 62 77"/>
+</svg><div id="stopPad" data-htp-safe-stop>惯性停止测试区</div><canvas id="touchTrace" aria-hidden="true"></canvas><main><article><h2>操作区域</h2><p>可向上或向下滑动整个页面，观察抬手后的惯性。请勿在操作途中点击其他控件。</p><button id="target" onclick="this.textContent='点击已到达 '+new Date().toLocaleTimeString()">点击测试按钮</button><section id="innerSection" hidden><p>下方绿色区域是独立滚动容器，可单独测试内部滚动。</p><div id="inner"></div></section></article><div id="content"></div></main><script>
+const showInner=document.querySelector('#showInner'),innerSection=document.querySelector('#innerSection');
+showInner.addEventListener('change',()=>{innerSection.hidden=!showInner.checked});
+const toggleControls=document.querySelector('#toggleControls'),controls=document.querySelector('#controls');
+toggleControls.addEventListener('click',()=>{controls.hidden=!controls.hidden;toggleControls.setAttribute('aria-expanded',String(!controls.hidden));toggleControls.textContent=controls.hidden?'设置 ▾':'收起 ▴'});
+const inner=document.querySelector('#inner');for(let i=0;i<25;i++){let d=document.createElement('div');d.textContent='内部容器项目 '+(i+1)+'：滑动并观察惯性';inner.appendChild(d)}
+const content=document.querySelector('#content');for(let i=0;i<45;i++){let a=document.createElement('article');a.innerHTML='<h3>阅读内容 '+(i+1)+'</h3><p>这是本地诊断页面。慢速阅读、普通滑动和快速甩动可以使用同一页面比较。滚动位置与触摸事件会分别记录。</p><p>请在手指抬起后等待惯性停止，然后再结束采集。</p>';content.appendChild(a)}
+// Visualize page-observed touch coordinates, not the planner's requested path.
+const traceCanvas=document.querySelector('#touchTrace'), traceContext=traceCanvas.getContext('2d');
+const traceEnabled=document.querySelector('#traceEnabled'), traceStatus=document.querySelector('#traceStatus');
+let tracePaths=new Map(), activeTouches=new Set();
+function sizeTrace(){const scale=Math.min(devicePixelRatio||1,3);traceCanvas.width=Math.round(innerWidth*scale);traceCanvas.height=Math.round(innerHeight*scale);traceContext.setTransform(scale,0,0,scale,0,0);clearTrace()}
+function clearTrace(){tracePaths.clear();activeTouches.clear();traceContext.clearRect(0,0,innerWidth,innerHeight);traceStatus.textContent='粉色轨迹显示页面收到的触摸点'}
+function drawTrace(){
+ traceContext.clearRect(0,0,innerWidth,innerHeight);traceContext.lineCap='round';traceContext.lineJoin='round';
+ for(const path of tracePaths.values()){
+  if(!path.points.length)continue;traceContext.lineWidth=3;traceContext.strokeStyle='#d11478';traceContext.beginPath();
+  path.points.forEach((p,i)=>i===0?traceContext.moveTo(p.x,p.y):traceContext.lineTo(p.x,p.y));traceContext.stroke();
+  const first=path.points[0],last=path.points[path.points.length-1];traceContext.fillStyle='#fff';traceContext.strokeStyle='#ac0a5e';traceContext.lineWidth=2;
+  traceContext.beginPath();traceContext.arc(first.x,first.y,5,0,Math.PI*2);traceContext.fill();traceContext.stroke();
+  traceContext.fillStyle=path.ended?'#d11478':'#ffca3a';traceContext.beginPath();traceContext.arc(last.x,last.y,8,0,Math.PI*2);traceContext.fill();traceContext.stroke();
+ }
+}
+function traceTouch(e){
+ if(!traceEnabled.checked||e.target.closest?.('header'))return;
+ if(e.type==='touchstart'&&activeTouches.size===0)clearTrace();
+ for(const t of e.changedTouches){
+  let path=tracePaths.get(t.identifier);
+  if(e.type==='touchstart'){path={points:[],ended:false};tracePaths.set(t.identifier,path);activeTouches.add(t.identifier)}
+  if(!path)continue;if(path.points.length<4096)path.points.push({x:t.clientX,y:t.clientY});
+  if(e.type==='touchend'||e.type==='touchcancel'){path.ended=true;activeTouches.delete(t.identifier)}
+ }
+ traceStatus.textContent=activeTouches.size?'触点移动中':'已抬手；轨迹保留到下一次触摸';drawTrace();
+}
+for(const type of ['touchstart','touchmove','touchend','touchcancel'])document.addEventListener(type,traceTouch,{capture:true,passive:true});
+traceEnabled.addEventListener('change',()=>{traceCanvas.hidden=!traceEnabled.checked;clearTrace()});
+document.querySelector('#clearTrace').addEventListener('click',clearTrace);
+window.addEventListener('resize',sizeTrace,{passive:true});sizeTrace();
+const postureMode=document.querySelector('#postureMode');
+function setPosture(mode){if(!['right','left','index','off'].includes(mode))throw new Error('无效姿势');postureMode.value=mode;document.querySelector('#postureOverlay').dataset.mode=mode}
+postureMode.addEventListener('change',()=>setPosture(postureMode.value));
+const state={running:false,events:[],dropped:0,startTime:0,endedAt:null,label:'',environment:null,posture:null};
+function targetName(t){if(!t)return null;if(t===document||t===window)return 'document';return t.id||t.tagName||'unknown'}
+function add(o){if(!state.running)return;if(state.events.length>=20000){state.dropped++;return}state.events.push({at:performance.now()-state.startTime,...o})}
+function point(t){return {id:t.identifier,x:t.clientX,y:t.clientY,screenX:t.screenX,screenY:t.screenY,radiusX:t.radiusX,radiusY:t.radiusY,force:t.force,rotation:t.rotationAngle}}
+for(const type of ['touchstart','touchmove','touchend','touchcancel'])document.addEventListener(type,e=>{if(e.target.closest?.('header'))return;add({type,eventTime:e.timeStamp,trusted:e.isTrusted,target:targetName(e.target),windowY:window.scrollY,innerY:inner.scrollTop,touches:[...e.touches].map(point),changed:[...e.changedTouches].map(point)})},{capture:true,passive:true});
+for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])document.addEventListener(type,e=>{if(e.target.closest?.('header'))return;add({type,eventTime:e.timeStamp,trusted:e.isTrusted,target:targetName(e.target),pointerType:e.pointerType,id:e.pointerId,x:e.clientX,y:e.clientY,pressure:e.pressure,width:e.width,height:e.height,tiltX:e.tiltX,tiltY:e.tiltY})},{capture:true,passive:true});
+for(const type of ['scroll','scrollend'])document.addEventListener(type,e=>add({type,target:targetName(e.target),windowY:window.scrollY,innerY:inner.scrollTop}),{capture:true,passive:true});
+function snapshot(){return {schema:'pwtest-touch-v1',label:state.label,posture:state.posture,startedAt:state.startedAt,endedAt:state.endedAt,environment:state.environment,dropped:state.dropped,events:state.events}}
+window.diag={setPosture,isRecording(){return state.running},markAction(info){add({type:'action',name:info.name,posture:info.posture,phase:info.phase,strength:info.strength,traces:info.traces,observation:info.observation})},start(label){state.posture=postureMode.value;state.events=[];state.dropped=0;state.startTime=performance.now();state.startedAt=new Date().toISOString();state.endedAt=null;state.label=label||document.querySelector('#label').value||'未标记';state.environment={userAgent:navigator.userAgent,platform:navigator.platform,maxTouchPoints:navigator.maxTouchPoints,screen:{width:screen.width,height:screen.height},viewport:{width:innerWidth,height:innerHeight},dpr:devicePixelRatio};state.running=true;document.querySelector('#status').textContent='采集中：'+state.label},stop(){state.running=false;state.endedAt=new Date().toISOString();document.querySelector('#status').textContent=`已采集 ${state.events.length} 条，丢弃 ${state.dropped} 条`;return snapshot()},get(){return snapshot()},download(){if(state.running)this.stop();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(snapshot(),null,2)],{type:'application/json'}));a.download='touch-'+Date.now()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}};
+</script></body></html>

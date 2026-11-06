@@ -1,10 +1,20 @@
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 
 internal static class V3Checks
 {
     public static void Run(Action<bool, string> check)
     {
-        check(typeof(HumanTouchEngine).Assembly.GetName().Name == "HumanTouchP2.Enhancedv3", "业务与测试实际使用 v3 程序集");
+        check(typeof(HumanTouchEngine).Assembly.GetName().Name == "HumanTouchP3", "业务与测试实际使用 P3 程序集");
+        check(typeof(SMAd.Models.WorkerRunContext).GetProperty("human")!.PropertyType.Assembly.GetName().Name == "HumanTouchP3",
+            "SMAd 页面触屏会话来自 P3 程序集");
+        var behavior = new HumanBehaviorModel();
+        var generalSession = new HumanTouchSession(new HumanUserProfile(), null, 519);
+        var detailSession = new HumanTouchSession(new HumanUserProfile(), null, 519);
+        var generic = Enumerable.Range(0, 5000).Select(_ => behavior.DecideNextIntent(generalSession)).ToArray();
+        var detail = Enumerable.Range(0, 5000).Select(_ => behavior.DecideNextIntent(detailSession, true, null, BrowsePageKind.Detail)).ToArray();
+        check(detail.Count(x => x == SwipeIntent.Reading) > generic.Count(x => x == SwipeIntent.Reading) &&
+              detail.Count(x => x == SwipeIntent.BackReview) < 200 &&
+              detail.Any(x => x == SwipeIntent.BackReview), "详情阅读优先且只偶尔回看");
         var clock = new RhythmClock();
         var user = HumanUserProfile.CreateRandom(123);
         var a = new HumanTouchSession(user, null, 456, clock);

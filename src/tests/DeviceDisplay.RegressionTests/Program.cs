@@ -15,8 +15,8 @@ void Check(bool ok, string name) { if (!ok) throw new Exception(name); checks++;
 TaskConfig Config(string json = "{}", string ua = "Android Chrome Mobile") => new()
 { Sw = 412, Sh = 915, DeviceScale = 2.625f, Os = 1, TaskArgs = JObject.Parse(json), UserAgent = ua };
 var profile = DeviceDisplayProfile.From(Config());
-Check(profile.AvailableHeight == 915 && profile.ViewportHeight == 811, "屏幕可用高度不扣浏览器工具栏，网页视口单独扣栏位");
-Check(DeviceDisplayProfile.From(Config(ua: "Android; wv) Chrome Mobile")).ViewportHeight == 867, "WebView 默认不扣 Chrome 工具栏");
+Check(profile.AvailableHeight == 835 && profile.ViewportHeight == 811, "默认可用区域和网页视口分别扣除对应栏位");
+Check(DeviceDisplayProfile.From(Config(ua: "Android; wv) Chrome Mobile")).ViewportHeight == 811, "当前 WebView 默认使用相同的栏位配置");
 var explicitProfile = DeviceDisplayProfile.From(Config("{dev:{availHeight:867,viewportHeight:800,windowWidth:640,windowHeight:1040}}"));
 Check(explicitProfile.AvailableHeight == 867 && explicitProfile.ViewportHeight == 800 && explicitProfile.WindowWidth == 640, "支持明确覆盖屏幕可用区域、视口及 Windows 窗口尺寸");
 var oldCulture = CultureInfo.CurrentCulture;
@@ -34,6 +34,20 @@ using (var cancel = new CancellationTokenSource())
     input["dev"]!["cssWidth"] = 400; input["dev"]!["cssHeight"] = 900;
     config = (TaskConfig)build.Invoke(worker, new object[] { "display-test", input, cancel })!;
     Check(config.Sw == 400 && config.Sh == 900, "明确 CSS 屏幕尺寸优先于自动匹配");
+    config.DisplayProfile = explicitProfile;
+    var buildArgs = typeof(QTP.Plugins.SMAdTask).GetMethod("BuildChromiumArgs", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var parameters = new object?[] { config, null };
+    var switches = (List<string>)buildArgs.Invoke(worker, parameters)!;
+    Check(switches.Contains("--screen-avail-size=412,867") && switches.Contains("--window-size=640,1040") &&
+        switches.Contains("--force-device-scale-factor=1") && switches.Contains("--device-pixel-ratio=2.625"),
+        "启动参数分别使用可用屏幕、窗口尺寸及独立于宿主缩放的 DPR");
+    Check(switches.Contains("--hardware-concurrency=8") && switches.Contains("--device-memory=8") &&
+        switches.Any(x => x.StartsWith("--storage-quota=", StringComparison.Ordinal)),
+        "缺失 CPU、内存和存储时仍能生成启动参数");
+    input["dev"]!["cpu"] = 0; input["dev"]!["storage"] = JValue.CreateNull();
+    switches = (List<string>)buildArgs.Invoke(worker, new object?[] { config, null })!;
+    Check(switches.Contains("--hardware-concurrency=8") && switches.Any(x => x.StartsWith("--storage-quota=", StringComparison.Ordinal)),
+        "CPU 为零及存储为 JSON null 时仍使用默认值");
 }
 if (args.Length > 0)
 {
@@ -51,7 +65,7 @@ if (args.Length > 0)
     var headed = args.Contains("--headed");
     await using var lease = await runtime.AcquireAsync(new("display", Path.GetFullPath(args[0]), Path.Combine(root, "profile"),
         TimeSpan.FromMinutes(2), $"{(headed ? "" : "--headless=new")} --no-first-run --no-default-browser-check --disable-popup-blocking --window-size=500,1043 " +
-        $"--screen-size={explicitProfile.ScreenWidth},{explicitProfile.ScreenHeight} --screen-avail-size={explicitProfile.AvailableWidth},{explicitProfile.AvailableHeight} --device-pixel-ratio={explicitProfile.DprArgument} about:blank"), token);
+        $"--screen-size={explicitProfile.ScreenWidth},{explicitProfile.ScreenHeight} --screen-avail-size={explicitProfile.AvailableWidth},{explicitProfile.AvailableHeight} --force-device-scale-factor=1 --device-pixel-ratio={explicitProfile.DprArgument} about:blank"), token);
     var errors = new List<Exception>();
     await using var controller = await DeviceTargetController.CreateAsync(lease.ProcessSession.CdpEndpoint, explicitProfile, 5,
         ex => { Console.WriteLine("Device target failure: " + ex); lock (errors) errors.Add(ex); }, token);

@@ -1,6 +1,6 @@
 using Microsoft.Playwright;
 using System.Text;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using System.Runtime.CompilerServices;
 
 namespace SMAd;
@@ -84,13 +84,15 @@ public static class SmAdTouch
         deadline.CancelAfter(10000);
         var ct = deadline.Token;
         using var input = await HumanInputCoordinator.AcquireAsync(b.Human.Session, ct);
-        if (b.Human.Engine.IsActivePage?.Invoke(page) == false) throw new InvalidOperationException("Active page changed before keyboard input.");
+        if (!b.Human.Engine.IsCurrentBinding(page, b.Session)) throw new InvalidOperationException("Active page changed before keyboard input.");
         using var lease = await CdpTouchRuntime.AcquireAsync(b.Session, ct);
         // Each key has a bounded native timeout. Cancellation cannot leave a background typing task.
+        if (!b.Human.Engine.IsCurrentBinding(page, b.Session)) throw new InvalidOperationException("Active binding changed before keyboard input.");
         await target.FillAsync("", new() { Timeout = 2000 });
         foreach (var character in text.EnumerateRunes())
         {
             ct.ThrowIfCancellationRequested();
+            if (!b.Human.Engine.IsCurrentBinding(page, b.Session)) throw new InvalidOperationException("Active binding changed during keyboard input.");
             await target.PressSequentiallyAsync(character.ToString(), new() { Delay = 0, Timeout = 1000 });
         }
         var actual = await target.InputValueAsync(new() { Timeout = 2000 }).WaitAsync(ct);
@@ -106,7 +108,7 @@ public static class SmAdTouch
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, b.Token);
         deadline.CancelAfter(5000);
         using var input = await HumanInputCoordinator.AcquireAsync(b.Human.Session, deadline.Token);
-        if (b.Human.Engine.IsActivePage?.Invoke(page) == false) return false;
+        if (!b.Human.Engine.IsCurrentBinding(page, b.Session)) return false;
         using var lease = await CdpTouchRuntime.AcquireAsync(b.Session, deadline.Token);
         await target.ScrollIntoViewIfNeededAsync(new() { Timeout = 2000 });
         var previous = await target.BoundingBoxAsync(new() { Timeout = 1000 }).WaitAsync(deadline.Token);

@@ -1,20 +1,19 @@
 using Microsoft.Playwright;
-using PlaywrightHumanInput;
+using HumanTouchP3.Input;
 using QTP.Common;
 
 internal static class MovementBrowserChecks
 {
-    public static async Task RunAsync(string executable, Action<bool, string> check)
+    public static async Task RunAsync(string executable, Action<bool, string> check, bool headed = false, bool filterOnly = false)
     {
         await using var processes = new ChromiumSessionManager();
         var profile = Path.Combine(Path.GetTempPath(), "smad-movement-" + Guid.NewGuid().ToString("N"));
         var process = await processes.StartChromium("movement-fixture", Path.GetFullPath(executable), profile,
-            TimeSpan.FromMinutes(3), arguments: "--headless=new --no-first-run --disable-background-networking about:blank");
+            TimeSpan.FromMinutes(3), arguments: (headed ? "" : "--headless=new ") + "--no-first-run --disable-background-networking about:blank");
         using var playwright = await Playwright.CreateAsync();
         var browser = await playwright.Chromium.ConnectOverCDPAsync(process.CdpEndpoint);
         try
         {
-            await ProxyFailureChecks.RunBrowserAsync(browser, check);
             var page = await browser.Contexts[0].NewPageAsync();
             await page.SetViewportSizeAsync(400, 800);
             var cdp = await page.Context.NewCDPSessionAsync(page);
@@ -25,6 +24,34 @@ internal static class MovementBrowserChecks
                 await page.GotoAsync("data:text/html;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(html)),
                     new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 5000 });
             }
+            await LoadFixture("""
+                <meta name="viewport" content="width=device-width,initial-scale=1">
+                <style>html{overflow-y:auto}body{margin:0;height:2000px}.adcard-row-one-root{position:absolute;top:170px;left:50px;width:240px;height:100px}
+                .adcard-row-one-content-title{display:block;margin:20px;height:40px}
+                .bottom-consult-button{position:fixed;bottom:10px;left:50px;width:200px;height:50px}</style>
+                <div class="adcard-row-one-root"><span class="adcard-row-one-content-title">Visible title</span></div>
+                <button class="bottom-consult-button">Consult</button>
+                """);
+            var sjhFilter = typeof(SMAd.LandingPolicy.BaiduSJHLandingPageStrategy).GetMethod(
+                "GetVisibleCandidateIndicesAsync", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+            var sjhCandidates = await (Task<int[]>)sjhFilter.Invoke(null, new object[] {
+                page.Locator(".adcard-row-one-root,.bottom-consult-button,.adcard-row-one-content-title"), CancellationToken.None })!;
+            check(sjhCandidates.Length > 0, "百度健康候选筛选可处理父子候选和固定咨询按钮");
+            var sjhEmpty = await (Task<int[]>)sjhFilter.Invoke(null, new object[] {
+                page.Locator(".not-present"), CancellationToken.None })!;
+            check(sjhEmpty.Length == 0, "百度健康没有匹配元素时返回空候选");
+            await page.EvaluateAsync("() => scrollTo(0, 1000)");
+            await page.EvaluateAsync("""
+                () => {
+                    const button = document.querySelector('.bottom-consult-button');
+                    button.textContent = 'Visible after document scroll';
+                }
+                """);
+            var scrolledCandidates = await (Task<int[]>)sjhFilter.Invoke(null, new object[] {
+                page.Locator(".bottom-consult-button"), CancellationToken.None })!;
+            check(scrolledCandidates.Length == 1, "文档滚动后根元素不错误裁剪视口中的固定按钮");
+            if (filterOnly) return;
+            await ProxyFailureChecks.RunBrowserAsync(browser, check);
             async Task Fixture(int targetTop)
             {
                 await page.GotoAsync("about:blank");
