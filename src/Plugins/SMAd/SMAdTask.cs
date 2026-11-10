@@ -476,16 +476,19 @@ namespace QTP.Plugins
 
 
             result.Add($"--fingerprint={fingerprint}");
-            var grease_cipher = Math.Abs(string.Join(".", full_version_values.Take(2)).GetHashCode()) % 65535;
-            result.Add($"--ssl-grease-cipher={grease_cipher}");
+
             if (os == 1 || os == 2)
             {
                 //--netinfo = 4g,cellular,200,1.7
                 result.Add($"--netinfo=\"4g,{new[] { "wifi", "cellular" }[CommonHelper.RandomRange(0, 2)]},{CommonHelper.RandomRange(100, 300)},{CommonHelper.RandomRange(170, 200) / 100.0,2}\"");
             }
 
-            result.Add($"--force-webrtc-ip-handling-policy");
-            result.Add($"--webrtc-ip-handling-policy=disable_non_proxied_udp");
+            //result.Add($"--force-webrtc-ip-handling-policy");
+            if (ipinfo_hash % 3 == 0)
+            {
+                result.Add($"--webrtc-ip-handling-policy=disable_non_proxied_udp");
+            }
+
             var isProxyMode = taskArgs.SelectToken("isProxyMode")?.Value<bool>() ?? false;
             if (isProxyMode)
             {
@@ -500,7 +503,7 @@ namespace QTP.Plugins
 
             #region webgl
             //--webgl-vendor="Google Inc. (Qualcomm)" --webgl-renderer="ANGLE (Qualcomm, Adreno (TM) 750, OpenGL ES 3.2)" ^
-            if (dev_hash % 2 == 0)
+            if (!string.IsNullOrWhiteSpace(brand) && (brand.Equals("Google Chrome") || useragent.Contains("Edg")))
             {
                 result.Add($"--webgl-vendor=\"Google Inc. ({vendor})\"");
                 result.Add($"--webgl-renderer=\"ANGLE ({vendor}, {renderer}, OpenGL ES 3.2)\"");
@@ -553,10 +556,9 @@ namespace QTP.Plugins
 
             result.Add("--enable-canvas-noise");
             result.Add("--enable-audio-noise");
-            if (dev_hash % 2 == 0)
-            {
-                result.Add("--disable-pdf-viewer");
-            }
+            result.Add("--disable-pdf-viewer");
+
+
             if (os == 1 || os == 2)
             {
                 if (new bool[] { false, false, true, false, false, true, false, false, true, false }[CommonHelper.RandomRange(0, 10)])
@@ -607,7 +609,7 @@ namespace QTP.Plugins
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "--battery=1,{0},Infinity,{1:0.00}",
-                chargingTime,
+                (CommonHelper.RandomRange(0, 10) % 5 == 0 ? chargingTime : "Infinity"),
                 percent / 100.0
             );
         }
@@ -638,7 +640,7 @@ namespace QTP.Plugins
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "--battery=0,Infinity,{0},{1:0.00}",
-                remainingSeconds,
+                (CommonHelper.RandomRange(0, 10) % 5 == 0 ? remainingSeconds : "Infinity"),
                 level
             );
         }
@@ -705,6 +707,9 @@ namespace QTP.Plugins
                 ActionLogPath = ctx?.ActionLogPath,
                 ClickRequested = ctx?.ClickRequested ?? false,
                 CompletedClickPvs = ctx?.CompletedClickPvs ?? 0,
+                AdPages = ctx?.AdPages ?? 0,
+                NoAdPages = ctx?.NoAdPages ?? 0,
+                AdClickFailedPages = ctx?.AdClickFailedPages ?? 0,
                 ProxyFailure = ctx?.ProxyFailure
             };
         }
@@ -1056,6 +1061,7 @@ namespace QTP.Plugins
             for (ctx.PvIndex = 1; ctx.PvIndex <= ctx.Config.TotalPV; ctx.PvIndex++)
             {
                 token.ThrowIfCancellationRequested();
+                if (ctx.AdHit) break;
                 LogWriteLine($"{this.Title}:pv：{ctx.Config.TotalPV}/{ctx.PvIndex}");
                 ctx.ResetPerPvState();
                 ctx.RecordStage("清理上一轮页面并准备入口");
@@ -1108,10 +1114,10 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.jqlive16.cc";
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
-                    //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
+                    entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://pixelscan.net/fingerprint-check";
                     //entry.FirstPageUrl = "https://so.m.sm.cn/s?q=%E9%B1%BF%E9%B1%BC%E6%B8%B8%E6%88%8F&from=751111&safe=1&by=suggest&snum=6";
-                    entry.FirstPageUrl = "https://sjh.baidu.com/site/wjzv/80cafc4f-5d44-4757-950c-6a71f363318a?q=%E7%B2%BE%E7%A5%9E%E7%A7%91&pm_key=154396464&multi_key=5_211663238_70005&page_scene=323&bword=%E9%9D%92%E6%98%A5%E6%9C%9F%E5%BF%83%E7%90%86%E9%97%AE%E9%A2%98&intent=%E5%A4%8D%E5%88%B6-3&adGroupId=125014746&campaignId=1569975097&planname=20260630_%E7%A5%9E%E9%A9%AC_ocpc_%E7%B2%BE%E7%A5%9E%E7%A7%91_wise&kid=-1&ip=117.189.11.92&clickid=10098600845577734617&uctrackid=czoxMzA3MDI4MzI3MjExNjgyNzY2MjtjOjExNjIzOTI3MzMyO2Q6ZG1wXy01MjI4NzQwNDg3MjA1MzIyOTU7cDp3bA%3D%3D&flowfrom=shenma&wid=129ebaad3c0f4ea4bc4fdb2712557817_0_0";
+                    //entry.FirstPageUrl = "https://sjh.baidu.com/site/wjzv/80cafc4f-5d44-4757-950c-6a71f363318a?q=%E7%B2%BE%E7%A5%9E%E7%A7%91&pm_key=154396464&multi_key=5_211663238_70005&page_scene=323&bword=%E9%9D%92%E6%98%A5%E6%9C%9F%E5%BF%83%E7%90%86%E9%97%AE%E9%A2%98&intent=%E5%A4%8D%E5%88%B6-3&adGroupId=125014746&campaignId=1569975097&planname=20260630_%E7%A5%9E%E9%A9%AC_ocpc_%E7%B2%BE%E7%A5%9E%E7%A7%91_wise&kid=-1&ip=117.189.11.92&clickid=10098600845577734617&uctrackid=czoxMzA3MDI4MzI3MjExNjgyNzY2MjtjOjExNjIzOTI3MzMyO2Q6ZG1wXy01MjI4NzQwNDg3MjA1MzIyOTU7cDp3bA%3D%3D&flowfrom=shenma&wid=129ebaad3c0f4ea4bc4fdb2712557817_0_0";
                 }
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -1246,6 +1252,8 @@ namespace QTP.Plugins
                             token);
 
                         clickFlow = await TryExecuteJumpClickAsync(ctx, token);
+                        if (!ctx.AdHit && ctx.PageAdsCount > 0)
+                            ctx.AdClickFailedPages++;
                     }, token);
                     if (clickFlow == FlowControl.EndTask)
                     {
@@ -1510,22 +1518,11 @@ namespace QTP.Plugins
                 "--password-store=basic",
                 "--use-mock-keychain",
                 "--no-service-autorun",
-                "--export-tagged-pdf",
-                "--disable-search-engine-choice-screen",
                 "--edge-skip-compat-layer-relaunch",
-                "--disable-infobars",
-                //"--disable-sync",
                 "--disable-blink-features=AutomationControlled",
-                "--enable-logging=stderr",
-                "--log-level=1",
-                "--disable-quic",
-                "--use-fake-ui-for-media-stream",
-                "--use-fake-device-for-media-stream",
+                "--disable-gpu",
                 "--enable-unsafe-swiftshader",
-                "--show-avatar-button=never",
                 "--disable-http2-grease-settings",
-                "--hide-bad-flags",
-                "--hide-crashed-bubble",
                 "--force-prefers-no-reduced-motion",
                 "--virtual-clipboard",
                 "--touch-events=enabled",
@@ -1562,8 +1559,6 @@ namespace QTP.Plugins
                 }
 
             }
-
-
 
             if (config.TaskArgs.SelectToken("isHiddenMode")?.Value<bool>() ?? false)
                 args.Add("--headless");
@@ -2047,6 +2042,8 @@ namespace QTP.Plugins
             {
                 var adDotUrls = ctx.Page.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
                 ctx.PageAdsCount = await adDotUrls.CountAsync();
+                if (ctx.PageAdsCount > 0) ctx.AdPages++;
+                else ctx.NoAdPages++;
 
                 if (ctx.PageAdsCount <= 0)
                 {
@@ -2248,25 +2245,35 @@ namespace QTP.Plugins
                 else
                     LogWriteLine($"触发广告位:{text}");
 
-                var click = await ClickAndDetectNavigationAsync(ctx, target, token);
+                void RecordNavigation()
+                {
+                    if (ctx.AdHit) return;
+                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
+                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough (广告命中)");
+                    ctx.PageTriggerClick = true;
+                    ctx.AdHit = true;
+                }
+                var click = await GetActions(ctx).ExecuteAsync("Navigate",
+                    (b, ct) => ctx.human.Engine.TapAsync(b.Page, b.Session, target, cancellationToken: ct),
+                    (p, ct) => ActivatePageAsync(ctx, p, ct), token, navigationObserved: _ => RecordNavigation());
                 if (!click.Attempted)
                     continue;
 
-                if (ctx.TriggerDownloadSign > 0)
+                if (click.Downloaded)
                 {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
+                    RecordNavigation();
                     return FlowControl.EndTask;
                 }
 
                 if (click.Navigated)
                 {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
                     return await HandleLandingPageAsync(ctx, token);
                 }
+
+                // An input was sent, but its outcome is uncertain. Do not click
+                // another advertisement while the destination may still load.
+                LogWriteLine($"广告点击已派发但未确认跳转，停止本轮广告尝试: {click.Reason}");
+                return ctx.AdHit ? FlowControl.EndTask : FlowControl.Continue;
             }
             return FlowControl.Continue;
         }
@@ -2577,7 +2584,7 @@ namespace QTP.Plugins
             }
 
             LogWriteLine("动作完成");
-            if (ctx.Config.TotalPV > 1 && ctx.JumpClick && (!ctx.PageTriggerClick || !ctx.Config.PvsTriggerOne))
+            if (ctx.Config.TotalPV > 1 && ctx.JumpClick && !ctx.AdHit)
                 return FlowControl.NextPv;
             return FlowControl.EndTask;
         }
@@ -3109,8 +3116,8 @@ namespace QTP.Plugins
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
             LogWriteLine("huadong");
-            await Task.Delay(5000);
-            await HandleLandingPageAsync(ctx, token);
+            //await Task.Delay(5000);
+            //await HandleLandingPageAsync(ctx, token);
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 
         }
@@ -3157,16 +3164,23 @@ namespace QTP.Plugins
                     clickable.Add(link);
             }
 
-            foreach (var link in clickable.OrderBy(_ => Guid.NewGuid()))
+            // Bound the work even on pages containing hundreds of links.
+            foreach (var link in clickable.OrderBy(_ => Guid.NewGuid()).Take(3))
             {
                 token.ThrowIfCancellationRequested();
 
-                await ctx.human!.MoveToElementAsync(
+                var movement = await ctx.human!.MoveToTargetAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
                     link,
                     maxSwipes: 10,
                     cancellationToken: token);
+
+                if (!movement.Ready)
+                {
+                    LogWriteLine($"目标未到位，跳过点击: {movement.Status}, {movement.Reason}");
+                    continue;
+                }
 
                 if (!await IsElementPartiallyVisibleAsync(link))
                 {
@@ -3175,7 +3189,7 @@ namespace QTP.Plugins
 
                 await Task.Delay(CommonHelper.RandomRange(800, 1400), token);
                 var result = await ClickAndDetectNavigationAsync(ctx, link.First, token);
-                if (result.Navigated)
+                if (result.Attempted || result.Succeeded)
                     return result;
             }
             return ClickResult.Fail("No actionable link target");

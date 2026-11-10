@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="../../Plugins/SMAd/SMAd.csproj" />
     <Compile Include="../../MainClient/Services/SmAdExecutor.cs" Link="SmAdExecutor.cs" />
+    <Compile Include="../../MainClient/Services/ProxyIpMetadata.cs" Link="ProxyIpMetadata.cs" />
   </ItemGroup>
 </Project>

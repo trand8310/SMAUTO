@@ -19,7 +19,8 @@ public sealed class PageActionExecutor
 
     public async Task<ClickResult> ExecuteAsync(string intent, Func<WorkerRunContext.PageBinding, CancellationToken, Task<bool>> dispatch,
         Func<IPage, CancellationToken, Task>? activate, CancellationToken token,
-        Func<IPage, CancellationToken, Task<bool>>? expectedEffect = null, int timeoutMs = 10000)
+        Func<IPage, CancellationToken, Task<bool>>? expectedEffect = null, int timeoutMs = 10000,
+        Action<IPage>? navigationObserved = null)
     {
         var captured = _ctx.ActivePage;
         if (captured == null) return ClickResult.Fail("No active page");
@@ -66,7 +67,15 @@ public sealed class PageActionExecutor
                 if (newPage != null)
                 {
                     changed = true;
-                    await WaitReadyAsync(newPage, ct);
+                    bool popupUrlObserved = !string.IsNullOrWhiteSpace(newPage.Url) && newPage.Url != "about:blank" && newPage.Url != before;
+                    if (popupUrlObserved)
+                        navigationObserved?.Invoke(newPage);
+                    try { await WaitReadyAsync(newPage, ct); }
+                    finally
+                    {
+                        if (!popupUrlObserved && !newPage.IsClosed && !string.IsNullOrWhiteSpace(newPage.Url) && newPage.Url != "about:blank" && newPage.Url != before)
+                            navigationObserved?.Invoke(newPage);
+                    }
                     if (_ctx.PageHttpStatuses.TryGetValue(newPage, out var popupStatus) && popupStatus >= 400)
                         return result = ClickResult.Fail($"Destination HTTP {popupStatus}", sent);
                     if (expectedEffect != null) await WaitExpectedAsync(newPage, expectedEffect, ct);
@@ -83,6 +92,8 @@ public sealed class PageActionExecutor
                 if (!captured.Page.IsClosed && (Volatile.Read(ref navigated) != 0 || !string.Equals(captured.Page.Url, before, StringComparison.Ordinal)))
                 {
                     changed = true;
+                    if (!string.Equals(captured.Page.Url, before, StringComparison.Ordinal))
+                        navigationObserved?.Invoke(captured.Page);
                     await WaitReadyAsync(captured.Page, ct);
                     if (_ctx.PageHttpStatuses.TryGetValue(captured.Page, out var status) && status >= 400)
                         return result = ClickResult.Fail($"Destination HTTP {status}", sent);

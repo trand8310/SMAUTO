@@ -136,6 +136,9 @@
             label29 = new Label();
             numericUpDown_PageLoadingTimeout = new NumericUpDown();
             groupBox9 = new GroupBox();
+            _adPagesLabel = new Label();
+            _noAdPagesLabel = new Label();
+            _adClickFailedLabel = new Label();
             label12 = new Label();
             label11 = new Label();
             label10 = new Label();
@@ -235,7 +238,7 @@
             // 
             checkBox_IsDetailLog.AutoSize = true;
             checkBox_IsDetailLog.Location = new Point(964, 224);
-            checkBox_IsDetailLog.Margin = new Padding(7, 7, 7, 7);
+            checkBox_IsDetailLog.Margin = new Padding(7);
             checkBox_IsDetailLog.Name = "checkBox_IsDetailLog";
             checkBox_IsDetailLog.Size = new Size(108, 28);
             checkBox_IsDetailLog.TabIndex = 75;
@@ -294,7 +297,7 @@
             // 
             checkBox_IsProxyMode.AutoSize = true;
             checkBox_IsProxyMode.Location = new Point(823, 161);
-            checkBox_IsProxyMode.Margin = new Padding(7, 7, 7, 7);
+            checkBox_IsProxyMode.Margin = new Padding(7);
             checkBox_IsProxyMode.Name = "checkBox_IsProxyMode";
             checkBox_IsProxyMode.Size = new Size(108, 28);
             checkBox_IsProxyMode.TabIndex = 59;
@@ -305,7 +308,7 @@
             // 
             checkBox_IsHiddenMode.AutoSize = true;
             checkBox_IsHiddenMode.Location = new Point(823, 128);
-            checkBox_IsHiddenMode.Margin = new Padding(7, 7, 7, 7);
+            checkBox_IsHiddenMode.Margin = new Padding(7);
             checkBox_IsHiddenMode.Name = "checkBox_IsHiddenMode";
             checkBox_IsHiddenMode.Size = new Size(108, 28);
             checkBox_IsHiddenMode.TabIndex = 58;
@@ -335,7 +338,7 @@
             // 
             buttonClear.ForeColor = Color.Red;
             buttonClear.Location = new Point(825, 71);
-            buttonClear.Margin = new Padding(7, 7, 7, 7);
+            buttonClear.Margin = new Padding(7);
             buttonClear.Name = "buttonClear";
             buttonClear.Size = new Size(57, 37);
             buttonClear.TabIndex = 22;
@@ -452,9 +455,9 @@
             groupBox6.Controls.Add(radioButton_UseLocalDev);
             groupBox6.Controls.Add(radioButton_UseSystemDev);
             groupBox6.Location = new Point(603, 434);
-            groupBox6.Margin = new Padding(7, 7, 7, 7);
+            groupBox6.Margin = new Padding(7);
             groupBox6.Name = "groupBox6";
-            groupBox6.Padding = new Padding(7, 7, 7, 7);
+            groupBox6.Padding = new Padding(7);
             groupBox6.Size = new Size(244, 59);
             groupBox6.TabIndex = 52;
             groupBox6.TabStop = false;
@@ -464,7 +467,7 @@
             // 
             radioButton_UseLocalDev.AutoSize = true;
             radioButton_UseLocalDev.Location = new Point(131, 24);
-            radioButton_UseLocalDev.Margin = new Padding(7, 7, 7, 7);
+            radioButton_UseLocalDev.Margin = new Padding(7);
             radioButton_UseLocalDev.Name = "radioButton_UseLocalDev";
             radioButton_UseLocalDev.Size = new Size(89, 28);
             radioButton_UseLocalDev.TabIndex = 56;
@@ -477,7 +480,7 @@
             radioButton_UseSystemDev.AutoSize = true;
             radioButton_UseSystemDev.Checked = true;
             radioButton_UseSystemDev.Location = new Point(15, 24);
-            radioButton_UseSystemDev.Margin = new Padding(7, 7, 7, 7);
+            radioButton_UseSystemDev.Margin = new Padding(7);
             radioButton_UseSystemDev.Name = "radioButton_UseSystemDev";
             radioButton_UseSystemDev.Size = new Size(89, 28);
             radioButton_UseSystemDev.TabIndex = 54;
@@ -680,7 +683,7 @@
             // 
             checkBox_NoTrigger1688Shop.AutoSize = true;
             checkBox_NoTrigger1688Shop.Location = new Point(403, 535);
-            checkBox_NoTrigger1688Shop.Margin = new Padding(6, 6, 6, 6);
+            checkBox_NoTrigger1688Shop.Margin = new Padding(6);
             checkBox_NoTrigger1688Shop.Name = "checkBox_NoTrigger1688Shop";
             checkBox_NoTrigger1688Shop.Size = new Size(206, 28);
             checkBox_NoTrigger1688Shop.TabIndex = 199;
@@ -691,7 +694,7 @@
             // 
             checkBox_AutoUpdate.AutoSize = true;
             checkBox_AutoUpdate.Location = new Point(501, 389);
-            checkBox_AutoUpdate.Margin = new Padding(5, 5, 5, 5);
+            checkBox_AutoUpdate.Margin = new Padding(5);
             checkBox_AutoUpdate.Name = "checkBox_AutoUpdate";
             checkBox_AutoUpdate.Size = new Size(108, 28);
             checkBox_AutoUpdate.TabIndex = 197;
@@ -702,7 +705,7 @@
             // 
             button3.ForeColor = Color.Red;
             button3.Location = new Point(882, 71);
-            button3.Margin = new Padding(7, 7, 7, 7);
+            button3.Margin = new Padding(7);
             button3.Name = "button3";
             button3.Size = new Size(57, 37);
             button3.TabIndex = 196;
@@ -714,7 +717,7 @@
             // 
             button2.ForeColor = Color.Red;
             button2.Location = new Point(942, 71);
-            button2.Margin = new Padding(7, 7, 7, 7);
+            button2.Margin = new Padding(7);
             button2.Name = "button2";
             button2.Size = new Size(57, 37);
             button2.TabIndex = 195;
@@ -725,7 +728,7 @@
             // button7
             // 
             button7.Location = new Point(504, 425);
-            button7.Margin = new Padding(5, 5, 5, 5);
+            button7.Margin = new Padding(5);
             button7.Name = "button7";
             button7.Size = new Size(79, 36);
             button7.TabIndex = 194;
@@ -736,7 +739,7 @@
             // button6
             // 
             button6.Location = new Point(418, 346);
-            button6.Margin = new Padding(5, 5, 5, 5);
+            button6.Margin = new Padding(5);
             button6.Name = "button6";
             button6.Size = new Size(79, 36);
             button6.TabIndex = 193;
@@ -766,7 +769,7 @@
             // 
             checkBox_p4psearch.AutoSize = true;
             checkBox_p4psearch.Location = new Point(618, 390);
-            checkBox_p4psearch.Margin = new Padding(7, 7, 7, 7);
+            checkBox_p4psearch.Margin = new Padding(7);
             checkBox_p4psearch.Name = "checkBox_p4psearch";
             checkBox_p4psearch.Size = new Size(134, 28);
             checkBox_p4psearch.TabIndex = 190;
@@ -795,7 +798,7 @@
             // 
             checkBox_Rfq1688.AutoSize = true;
             checkBox_Rfq1688.Location = new Point(618, 350);
-            checkBox_Rfq1688.Margin = new Padding(7, 7, 7, 7);
+            checkBox_Rfq1688.Margin = new Padding(7);
             checkBox_Rfq1688.Name = "checkBox_Rfq1688";
             checkBox_Rfq1688.Size = new Size(152, 28);
             checkBox_Rfq1688.TabIndex = 187;
@@ -806,7 +809,7 @@
             // 
             checkBox_IsTest.AutoSize = true;
             checkBox_IsTest.Location = new Point(964, 127);
-            checkBox_IsTest.Margin = new Padding(7, 7, 7, 7);
+            checkBox_IsTest.Margin = new Padding(7);
             checkBox_IsTest.Name = "checkBox_IsTest";
             checkBox_IsTest.Size = new Size(108, 28);
             checkBox_IsTest.TabIndex = 186;
@@ -816,7 +819,7 @@
             // btnStartStop
             // 
             btnStartStop.Location = new Point(825, 13);
-            btnStartStop.Margin = new Padding(7, 7, 7, 7);
+            btnStartStop.Margin = new Padding(7);
             btnStartStop.Name = "btnStartStop";
             btnStartStop.Size = new Size(172, 47);
             btnStartStop.TabIndex = 185;
@@ -847,7 +850,7 @@
             // btnUpdate
             // 
             btnUpdate.Location = new Point(418, 385);
-            btnUpdate.Margin = new Padding(5, 5, 5, 5);
+            btnUpdate.Margin = new Padding(5);
             btnUpdate.Name = "btnUpdate";
             btnUpdate.Size = new Size(79, 36);
             btnUpdate.TabIndex = 179;
@@ -859,7 +862,7 @@
             // 
             checkBox_NotTriggerDownload.AutoSize = true;
             checkBox_NotTriggerDownload.Location = new Point(403, 468);
-            checkBox_NotTriggerDownload.Margin = new Padding(7, 7, 7, 7);
+            checkBox_NotTriggerDownload.Margin = new Padding(7);
             checkBox_NotTriggerDownload.Name = "checkBox_NotTriggerDownload";
             checkBox_NotTriggerDownload.Size = new Size(180, 28);
             checkBox_NotTriggerDownload.TabIndex = 169;
@@ -870,7 +873,7 @@
             // 
             checkBox_UseDynamicWord.AutoSize = true;
             checkBox_UseDynamicWord.Location = new Point(243, 468);
-            checkBox_UseDynamicWord.Margin = new Padding(7, 7, 7, 7);
+            checkBox_UseDynamicWord.Margin = new Padding(7);
             checkBox_UseDynamicWord.Name = "checkBox_UseDynamicWord";
             checkBox_UseDynamicWord.Size = new Size(144, 28);
             checkBox_UseDynamicWord.TabIndex = 165;
@@ -891,10 +894,10 @@
             groupBox1.Controls.Add(numericUpDown_FetchRecently);
             groupBox1.Controls.Add(label16);
             groupBox1.Controls.Add(comboBox_WordType);
-            groupBox1.Location = new Point(930, 259);
-            groupBox1.Margin = new Padding(7, 7, 7, 7);
+            groupBox1.Location = new Point(930, 339);
+            groupBox1.Margin = new Padding(7);
             groupBox1.Name = "groupBox1";
-            groupBox1.Padding = new Padding(7, 7, 7, 7);
+            groupBox1.Padding = new Padding(7);
             groupBox1.Size = new Size(384, 250);
             groupBox1.TabIndex = 163;
             groupBox1.TabStop = false;
@@ -931,7 +934,7 @@
             // textBox_ExcludeWords
             // 
             textBox_ExcludeWords.Location = new Point(112, 148);
-            textBox_ExcludeWords.Margin = new Padding(5, 5, 5, 5);
+            textBox_ExcludeWords.Margin = new Padding(5);
             textBox_ExcludeWords.Multiline = true;
             textBox_ExcludeWords.Name = "textBox_ExcludeWords";
             textBox_ExcludeWords.ScrollBars = ScrollBars.Both;
@@ -942,7 +945,7 @@
             // button4
             // 
             button4.Location = new Point(310, 28);
-            button4.Margin = new Padding(5, 5, 5, 5);
+            button4.Margin = new Padding(5);
             button4.Name = "button4";
             button4.Size = new Size(55, 35);
             button4.TabIndex = 167;
@@ -954,7 +957,7 @@
             // 
             checkBox_DistinctByHour.AutoSize = true;
             checkBox_DistinctByHour.Location = new Point(260, 74);
-            checkBox_DistinctByHour.Margin = new Padding(5, 5, 5, 5);
+            checkBox_DistinctByHour.Margin = new Padding(5);
             checkBox_DistinctByHour.Name = "checkBox_DistinctByHour";
             checkBox_DistinctByHour.Size = new Size(72, 28);
             checkBox_DistinctByHour.TabIndex = 166;
@@ -965,7 +968,7 @@
             // 
             comboBox_DynamicWordName.FormattingEnabled = true;
             comboBox_DynamicWordName.Location = new Point(112, 31);
-            comboBox_DynamicWordName.Margin = new Padding(5, 5, 5, 5);
+            comboBox_DynamicWordName.Margin = new Padding(5);
             comboBox_DynamicWordName.Name = "comboBox_DynamicWordName";
             comboBox_DynamicWordName.Size = new Size(192, 32);
             comboBox_DynamicWordName.TabIndex = 165;
@@ -1023,7 +1026,7 @@
             // 
             checkBox_CleaningWords.AutoSize = true;
             checkBox_CleaningWords.Location = new Point(823, 226);
-            checkBox_CleaningWords.Margin = new Padding(7, 7, 7, 7);
+            checkBox_CleaningWords.Margin = new Padding(7);
             checkBox_CleaningWords.Name = "checkBox_CleaningWords";
             checkBox_CleaningWords.Size = new Size(126, 28);
             checkBox_CleaningWords.TabIndex = 162;
@@ -1034,7 +1037,7 @@
             // 
             checkBox_NoTrigger1688.AutoSize = true;
             checkBox_NoTrigger1688.Location = new Point(403, 502);
-            checkBox_NoTrigger1688.Margin = new Padding(7, 7, 7, 7);
+            checkBox_NoTrigger1688.Margin = new Padding(7);
             checkBox_NoTrigger1688.Name = "checkBox_NoTrigger1688";
             checkBox_NoTrigger1688.Size = new Size(170, 28);
             checkBox_NoTrigger1688.TabIndex = 161;
@@ -1045,7 +1048,7 @@
             // 
             checkBox_PVsTriggerOne.AutoSize = true;
             checkBox_PVsTriggerOne.Location = new Point(72, 535);
-            checkBox_PVsTriggerOne.Margin = new Padding(7, 7, 7, 7);
+            checkBox_PVsTriggerOne.Margin = new Padding(7);
             checkBox_PVsTriggerOne.Name = "checkBox_PVsTriggerOne";
             checkBox_PVsTriggerOne.Size = new Size(240, 28);
             checkBox_PVsTriggerOne.TabIndex = 154;
@@ -1056,7 +1059,7 @@
             // 
             checkBox_Incognito.AutoSize = true;
             checkBox_Incognito.Location = new Point(964, 192);
-            checkBox_Incognito.Margin = new Padding(7, 7, 7, 7);
+            checkBox_Incognito.Margin = new Padding(7);
             checkBox_Incognito.Name = "checkBox_Incognito";
             checkBox_Incognito.Size = new Size(108, 28);
             checkBox_Incognito.TabIndex = 153;
@@ -1087,7 +1090,7 @@
             // 
             checkBox_UVsTriggerOne.AutoSize = true;
             checkBox_UVsTriggerOne.Location = new Point(72, 502);
-            checkBox_UVsTriggerOne.Margin = new Padding(7, 7, 7, 7);
+            checkBox_UVsTriggerOne.Margin = new Padding(7);
             checkBox_UVsTriggerOne.Name = "checkBox_UVsTriggerOne";
             checkBox_UVsTriggerOne.Size = new Size(242, 28);
             checkBox_UVsTriggerOne.TabIndex = 149;
@@ -1098,7 +1101,7 @@
             // 
             checkBox_PriorityNon1688.AutoSize = true;
             checkBox_PriorityNon1688.Location = new Point(72, 569);
-            checkBox_PriorityNon1688.Margin = new Padding(7, 7, 7, 7);
+            checkBox_PriorityNon1688.Margin = new Padding(7);
             checkBox_PriorityNon1688.Name = "checkBox_PriorityNon1688";
             checkBox_PriorityNon1688.Size = new Size(170, 28);
             checkBox_PriorityNon1688.TabIndex = 148;
@@ -1108,7 +1111,7 @@
             // button1
             // 
             button1.Location = new Point(418, 425);
-            button1.Margin = new Padding(5, 5, 5, 5);
+            button1.Margin = new Padding(5);
             button1.Name = "button1";
             button1.Size = new Size(79, 36);
             button1.TabIndex = 147;
@@ -1222,7 +1225,7 @@
             // 
             checkBox_GetIpInfo.AutoSize = true;
             checkBox_GetIpInfo.Location = new Point(823, 193);
-            checkBox_GetIpInfo.Margin = new Padding(7, 7, 7, 7);
+            checkBox_GetIpInfo.Margin = new Padding(7);
             checkBox_GetIpInfo.Name = "checkBox_GetIpInfo";
             checkBox_GetIpInfo.Size = new Size(124, 28);
             checkBox_GetIpInfo.TabIndex = 130;
@@ -1245,7 +1248,7 @@
             // 
             checkBox_IsRealIp.AutoSize = true;
             checkBox_IsRealIp.Location = new Point(964, 160);
-            checkBox_IsRealIp.Margin = new Padding(7, 7, 7, 7);
+            checkBox_IsRealIp.Margin = new Padding(7);
             checkBox_IsRealIp.Name = "checkBox_IsRealIp";
             checkBox_IsRealIp.Size = new Size(88, 28);
             checkBox_IsRealIp.TabIndex = 35;
@@ -1256,7 +1259,7 @@
             // 
             checkBox_UseLocalWord.AutoSize = true;
             checkBox_UseLocalWord.Location = new Point(72, 468);
-            checkBox_UseLocalWord.Margin = new Padding(7, 7, 7, 7);
+            checkBox_UseLocalWord.Margin = new Padding(7);
             checkBox_UseLocalWord.Name = "checkBox_UseLocalWord";
             checkBox_UseLocalWord.Size = new Size(144, 28);
             checkBox_UseLocalWord.TabIndex = 123;
@@ -1322,6 +1325,9 @@
             // 
             // groupBox9
             // 
+            groupBox9.Controls.Add(_adPagesLabel);
+            groupBox9.Controls.Add(_noAdPagesLabel);
+            groupBox9.Controls.Add(_adClickFailedLabel);
             groupBox9.Controls.Add(label12);
             groupBox9.Controls.Add(label11);
             groupBox9.Controls.Add(label10);
@@ -1334,9 +1340,30 @@
             groupBox9.Margin = new Padding(5, 2, 5, 2);
             groupBox9.Name = "groupBox9";
             groupBox9.Padding = new Padding(5, 2, 5, 2);
-            groupBox9.Size = new Size(229, 242);
+            groupBox9.Size = new Size(229, 330);
             groupBox9.TabIndex = 98;
             groupBox9.TabStop = false;
+            //
+            // _adPagesLabel
+            //
+            _adPagesLabel.AutoSize = true;
+            _adPagesLabel.Location = new Point(11, 240);
+            _adPagesLabel.Name = "_adPagesLabel";
+            _adPagesLabel.Text = "有广告页面:0";
+            //
+            // _noAdPagesLabel
+            //
+            _noAdPagesLabel.AutoSize = true;
+            _noAdPagesLabel.Location = new Point(11, 268);
+            _noAdPagesLabel.Name = "_noAdPagesLabel";
+            _noAdPagesLabel.Text = "无广告页面:0";
+            //
+            // _adClickFailedLabel
+            //
+            _adClickFailedLabel.AutoSize = true;
+            _adClickFailedLabel.Location = new Point(11, 296);
+            _adClickFailedLabel.Name = "_adClickFailedLabel";
+            _adClickFailedLabel.Text = "广告点击未命中:0";
             // 
             // label12
             // 
@@ -1452,6 +1479,9 @@
         private TabControl tabControl1;
         private TabPage tabPage1;
         private GroupBox groupBox9;
+        private Label _adPagesLabel;
+        private Label _noAdPagesLabel;
+        private Label _adClickFailedLabel;
         private Label label11;
         private Label label10;
         private Label label12;

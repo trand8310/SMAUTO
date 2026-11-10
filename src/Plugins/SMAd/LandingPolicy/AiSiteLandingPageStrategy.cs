@@ -92,7 +92,7 @@ namespace SMAd.LandingPolicy
             }
 
             var jsClick = await _owner.TryRandomViewportClickableClickAsync(ctx, token);
-            if (!jsClick.Navigated)
+            if (!jsClick.Attempted && !jsClick.Succeeded)
                 await _owner.TryRandomLinkClickAsync(ctx, "a,img", token);
 
             return FlowControl.Continue;

@@ -27,6 +27,9 @@ namespace SMAd.Models
         public readonly System.Collections.Concurrent.ConcurrentQueue<SMAd.PageActions.PageActionRecord> ActionRecords = new();
         public int CompletedPvs { get; set; }
         public int CompletedClickPvs { get; private set; }
+        public int AdPages { get; set; }
+        public int NoAdPages { get; set; }
+        public int AdClickFailedPages { get; set; }
         public bool ClickRequested { get; set; }
         public bool CurrentVisitReady { get; set; }
         private bool _currentVisitCompleted;
@@ -91,6 +94,8 @@ namespace SMAd.Models
         public void DisableBusinessDownloads() => Volatile.Write(ref _businessDownloadsEnabled, 0);
         public int PageAdsCount { get; set; }
         public bool PageTriggerClick { get; set; }
+        // Persists across PV resets for the lifetime of this UV execution.
+        public bool AdHit { get; set; }
         public bool JumpClick { get; set; }
 
         public int PagesCount { get; set; }

@@ -73,6 +73,7 @@ namespace MainClient
         /// 点击总量
         /// </summary>
         private int QTPTotalClickthroughCount = 0;
+        private long _adPages, _noAdPages, _adClickFailedPages;
 
 
         #endregion
@@ -1665,29 +1666,9 @@ namespace MainClient
         /// <param name="ctx"></param>
         /// <param name="result"></param>
 
-        private void ApplyIpTestResult(ConsumerTaskContext ctx, dynamic result)
+        private void ApplyIpTestResult(ConsumerTaskContext ctx, ProxyTestResult result)
         {
-            if (result.SuccessUrl.Equals("http://ip-api.com/json") ||
-                result.SuccessUrl.Equals("http://117.21.200.221/api/dash/ipinfo.php") ||
-                result.SuccessUrl.Equals("http://211.154.24.179:9000/api/dash/ipinfo.php"))
-            {
-                ctx.IpInfo = JObject.Parse(result.Data);
-                ctx.RealIp = ctx.IpInfo["query"]?.Value<string>() ?? string.Empty;
-            }
-            else
-            {
-                var ipJson = JObject.Parse(result.Data);
-
-                if (ipJson.ContainsKey("query"))
-                    ctx.RealIp = ipJson["query"]?.Value<string>() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(ctx.RealIp) && ipJson.ContainsKey("ip"))
-                    ctx.RealIp = ipJson["ip"]?.Value<string>() ?? string.Empty;
-
-                ctx.IpInfo = new JObject
-                {
-                    ["query"] = ctx.RealIp
-                };
-            }
+            (ctx.IpInfo, ctx.RealIp) = ProxyIpMetadata.Parse(result);
         }
         #endregion
 
@@ -1854,6 +1835,9 @@ namespace MainClient
                 $"提交任务:{ctx.TaskTitle}[{ctx.TaskId}_{consumerId}_s{consumerId}_{uvIndex + 1}],os={ctx.OS},proxy={ctx.ProxyServer ?? "False"},realIp={ctx.RealIp},uv={ctx.TotalUV}/{uvIndex + 1}");
 
             var result = await _smAdExecutor.ExecuteAsync(executionId, args, token, e => LogWriteLine(e), playwrightProvider);
+            Interlocked.Add(ref _adPages, result.AdPages);
+            Interlocked.Add(ref _noAdPages, result.NoAdPages);
+            Interlocked.Add(ref _adClickFailedPages, result.AdClickFailedPages);
             if (result.ProxyFailure != null)
             {
                 LogWriteLine($"代理无法继续当前任务，停止剩余UV: type={result.ProxyFailure}, reason={result.FailureReason}");
@@ -2068,6 +2052,9 @@ namespace MainClient
                         label7.Text = $"曝光数量:{totalStats.DSP}";
                         label8.Text = $"点击数量:{totalStats.Clickthrough}";
                         label9.Text = $"成功数量:{totalStats.Success}";
+                        _adPagesLabel.Text = $"有广告页面:{Interlocked.Read(ref _adPages)}";
+                        _noAdPagesLabel.Text = $"无广告页面:{Interlocked.Read(ref _noAdPages)}";
+                        _adClickFailedLabel.Text = $"广告点击未命中:{Interlocked.Read(ref _adClickFailedPages)}";
                         toolStripStatusLabel4.Text = $"执行总量：{QTPTotalStartCount + totalStats.Start}";
                         toolStripStatusLabel5.Text = $"曝光总量：{QTPTotalDspCount + totalStats.DSP}";
                         toolStripStatusLabel6.Text = $"点击总量：{QTPTotalClickthroughCount + totalStats.Clickthrough}";

@@ -11,6 +11,9 @@ internal static class PageActionChecks
     {
         var worker = new QTP.Plugins.SMAdTask(null!, null!, null!, null!, null!, new QTP.Common.Infrastructure.AppSettings());
         var empty = new WorkerRunContext(new() { LinkedCts = new(), TotalPV = 0 });
+        empty.AdHit = true;
+        empty.ResetPerPvState();
+        check(empty.AdHit && !empty.PageTriggerClick, "广告命中跨 PV 保留，页面状态独立重置");
         var mainFlow = typeof(QTP.Plugins.SMAdTask).GetMethod("RunMainFlowAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var completed = await (Task<bool>)mainFlow.Invoke(worker, new object[] { empty, CancellationToken.None })!;
         check(!completed && empty.LastFailureReason != null, "未执行任何页面轮次不能返回任务成功");
@@ -58,8 +61,11 @@ internal static class PageActionChecks
             null, default, (_, _) => Task.FromResult(false), timeoutMs: 80);
         check(!result.Succeeded && result.Attempted, "URL 变化仍必须满足指定的业务效果判据");
         ActionStub.Of(page).ReadyError = true;
-        result = await executor.ExecuteAsync("BadDestination", (_, _) => { state.Url += "?bad=1"; return Task.FromResult(true); }, null, default);
+        int observed = 0;
+        result = await executor.ExecuteAsync("BadDestination", (_, _) => { state.Url += "?bad=1"; return Task.FromResult(true); }, null, default,
+            navigationObserved: _ => observed++);
         check(result.Attempted && !result.Navigated && result.Reason != null, "目标页未就绪保留已派发状态和失败原因");
+        check(observed == 1, "目标页未就绪仍记录已观察到的导航且只记录一次");
         state.ReadyError = false;
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel(); bool dispatched = false;

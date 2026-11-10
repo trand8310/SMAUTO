@@ -19,6 +19,9 @@ public sealed record WorkerExecutionResult(
     public int CompletedPvs { get; init; }
     public bool ClickRequested { get; init; }
     public int CompletedClickPvs { get; init; }
+    public int AdPages { get; init; }
+    public int NoAdPages { get; init; }
+    public int AdClickFailedPages { get; init; }
     public string? ActionLogPath { get; init; }
     public BrowserStopKind? BrowserStopKind { get; init; }
     public BrowserReclaimResult? BrowserReclaim { get; init; }

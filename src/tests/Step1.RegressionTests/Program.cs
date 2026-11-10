@@ -21,6 +21,11 @@ void Check(bool condition, string name)
     Console.WriteLine($"PASS {name}");
 }
 
+var proxyInfo = ProxyIpMetadata.Parse(new ProxyTestResult { SuccessUrl = "http://117.21.200.221/api/dash/ipinfo.php", Data = "{query:'192.0.2.1',region:'test'}" });
+Check(proxyInfo.RealIp == "192.0.2.1" && (string?)proxyInfo.Info["region"] == "test", "IP 详情使用强类型解析并保留元数据");
+var alternateInfo = ProxyIpMetadata.Parse(new ProxyTestResult { SuccessUrl = "https://ipinfo.io/json", Data = "{ip:'192.0.2.2'}" });
+Check(alternateInfo.RealIp == "192.0.2.2" && (string?)alternateInfo.Info["query"] == "192.0.2.2", "备用 IP 数据源解析兼容 ip 字段");
+
 var dev = JObject.Parse("{\"make\":\"Samsung\",\"model\":\"A\",\"androidid\":\"device-a\"}");
 var other = (JObject)dev.DeepClone();
 other["androidid"] = "device-b";
