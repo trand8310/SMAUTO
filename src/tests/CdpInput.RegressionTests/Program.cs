@@ -9,7 +9,7 @@ using QTP.Common;
 using QTP.Common.Models;
 
 int checks = 0;
-if (args.Contains("--full-page-flow"))
+if (args.Contains("--full-page-flow") || args.Contains("--live-entry-flow"))
 {
     await FullPageFlowDiagnostics.RunAsync(args);
     return;
@@ -19,7 +19,7 @@ if (args.Contains("--startup-diagnostic"))
     await StartupDiagnostics.RunAsync(args);
     return;
 }
-void Check(bool ok, string name) { if (!ok) throw new Exception(name); Console.WriteLine($"PASS {name}"); checks++; }
+void Check(bool ok, string name) { if (!ok) throw new Exception(name); Console.WriteLine($"PASS {name}"); Interlocked.Increment(ref checks); }
 {
     var classify = typeof(SMAd.LandingPolicy.BaiduSJHLandingPageStrategy).GetMethod("ClassifyTitle", BindingFlags.Static | BindingFlags.NonPublic)!;
     string Kind(string title) => classify.Invoke(null, new object[] { title })!.ToString()!;
@@ -94,28 +94,100 @@ await Throws<InvalidOperationException>(() => CdpTouchRuntime.InitializeAsync(ot
     Check(!await pendingBindingTap && sent.TouchTypes.Count == 0, "输入排队期间 CDP 绑定变化不会派发触摸");
 }
 
-// Tap cancellation diagnostics must distinguish the local budget from upstream cancellation.
+// Queueing does not consume the tap execution budget, and remains cancellable.
 {
     var diagnosticEngine = new HumanTouchEngine();
     var diagnosticTarget = Stub.Create<IElementHandle>();
     var diagnosticLogs = new System.Collections.Concurrent.ConcurrentQueue<string>();
     using (var heldInput = await HumanInputCoordinator.AcquireAsync(diagnosticEngine.Session, CancellationToken.None))
     {
-        await Throws<OperationCanceledException>(() => diagnosticEngine.TapAsync(page, cdp, diagnosticTarget,
-            timeout: 50, log: diagnosticLogs.Enqueue), "Tap 总预算耗尽仍传播取消");
-        Check(diagnosticLogs.Any(x => x.Contains("source=tap deadline") && x.Contains("stage=wait for input lock")),
-            "Tap 超时日志指出预算来源和阻塞阶段");
-        diagnosticLogs.Clear();
+        using var queueCancel = new CancellationTokenSource();
+        var queued = diagnosticEngine.TapAsync(page, cdp, diagnosticTarget,
+            timeout: 50, log: diagnosticLogs.Enqueue, cancellationToken: queueCancel.Token);
+        await Task.Delay(150);
+        Check(!queued.IsCompleted, "输入排队不消耗 Tap 执行预算");
+        queueCancel.Cancel();
+        await Throws<OperationCanceledException>(() => queued, "Tap 排队可被上层取消");
         using var upstreamCancellation = new CancellationTokenSource();
         upstreamCancellation.CancelAfter(50);
         await Throws<OperationCanceledException>(() => diagnosticEngine.TapAsync(page, cdp, diagnosticTarget,
             timeout: 5000, log: diagnosticLogs.Enqueue, cancellationToken: upstreamCancellation.Token),
             "Tap 上层取消仍传播取消");
-        Check(diagnosticLogs.Any(x => x.Contains("source=upstream cancellation")), "Tap 上层取消与自身超时区分");
         Check(sent.TouchTypes.Count == 0, "取消等待输入锁时不派发触摸");
     }
     using var releasedInput = await HumanInputCoordinator.AcquireAsync(diagnosticEngine.Session, CancellationToken.None);
     Check(true, "取消诊断后输入锁仍可正常获取");
+}
+
+// A command abandoned while in flight must never be followed by new session input.
+{
+    var delayedCdp = Stub.Create<ICDPSession>();
+    var delayedStub = Stub.Of(delayedCdp);
+    var pendingTouch = new TaskCompletionSource<JsonElement?>(TaskCreationOptions.RunContinuationsAsynchronously);
+    delayedStub.PendingTouch = pendingTouch;
+    using var cancel = new CancellationTokenSource(50);
+    await Throws<OperationCanceledException>(() => new CdpTouchDispatcher().DispatchAsync(delayedCdp,
+        new[] { new TouchSample { Point = new(10, 10) } }, new GesturePlan(), new(), cancel.Token),
+        "未完成触摸命令取消时传播取消");
+    pendingTouch.SetResult(null);
+    await Throws<InvalidOperationException>(() => CdpTouchRuntime.AcquireAsync(delayedCdp),
+        "迟到触摸命令的会话拒绝后续输入");
+    var timeoutCdp = Stub.Create<ICDPSession>();
+    var timedOutTouch = new TaskCompletionSource<JsonElement?>(TaskCreationOptions.RunContinuationsAsynchronously);
+    Stub.Of(timeoutCdp).PendingTouch = timedOutTouch;
+    await Throws<InvalidOperationException>(() => new CdpTouchDispatcher().DispatchAsync(timeoutCdp,
+        new[] { new TouchSample { Point = new(10, 10) } }, new GesturePlan(), new()),
+        "触摸命令超时明确报告输入状态未知");
+    timedOutTouch.SetResult(null);
+    await Throws<InvalidOperationException>(() => CdpTouchRuntime.AcquireAsync(timeoutCdp),
+        "超时命令迟到后会话仍禁止输入");
+}
+
+// Recovery is allowed only after the delayed move completes, touchCancel succeeds and the page remains healthy.
+{
+    async Task CheckSwipeRecovery(string scenario)
+    {
+        var session = Stub.Create<ICDPSession>();
+        var stub = Stub.Of(session);
+        stub.PendingTouchType = "touchMove";
+        stub.PendingTouch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var delayed = stub.PendingTouch;
+        bool binding = true;
+        if (scenario == "release") stub.FailTouch = "touchCancel";
+        var logs = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var samplesForRecovery = new[] { new TouchSample { Point = new(10, 10) }, new TouchSample { Point = new(10, 20) } };
+        using var cancel = new CancellationTokenSource();
+        using var lease = await CdpTouchRuntime.AcquireAsync(session);
+        var task = new CdpTouchDispatcher().DispatchWithinLeaseAsync(session, samplesForRecovery, new GesturePlan(), new(),
+            cancel.Token, () => binding, _ => Task.FromResult(scenario != "health"), logs.Enqueue);
+        if (scenario != "never" && scenario != "cancel")
+            _ = Task.Run(async () => { await Task.Delay(scenario == "cancel-drained" ? 250 : 5200); if (scenario == "binding") binding = false; delayed.TrySetResult(null); });
+        if (scenario == "cancel" || scenario == "cancel-drained")
+            _ = Task.Run(async () => { await Task.Delay(scenario == "cancel-drained" ? 150 : 5200); cancel.Cancel(); });
+        if (scenario == "success")
+        {
+            Check(!await task && !CdpTouchRuntime.IsInvalid(session), "迟到的滑动命令完成并清理触点后可安全跳过");
+            Check(stub.TouchTypes.SequenceEqual(new[] { "touchStart", "touchMove", "touchCancel" }), "恢复只取消触点不重放滑动");
+            Check(logs.Any(x => x.Contains("type=touchMove") && x.Contains("timeout")), "触屏超时诊断包含命令类型");
+        }
+        else if (scenario == "cancel")
+        {
+            await Throws<OperationCanceledException>(() => task, "恢复期间上游取消立即传播");
+            Check(CdpTouchRuntime.IsInvalid(session), "恢复期间取消保留会话失效状态");
+        }
+        else if (scenario == "cancel-drained")
+        {
+            await Throws<OperationCanceledException>(() => task, "局部取消在安全清理后仍向上传播");
+            Check(!CdpTouchRuntime.IsInvalid(session) && stub.TouchTypes.SequenceEqual(new[] { "touchStart", "touchMove", "touchCancel" }),
+                "取消的滑动完成排空且清理成功后不误使会话失效");
+        }
+        else
+        {
+            await Throws<InvalidOperationException>(() => task, $"{scenario} 时滑动恢复失败");
+            Check(CdpTouchRuntime.IsInvalid(session), $"{scenario} 时禁止后续输入");
+        }
+    }
+    await Task.WhenAll(CheckSwipeRecovery("success"), CheckSwipeRecovery("health"), CheckSwipeRecovery("binding"), CheckSwipeRecovery("release"), CheckSwipeRecovery("never"), CheckSwipeRecovery("cancel"), CheckSwipeRecovery("cancel-drained"));
 }
 
 var dispatcher = new CdpTouchDispatcher();
@@ -225,6 +297,8 @@ public class Stub : DispatchProxy
     public List<string> TouchTypes = new();
     public Action<string>? OnTouch;
     public string? FailTouch;
+    public TaskCompletionSource<JsonElement?>? PendingTouch;
+    public string PendingTouchType = "touchStart";
     public object DisplayMetrics = new { width = 400, height = 800, availWidth = 400, availHeight = 720, dpr = 1 };
     public Func<Task<ICDPSession>>? NewSession;
     public int SessionCreates, Detaches;
@@ -273,6 +347,7 @@ public class Stub : DispatchProxy
             {
                 var type = (string)((Dictionary<string, object>)args[1]!)["type"];
                 TouchTypes.Add(type); OnTouch?.Invoke(type);
+                if (type == PendingTouchType && PendingTouch != null) return PendingTouch.Task;
                 if (type == FailTouch) return Task.FromException<JsonElement?>(new InvalidOperationException("send failed"));
             }
             return Task.FromResult<JsonElement?>(null);

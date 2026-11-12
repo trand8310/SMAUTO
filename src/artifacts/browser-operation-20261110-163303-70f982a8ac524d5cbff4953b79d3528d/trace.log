@@ -1,0 +1,7 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm10000&q=%E4%B8%AD%E7%BA%A7%E4%BC%9A%E8%AE%A1%E5%A4%9A%E4%BC%9A%E5%87%BA%E6%88%90%E7%BB%A9, content-type=text/html;charset=utf-8, content-disposition=, location=
+Entry search result ready: visible advertisement confirmed before DOMContentLoaded, elapsedMs=823
+LIVE ENTRY readiness=loading, reason=Visible search result ready, navigationMs=981, adMarkers=3, configuredPostLoadDelayMs=8282
+Entry navigation continued after visible result: TaskCanceledException
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

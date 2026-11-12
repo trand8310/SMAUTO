@@ -1,0 +1,27 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Build\\publish\\File\\chrome-win\\125.0.6422.136\\chrome.exe",
+  "KernelVersion": "125.0.6422.136",
+  "IsHiddenMode": false,
+  "Incognito": true,
+  "Proxy": false,
+  "ActualUrl": "",
+  "Reports": [
+    {
+      "Round": 1,
+      "Model": "24129RT7CC",
+      "Stage": "completed",
+      "Outcome": "success",
+      "ElapsedMs": 14781,
+      "Error": null,
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 1,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[31360:19960:1110/171138.173:ERROR:external_registry_loader_win.cc(158)] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:54331/devtools/browser/e50451e2-23ad-449e-b4db-d8c134b97dda"
+      }
+    }
+  ]
+}

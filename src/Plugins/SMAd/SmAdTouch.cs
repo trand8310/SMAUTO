@@ -52,7 +52,7 @@ public static class SmAdTouch
         token.ThrowIfCancellationRequested();
         try { return await tap(); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested &&
-            !binding.Token.IsCancellationRequested && !page.IsClosed)
+            !binding.Token.IsCancellationRequested && !page.IsClosed && !CdpTouchRuntime.IsInvalid(binding.Session))
         {
             (log ?? binding.Human.Options.Log)?.Invoke("Tap skipped: local deadline exceeded; task remains active");
             return false;

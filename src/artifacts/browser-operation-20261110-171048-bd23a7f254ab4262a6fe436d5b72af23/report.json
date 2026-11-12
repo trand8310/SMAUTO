@@ -1,0 +1,27 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Build\\publish\\File\\chrome-win\\125.0.6422.136\\chrome.exe",
+  "KernelVersion": "125.0.6422.136",
+  "IsHiddenMode": false,
+  "Incognito": true,
+  "Proxy": false,
+  "ActualUrl": "",
+  "Reports": [
+    {
+      "Round": 1,
+      "Model": "24129RT7CC",
+      "Stage": "search result early readiness fixture",
+      "Outcome": "failed",
+      "ElapsedMs": 14225,
+      "Error": "System.Exception: Visible result did not become ready before DOMContentLoaded: Entry navigation timed out; visible document accepted, elapsed=10048\r\n   at StartupDiagnostics.VerifySearchResultReadinessAsync(IPage page, CancellationToken token, Action\u00601 log) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 351\r\n   at StartupDiagnostics.VerifySearchResultReadinessAsync(IPage page, CancellationToken token, Action\u00601 log) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 371\r\n   at StartupDiagnostics.RunAsync(String[] args) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 196",
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 1,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[32084:22888:1110/171051.046:ERROR:external_registry_loader_win.cc(158)] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:54901/devtools/browser/4ae91ddb-254e-4c42-b933-9b0fa5c0ef9c"
+      }
+    }
+  ]
+}

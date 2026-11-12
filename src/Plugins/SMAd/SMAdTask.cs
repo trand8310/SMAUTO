@@ -609,7 +609,7 @@ namespace QTP.Plugins
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "--battery=1,{0},Infinity,{1:0.00}",
-                (CommonHelper.RandomRange(0, 10) % 5 == 0 ? chargingTime : "Infinity"),
+                chargingTime,//(CommonHelper.RandomRange(0, 10) % 5 == 0 ? chargingTime : "Infinity"),
                 percent / 100.0
             );
         }
@@ -640,7 +640,7 @@ namespace QTP.Plugins
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "--battery=0,Infinity,{0},{1:0.00}",
-                (CommonHelper.RandomRange(0, 10) % 5 == 0 ? remainingSeconds : "Infinity"),
+                remainingSeconds,
                 level
             );
         }
@@ -1041,6 +1041,8 @@ namespace QTP.Plugins
 
 
             ctx.human.Engine.IsActivePage = p => ReferenceEquals(ctx.Page, p);
+            ctx.human.Engine.SessionLog = message => BrowserLifecycleLog.Write(ctx.Config.UniqueId,
+                "touch.cdp_diagnostic", "HumanTouchP3", message, new { stage = ctx.LifecycleStage, pv = ctx.PvIndex });
             ctx.human.Engine.IsActiveBinding = (p, cdp) =>
             {
                 var active = ctx.ActivePage;
@@ -1114,11 +1116,17 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://www.jqlive16.cc";
                     //entry.FirstPageUrl = "https://m.p4psearch.1688.com/page.html?spm=a2638t.27966843.0.0.67b6436csKR08G&q=%E8%A1%A3%E6%9C%8D%E5%A5%B3%E6%AC%BE&exp=wxReListExp:C;wxCpxGuessExp:B&hpageId=wx-list-v3";
                     //entry.FirstPageUrl = "https://www.louisvuitton.cn/zhs-cn/men/accessories/belts/_/N-t1g9dx5w?utm_source=shenma&utm_medium=cpc&utm_campaign=A1_W_OT_E_BZ_BZ_M_E_AO_RTOMNI&utm_term=MAIN-DES3";
-                    entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
+                    //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://pixelscan.net/fingerprint-check";
                     //entry.FirstPageUrl = "https://so.m.sm.cn/s?q=%E9%B1%BF%E9%B1%BC%E6%B8%B8%E6%88%8F&from=751111&safe=1&by=suggest&snum=6";
                     //entry.FirstPageUrl = "https://sjh.baidu.com/site/wjzv/80cafc4f-5d44-4757-950c-6a71f363318a?q=%E7%B2%BE%E7%A5%9E%E7%A7%91&pm_key=154396464&multi_key=5_211663238_70005&page_scene=323&bword=%E9%9D%92%E6%98%A5%E6%9C%9F%E5%BF%83%E7%90%86%E9%97%AE%E9%A2%98&intent=%E5%A4%8D%E5%88%B6-3&adGroupId=125014746&campaignId=1569975097&planname=20260630_%E7%A5%9E%E9%A9%AC_ocpc_%E7%B2%BE%E7%A5%9E%E7%A7%91_wise&kid=-1&ip=117.189.11.92&clickid=10098600845577734617&uctrackid=czoxMzA3MDI4MzI3MjExNjgyNzY2MjtjOjExNjIzOTI3MzMyO2Q6ZG1wXy01MjI4NzQwNDg3MjA1MzIyOTU7cDp3bA%3D%3D&flowfrom=shenma&wid=129ebaad3c0f4ea4bc4fdb2712557817_0_0";
+                    //entry.FirstPageUrl = "https://aisite.wejianzhan.com/site/wjzsorv8/8fde5eff-530e-43ad-a8be-37ab96c77d4b?q=%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E5%9F%B9%E8%AE%AD&pm_key=207474788&multi_key=5_211328668_70005&page_scene=71&bword=%E4%B8%AD%E5%9B%BD%E8%88%9E%E5%8D%8F%E8%88%9E%E8%B9%88%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E8%AF%81%E6%8A%A5%E5%90%8D&intent=%E7%BA%A7%E8%88%9E%E8%B9%88%E8%AF%81-1&adGroupId=125143692&campaignId=1582416093&planname=20261021_%E7%A5%9E%E9%A9%AC_ocpc_%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E5%9F%B9%E8%AE%AD_wise&kid=80825999574&ip=42.87.7.76&clickid=1752839128842375554&uctrackid=czo2ODcwMzE2ODkxMzI0Mzc1ODQ7YzoxMTY0MzYxNzE4ODtkOmRtcF8tMjk0OTIzMjk3NjQ5MTM5NzcwMztwOnds&flowfrom=shenma&wid=0d6e9b4c1827401fa167630af24b77fa_0_0#showRetainPopup";
+
+                    //entry.FirstPageUrl = "https://wm.m.sm.cn/s?from=wm10000&q=%E4%B8%AD%E7%BA%A7%E4%BC%9A%E8%AE%A1%E5%A4%9A%E4%BC%9A%E5%87%BA%E6%88%90%E7%BB%A9";
+
+
                 }
+               
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
                 {
@@ -1188,9 +1196,11 @@ namespace QTP.Plugins
                 }
                 else
                 {
-                    LogWriteLine($"{this.Title}:ExecuteWorker: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}");
-
-                    await Task.Delay(Math.Max(0, ctx.Config.PageLoadedDelayMs), token);
+                    ctx.RecordStage("等待入口页面加载延时");
+                    LogWriteLine($"{this.Title}:入口页面加载后等待: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}秒");
+                    var delayClock = System.Diagnostics.Stopwatch.StartNew();
+                    try { await Task.Delay(Math.Max(0, ctx.Config.PageLoadedDelayMs), token); }
+                    finally { LogWriteLine($"Entry phase: executionId={ctx.Config.UniqueId}, pv={ctx.PvIndex}, phase=post_load_delay, plannedMs={ctx.Config.PageLoadedDelayMs}, elapsedMs={delayClock.ElapsedMilliseconds}"); }
                 }
 
 
@@ -1208,7 +1218,9 @@ namespace QTP.Plugins
                 }
 
                 ctx.RecordStage("检测页面目标标记");
+                var adDetectClock = System.Diagnostics.Stopwatch.StartNew();
                 var adsOk = await DetectAndUploadAdWordsAsync(ctx, entry.QueryWord, token);
+                LogWriteLine($"Entry phase: executionId={ctx.Config.UniqueId}, pv={ctx.PvIndex}, phase=ad_detection, elapsedMs={adDetectClock.ElapsedMilliseconds}, completed={adsOk}, markers={ctx.PageAdsCount}");
                 if (adsOk && ctx.PageAdsCount == 0)
                 {
                     token.ThrowIfCancellationRequested();
@@ -1222,8 +1234,20 @@ namespace QTP.Plugins
                     LogWriteLine("广告检测未完成，继续当前页面访问与停留");
 
                 ctx.RecordStage("入口页面浏览与阅读");
-                await BrowseForAsync(ctx, 5, 8, token);
+                var browseClock = System.Diagnostics.Stopwatch.StartNew();
+                var entryBinding = ctx.ActivePage;
+                bool? scrollSpace = entryBinding == null ? null : await SMAd.PageActions.EntryScrollProbe.HasScrollSpaceAsync(entryBinding.Page, token);
+                if (entryBinding != ctx.ActivePage)
+                {
+                    LogWriteLine($"Entry browse: executionId={ctx.Config.UniqueId}, pv={ctx.PvIndex}, bindingChanged=true");
+                    continue;
+                }
+                if (scrollSpace == false)
+                    LogWriteLine($"Entry browse: executionId={ctx.Config.UniqueId}, pv={ctx.PvIndex}, noScrollableSpace=true, action=static_reading");
+                else
+                    await BrowseForAsync(ctx, 5, 8, token);
                 await Task.Delay(CommonHelper.RandomRange(3500, 8500), token);
+                LogWriteLine($"Entry phase: executionId={ctx.Config.UniqueId}, pv={ctx.PvIndex}, phase=browse_and_read, scrollSpace={scrollSpace?.ToString() ?? "unknown"}, elapsedMs={browseClock.ElapsedMilliseconds}");
 
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
@@ -1243,14 +1267,14 @@ namespace QTP.Plugins
                     ctx.ClickRequested = true;
                     ctx.RecordStage("首次点击定位与跳转");
                     var clickFlow = FlowControl.Continue;
-                    await TryOptionalPageOperationAsync(ctx, "First jump", async () =>
-                    {
+                    await TryOptionalPageOperationAsync(ctx, "First jump preparation swipe", async () =>
                         await ctx.human!.SwipeByIntentAsync(
                             ctx.Page!,
                             ctx.CdpSession!,
                             SwipeIntent.Reading,
-                            token);
-
+                            token), token);
+                    await TryOptionalPageOperationAsync(ctx, "First jump", async () =>
+                    {
                         clickFlow = await TryExecuteJumpClickAsync(ctx, token);
                         if (!ctx.AdHit && ctx.PageAdsCount > 0)
                             ctx.AdClickFailedPages++;
@@ -1950,13 +1974,15 @@ namespace QTP.Plugins
             ctx.RecordStage("打开入口页面并等待就绪");
             token.ThrowIfCancellationRequested();
             ctx.DisableBusinessDownloads();
+            var entryClock = System.Diagnostics.Stopwatch.StartNew();
+            var entryPv = ctx.PvIndex;
 
             try
             {
                 var navigation = await SMAd.PageActions.EntryPageNavigator.NavigateAsync(ctx.Page!, url,
                     ctx.Config.PageLoadingTimeoutMs, token, message =>
                     {
-                        LogWriteLine(message);
+                        LogWriteLine($"Entry diagnostic: executionId={ctx.Config.UniqueId}, pv={entryPv}, {message}");
                         BrowserLifecycleLog.Write(ctx.Config.UniqueId, "page.entry_navigation_diagnostic", "EntryPageNavigator", message);
                     });
                 if (!navigation.Opened)
@@ -1968,6 +1994,7 @@ namespace QTP.Plugins
                     LogWriteLine($"入口页面未打开，跳过当前PV: {navigation.Reason}");
                     return false;
                 }
+                ctx.EntryAdObserved = navigation.Reason == "Visible search result ready";
             }
             catch (PlaywrightException ex) when (ProxyFailureClassifier.Classify(ex.Message,
                 ctx.Config.TaskArgs.SelectToken("isProxyMode")?.Value<bool>() == true, true) is { } kind)
@@ -1980,6 +2007,10 @@ namespace QTP.Plugins
                 ctx.LastFailureReason = $"Entry navigation timed out: {ex.Message}";
                 ctx.BrowserFailureKind = BrowserStopKind.OperationTimedOut;
                 return false;
+            }
+            finally
+            {
+                LogWriteLine($"Entry phase: executionId={ctx.Config.UniqueId}, pv={entryPv}, phase=navigation_total, elapsedMs={entryClock.ElapsedMilliseconds}");
             }
             ctx.CurrentPageUrl = ctx.Page!.Url;
             ctx.PagesCount = ctx.Context!.Pages.Count;
@@ -2040,8 +2071,18 @@ namespace QTP.Plugins
 
             try
             {
-                var adDotUrls = ctx.Page.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
-                ctx.PageAdsCount = await adDotUrls.CountAsync();
+                var binding = ctx.ActivePage;
+                if (binding == null) return false;
+                var detection = await SMAd.PageActions.SearchAdMarkerDetector.DetectAsync(binding.Page, ctx.EntryAdObserved,
+                    () => ReferenceEquals(ctx.ActivePage, binding), token);
+                LogWriteLine($"Ad marker check: executionId={ctx.Config.UniqueId}, pv={ctx.PvIndex}, status={detection.Status}, count={detection.Count}, reason={detection.Reason}, previouslyObserved={ctx.EntryAdObserved}");
+                if (detection.Status == SMAd.PageActions.SearchAdDetectionStatus.Uncertain)
+                {
+                    LogWriteLine("广告检测未确认，不按无广告处理");
+                    return false;
+                }
+                var adDotUrls = binding.Page.Locator(SMAd.PageActions.SearchAdMarkerDetector.Selector);
+                ctx.PageAdsCount = detection.Count;
                 if (ctx.PageAdsCount > 0) ctx.AdPages++;
                 else ctx.NoAdPages++;
 
@@ -2067,7 +2108,7 @@ namespace QTP.Plugins
                 {
                     token.ThrowIfCancellationRequested();
 
-                    if (ctx.Page == null || ctx.Page.IsClosed)
+                    if (!ReferenceEquals(ctx.ActivePage, binding) || ctx.Page == null || ctx.Page.IsClosed)
                     {
                         LogWriteLine("广告检测中断: Page已关闭");
                         return false;
@@ -2213,13 +2254,19 @@ namespace QTP.Plugins
             {
                 token.ThrowIfCancellationRequested();
 
-                await ctx.human!.MoveToElementAsync(
+                var movement = await ctx.human!.MoveToTargetAsync(
                     ctx.Page!,
                     ctx.CdpSession!,
                     sponsored,
                     maxSwipes: 10,
                     cancellationToken: token);
-
+                if (!movement.Ready)
+                {
+                    LogWriteLine($"广告位移动未就绪: {movement.Status}, {movement.Reason}");
+                    if (movement.Status == TargetMovementStatus.PageChanged)
+                        return FlowControl.Continue;
+                    continue;
+                }
 
                 if (!await IsElementPartiallyVisibleAsync(sponsored))
                 {
@@ -3116,7 +3163,7 @@ namespace QTP.Plugins
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
             LogWriteLine("huadong");
-            //await Task.Delay(5000);
+            await Task.Delay(5000);
             //await HandleLandingPageAsync(ctx, token);
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 

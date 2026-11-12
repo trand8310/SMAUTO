@@ -1,0 +1,33 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=2
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Tap: input queue=0ms
+Tap[1] stage: resolve owner frame, elapsed=1ms, budget=5000ms
+Tap[1] stage: initialize touch, elapsed=13ms, budget=5000ms
+Tap[1] stage: wait for touch session lock, elapsed=14ms, budget=5000ms
+Tap[1] stage: prepare action rhythm, elapsed=14ms, budget=5000ms
+Prepare: 309ms
+Tap[1] stage: check visibility and enabled state, elapsed=345ms, budget=5000ms
+Tap[1] stage: read bounding box, elapsed=363ms, budget=5000ms
+Tap[1] stage: read viewport, elapsed=370ms, budget=5000ms
+Tap[1] stage: target hit test, elapsed=392ms, budget=5000ms
+Tap[1] stage: check target stability, elapsed=436ms, budget=5000ms
+Tap[1] stage: dispatch touch, elapsed=533ms, budget=5000ms
+Tap: (152.7,86.8), planned=52ms, actual=78ms, force=0.53
+ROUND 1 FAIL stage=read DOM after tap: Touch did not trigger click: 0
+ROUND 1: failed, stage=read DOM after tap, exitedBeforeCleanup=False, connectedBeforeCleanup=True
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Tap: input queue=0ms
+Tap[2] stage: resolve owner frame, elapsed=3ms, budget=5000ms
+Tap[2] stage: initialize touch, elapsed=25ms, budget=5000ms
+Tap[2] stage: wait for touch session lock, elapsed=25ms, budget=5000ms
+Tap[2] stage: prepare action rhythm, elapsed=25ms, budget=5000ms
+Prepare: 277ms
+Tap[2] stage: check visibility and enabled state, elapsed=317ms, budget=5000ms
+Tap[2] stage: read bounding box, elapsed=337ms, budget=5000ms
+Tap[2] stage: read viewport, elapsed=339ms, budget=5000ms
+Tap[2] stage: target hit test, elapsed=343ms, budget=5000ms
+Tap[2] stage: check target stability, elapsed=349ms, budget=5000ms
+Tap[2] stage: dispatch touch, elapsed=451ms, budget=5000ms
+Tap: (151.0,84.0), planned=103ms, actual=141ms, force=0.52
+ROUND 2 FAIL stage=read DOM after tap: Touch did not trigger click: 0
+ROUND 2: failed, stage=read DOM after tap, exitedBeforeCleanup=False, connectedBeforeCleanup=True

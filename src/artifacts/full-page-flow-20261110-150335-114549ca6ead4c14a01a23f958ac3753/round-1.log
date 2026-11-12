@@ -1,0 +1,79 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-0d947fd439cd4f538db782b6970ca92c, pid=31400, kernel=125.0.6422.136, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:Touch posture=RightHandOneHanded
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html;charset=utf-8, content-disposition=, location=
+神马搜索:ExecuteWorker: 11.85
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Prepare: 189ms
+神马搜索:Touch Preview/Up (148,773)->(231,463) duration=289ms release=133px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=25
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Preview/Up (240,731)->(325,393) duration=335ms release=74px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=28
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Reading/Up (233,705)->(308,443) duration=1089ms release=35px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=90
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Fling/Up (227,708)->(285,486) duration=166ms release=2119px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=14
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch MicroAdjust/Up (280,822)->(307,759) duration=130ms release=47px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=12
+点击比率:0.00%
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Reading/Up (299,708)->(345,517) duration=599ms release=61px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=54
+触发广告位:本地测试目标，点击进入落地页:(12,298,384,140)
+神马搜索:ExecuteWorker:Clickthrough (广告命中)
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Navigation ready: 618ms, observe=5435ms, url=https://b2b.baidu.com/m/aitf/list
+Navigation observation: planned=5435ms, actual=5443ms
+Action Navigate: success=True, dispatched=True, 6064ms, 
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Down，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 当前可点候选=6，随机选择[9]，直接触屏点击
+Navigation ready: 432ms, observe=2915ms, url=https://detail.fixture.invalid/item?id=9
+Navigation observation: planned=2915ms, actual=2918ms
+Action Navigate: success=True, dispatched=True, 3350ms, 
+百度爱采购: 候选[9]点击结果=Navigated, 原因=
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Reading/Up (174,688)->(223,530) duration=516ms release=41px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=34
+延时停留
+滑动操作
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Prepare: 177ms
+神马搜索:Touch Preview/Up (173,809)->(270,472) duration=355ms release=131px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=24
+滑动操作
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch MicroAdjust/Up (209,639)->(227,581) duration=172ms release=61px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=13
+滑动操作
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Reading/Up (259,731)->(304,555) duration=414ms release=57px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=27
+滑动操作
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Preview/Up (222,736)->(305,376) duration=409ms release=231px/s
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=31
+动作完成
+神马搜索:ExecuteWorker:Complete
+Browser execution ending: executionId=full-flow-0d947fd439cd4f538db782b6970ca92c, stage=page visit, elapsed=80901ms, reason=Completed, detail=

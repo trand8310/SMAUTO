@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 
 namespace HumanTouchP3.Input;
 
+public enum ScrollVerificationStatus { MovedAndSettled, MovedStillMoving, NoMovement, TargetChanged }
+
 public sealed class ScrollTargetResolver
 {
     // Identity is per DOM node, so identical classes cannot make unrelated containers look stable.
@@ -81,6 +83,10 @@ public sealed class ScrollTargetResolver
 
     public async Task<bool> DidScrollAsync(IPage page, ScrollTargetState before, ScrollTargetState documentBefore,
         double x, double y, HumanSwipeDirection direction, double minDelta, CancellationToken token = default)
+        => await VerifyScrollAsync(page, before, direction, minDelta, token) == ScrollVerificationStatus.MovedAndSettled;
+
+    public async Task<ScrollVerificationStatus> VerifyScrollAsync(IPage page, ScrollTargetState before,
+        HumanSwipeDirection direction, double minDelta, CancellationToken token = default)
     {
         var clock = Stopwatch.StartNew();
         var previous = before;
@@ -88,8 +94,8 @@ public sealed class ScrollTargetResolver
         while(clock.ElapsedMilliseconds < 2500)
         {
             await Task.Delay(80, token);
-            var current = await ReadAsync(before.OwnerFrame ?? page.MainFrame, new { x, y, key = before.Key, documentOnly = false }, token);
-            if (current.Key != before.Key) return false;
+            var current = await ReadAsync(before.OwnerFrame ?? page.MainFrame, new { x = 0, y = 0, key = before.Key, documentOnly = false }, token);
+            if (current.Key != before.Key) return ScrollVerificationStatus.TargetChanged;
             stable = Math.Abs(current.ScrollLeft-previous.ScrollLeft)<.5 &&
                 Math.Abs(current.ScrollTop-previous.ScrollTop)<.5 ? stable+1 : 0;
             previous=current;
@@ -97,10 +103,14 @@ public sealed class ScrollTargetResolver
             {
                 var delta=direction is HumanSwipeDirection.Left or HumanSwipeDirection.Right ?
                     current.ScrollLeft-before.ScrollLeft : current.ScrollTop-before.ScrollTop;
-                return direction is HumanSwipeDirection.Up or HumanSwipeDirection.Left ? delta>=minDelta : delta<=-minDelta;
+                bool moved = direction is HumanSwipeDirection.Up or HumanSwipeDirection.Left ? delta>=minDelta : delta<=-minDelta;
+                return moved ? ScrollVerificationStatus.MovedAndSettled : ScrollVerificationStatus.NoMovement;
             }
         }
-        return false;
+        var finalDelta = direction is HumanSwipeDirection.Left or HumanSwipeDirection.Right ?
+            previous.ScrollLeft-before.ScrollLeft : previous.ScrollTop-before.ScrollTop;
+        bool observed = direction is HumanSwipeDirection.Up or HumanSwipeDirection.Left ? finalDelta>=minDelta : finalDelta<=-minDelta;
+        return observed ? ScrollVerificationStatus.MovedStillMoving : ScrollVerificationStatus.NoMovement;
     }
 
     public async Task<ElementRect?> GetElementRectAsync(ILocator locator)

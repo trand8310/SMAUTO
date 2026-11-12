@@ -17,6 +17,7 @@ internal static class FullPageFlowDiagnostics
     public static async Task RunAsync(string[] args)
     {
         string Option(string key, string fallback) => args.FirstOrDefault(a => a.StartsWith(key + "="))?[(key.Length + 1)..] ?? fallback;
+        bool liveEntry = args.Contains("--live-entry-flow");
         var root = Path.GetFullPath(Option("--base", "Build/publish"));
         var settings = JObject.Parse(await File.ReadAllTextAsync(Path.Combine(root, "appsettings.user.json")))["AppSettings"]!.ToObject<AppSettings>()!;
         settings.IsHiddenMode = bool.Parse(Option("--headless", settings.IsHiddenMode.ToString()));
@@ -24,11 +25,11 @@ internal static class FullPageFlowDiagnostics
         var rounds = Math.Clamp(int.Parse(Option("--rounds", "4")), 1, 12);
         var samples = File.ReadLines(Path.Combine(root, "Data", $"dev_{settings.UsingDevIndex}.log")).Take(1500).Select(JObject.Parse)
             .GroupBy(d => (d.Value<string>("make"), d.Value<string>("model"))).Select(g => g.First()).Take(12).ToArray();
-        var reportRoot = Path.GetFullPath(Path.Combine("artifacts", "full-page-flow-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")));
+        var reportRoot = Path.GetFullPath(Path.Combine("artifacts", (liveEntry ? "live-entry-flow-" : "full-page-flow-") + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")));
         Directory.CreateDirectory(reportRoot);
         var reports = new List<object>();
         int failures = 0;
-        Console.WriteLine($"FULL FLOW kernel={settings.KernelVersion}, headless={settings.IsHiddenMode}, incognito={settings.Incognito}, TTL={settings.IpTtl}s, proxy=false");
+        Console.WriteLine($"{(liveEntry ? "LIVE ENTRY FLOW click_rate=0" : "FULL FLOW")} kernel={settings.KernelVersion}, headless={settings.IsHiddenMode}, incognito={settings.Incognito}, TTL={settings.IpTtl}s, proxy=false");
         await using var provider = new PlaywrightProvider();
         await using var processes = new ChromiumSessionManager();
         var executable = Path.Combine(root, "File", "chrome-win", settings.KernelVersion, "chrome.exe");
@@ -51,7 +52,7 @@ internal static class FullPageFlowDiagnostics
                     // Use the production connector, then intercept all browser requests before any navigation.
                     var browser = await (Task<IBrowser>)typeof(BrowserRuntimeManager).GetMethod("ConnectAsync", BindingFlags.Static | BindingFlags.NonPublic)!
                         .Invoke(null, new object[] { pw, endpoint, token })!;
-                    await browser.Contexts[0].RouteAsync("**/*", fixture.RouteAsync);
+                    if (!liveEntry) await browser.Contexts[0].RouteAsync("**/*", fixture.RouteAsync);
                     return browser;
                 });
             var worker = new SMAdTask(provider, stats, processes, null!, null!, settings, runtime);
@@ -67,7 +68,7 @@ internal static class FullPageFlowDiagnostics
             if (model.Success) { dev["osv"] = model.Groups[1].Value.Trim(); dev["model"] = Regex.Replace(model.Groups[2].Value.Trim(), "^.*?;\\s*", ""); }
             var taskArgs = new JObject
             {
-                ["task"] = new JObject { ["id"] = taskId, ["url"] = fixture.EntryUrl, ["click_rate"] = 100, ["sleep"] = "8-12" },
+                ["task"] = new JObject { ["id"] = taskId, ["url"] = liveEntry ? "about:blank" : fixture.EntryUrl, ["click_rate"] = liveEntry ? 0 : 100, ["sleep"] = "8-12" },
                 ["dev"] = dev, ["os"] = 1, ["kernelVersion"] = settings.KernelVersion,
                 ["cacheName"] = "full-flow-test", ["processIndex"] = 0, ["totalPV"] = 1,
                 ["isProxyMode"] = false, ["isHiddenMode"] = settings.IsHiddenMode, ["incognito"] = settings.Incognito,
@@ -83,9 +84,12 @@ internal static class FullPageFlowDiagnostics
             var first = actions.FirstOrDefault(a => a.Intent == "Navigate" && a.Succeeded && a.AfterUrl.StartsWith(fixture.LandingUrl));
             var second = actions.FirstOrDefault(a => a.Intent == "Navigate" && a.Succeeded && a.AfterUrl.StartsWith(fixture.DetailUrl));
             var completedStay = logs.Any(line => line == "动作完成");
-            bool fullSuccess = result.IsSuccess && result.CompletedPvs == 1 && result.CompletedClickPvs == 1 &&
-                fixture.EntryHits > 0 && fixture.LandingHits > 0 && fixture.DetailHits > 0 && first != null && second != null && completedStay &&
-                result.BrowserReclaim?.ExitConfirmed == true && result.BrowserStopKind == BrowserStopKind.Completed;
+            bool fullSuccess = liveEntry
+                ? result.IsSuccess && result.CompletedPvs == 1 && !result.ClickRequested && result.CompletedClickPvs == 0 &&
+                  result.BrowserReclaim?.ExitConfirmed == true && result.BrowserStopKind == BrowserStopKind.Completed
+                : result.IsSuccess && result.CompletedPvs == 1 && result.CompletedClickPvs == 1 &&
+                  fixture.EntryHits > 0 && fixture.LandingHits > 0 && fixture.DetailHits > 0 && first != null && second != null && completedStay &&
+                  result.BrowserReclaim?.ExitConfirmed == true && result.BrowserStopKind == BrowserStopKind.Completed;
             if (!fullSuccess) failures++;
             reports.Add(new { Round = round + 1, Site = fixture.Site, fixture.FirstPopup, fixture.SecondPopup,
                 Outcome = fullSuccess ? "complete" : "incomplete", ElapsedMs = timer.ElapsedMilliseconds,
@@ -96,8 +100,10 @@ internal static class FullPageFlowDiagnostics
                 StateEvents = stateEvents.ToArray(), Actions = actions });
             await File.WriteAllLinesAsync(Path.Combine(reportRoot, $"round-{round + 1}.log"), logs);
             await File.WriteAllTextAsync(Path.Combine(reportRoot, "report.json"), System.Text.Json.JsonSerializer.Serialize(new
-            { settings.KernelVersion, settings.IsHiddenMode, settings.Incognito, Proxy = false, Fixture = "All browser requests intercepted; no ad billing or external statistics", Reports = reports }, new JsonSerializerOptions { WriteIndented = true }));
-            Console.WriteLine($"FULL FLOW ROUND {round + 1}: {(fullSuccess ? "complete" : "incomplete")}, site={fixture.Site}, first={first != null}, second={second != null}, stay={completedStay}, result={result.Status}");
+            { settings.KernelVersion, settings.IsHiddenMode, settings.Incognito, Proxy = false, Fixture = liveEntry ? "Live entry; click rate zero; external statistics disabled" : "All browser requests intercepted; no ad billing or external statistics", Reports = reports }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine(liveEntry
+                ? $"LIVE ENTRY ROUND {round + 1}: {(fullSuccess ? "complete" : "incomplete")}, pv={result.CompletedPvs}, clickRequested={result.ClickRequested}, stay={completedStay}, result={result.Status}"
+                : $"FULL FLOW ROUND {round + 1}: {(fullSuccess ? "complete" : "incomplete")}, site={fixture.Site}, first={first != null}, second={second != null}, stay={completedStay}, result={result.Status}");
         }
         Console.WriteLine("FULL FLOW REPORT " + Path.Combine(reportRoot, "report.json"));
         Environment.ExitCode = failures == 0 ? 0 : 1;

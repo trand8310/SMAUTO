@@ -18,4 +18,9 @@ public sealed partial class HumanTouchEngine
         }
     }
     public Action<string>? SessionLog { get; set; }
+    private void LogTouchDiagnostic(Action<string>? local, string message)
+    {
+        try { SessionLog?.Invoke(message); } catch { }
+        if (!ReferenceEquals(local, SessionLog)) { try { local?.Invoke(message); } catch { } }
+    }
 }

@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Patchright" Version="1.64.1" />
+    <InternalsVisibleTo Include="CdpInput.RegressionTests" />
   </ItemGroup>
 </Project>

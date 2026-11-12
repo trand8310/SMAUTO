@@ -1,0 +1,17 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Tap: input queue=1ms
+Tap[1] stage: resolve owner frame, elapsed=2ms, budget=5000ms
+Tap[1] stage: initialize touch, elapsed=17ms, budget=5000ms
+Tap[1] stage: wait for touch session lock, elapsed=17ms, budget=5000ms
+Tap[1] stage: prepare action rhythm, elapsed=19ms, budget=5000ms
+Prepare: 211ms
+Tap[1] stage: check visibility and enabled state, elapsed=244ms, budget=5000ms
+Tap[1] stage: read bounding box, elapsed=265ms, budget=5000ms
+Tap[1] stage: read viewport, elapsed=272ms, budget=5000ms
+Tap[1] stage: target hit test, elapsed=295ms, budget=5000ms
+Tap[1] stage: check target stability, elapsed=351ms, budget=5000ms
+Tap[1] stage: dispatch touch, elapsed=444ms, budget=5000ms
+Tap: (134.0,84.7), planned=71ms, actual=107ms, force=0.50
+ROUND 1 FAIL stage=read DOM after tap: Touch did not trigger click: 0
+ROUND 1: failed, stage=read DOM after tap, exitedBeforeCleanup=False, connectedBeforeCleanup=True

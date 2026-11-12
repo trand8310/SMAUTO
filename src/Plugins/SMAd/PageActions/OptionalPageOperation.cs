@@ -10,6 +10,7 @@ public static class OptionalPageOperation
         !token.IsCancellationRequested && !ctx.Config.LinkedCts.IsCancellationRequested &&
         ctx.BrowserSession?.Token.IsCancellationRequested != true && !ctx.ProxyFailed && !ctx.PageCrashed &&
         ctx.Page is { IsClosed: false } && (ctx.Browser == null || ctx.Browser.IsConnected) &&
+        (ctx.CdpSession == null || !HumanTouchP3.Input.CdpTouchRuntime.IsInvalid(ctx.CdpSession)) &&
         (!ctx.PageHttpStatuses.TryGetValue(ctx.Page, out var status) || status < 400);
 
     public static async Task<bool> RunAsync(WorkerRunContext ctx, string action, Func<Task> work,

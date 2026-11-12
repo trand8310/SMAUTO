@@ -1,0 +1,10 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry attempt start: attempt=1/2, timeoutMs=10000
+Entry response: status=200, url=https://wm.m.sm.cn/s?q=fixture, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry wait: elapsedMs=5106, responseStatus=200, committed=True, urlMatch=True, download=False, probe=page_error, candidates=-1, visible=-1, stableSamples=0, waiting=DOMContentLoaded_or_visible_ad
+Entry readiness check ended: elapsedMs=10030, probe=page_error, candidates=-1, visible=-1, stableSamples=0
+Entry navigation timed out but main document has visible content: status=200, url=https://wm.m.sm.cn/s?q=fixture
+Entry attempt end: attempt=1/2, elapsedMs=10041, responseMs=82, commitMs=91, domContentLoadedMs=-1, status=200, closed=False
+ROUND 1 FAIL stage=search result early readiness fixture: Visible result did not become ready before DOMContentLoaded: Entry navigation timed out; visible document accepted, elapsed=10048
+ROUND 1: failed, stage=search result early readiness fixture, exitedBeforeCleanup=False, connectedBeforeCleanup=True

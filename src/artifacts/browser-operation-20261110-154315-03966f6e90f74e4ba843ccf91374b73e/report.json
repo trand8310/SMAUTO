@@ -1,0 +1,27 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Build\\publish\\File\\chrome-win\\125.0.6422.136\\chrome.exe",
+  "KernelVersion": "125.0.6422.136",
+  "IsHiddenMode": false,
+  "Incognito": true,
+  "Proxy": false,
+  "ActualUrl": "",
+  "Reports": [
+    {
+      "Round": 1,
+      "Model": "24129RT7CC",
+      "Stage": "local touch timing",
+      "Outcome": "failed",
+      "ElapsedMs": 8703,
+      "Error": "System.Exception: Tap 1 did not navigate to its fragment\r\n   at StartupDiagnostics.VerifyTouchTimingAsync(IPage page, ICDPSession cdp, HumanTouchOperator human, CancellationToken token, Action\u00601 log) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 251\r\n   at StartupDiagnostics.RunAsync(String[] args) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 105",
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 1,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[20860:12624:1110/154316.692:ERROR:external_registry_loader_win.cc(158)] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:54610/devtools/browser/0eaa997c-538b-429b-ba62-8443fb281c54"
+      }
+    }
+  ]
+}

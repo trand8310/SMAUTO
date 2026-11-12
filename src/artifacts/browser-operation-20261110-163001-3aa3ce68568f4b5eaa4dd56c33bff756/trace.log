@@ -1,0 +1,15 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=https://wm.m.sm.cn/s?q=fixture, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry search result ready: visible advertisement confirmed before DOMContentLoaded, elapsedMs=727
+Visible search ad accepted early: elapsedMs=734
+Entry response: status=200, url=https://wm.m.sm.cn/s?hidden=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry navigation temporarily failed: attempt=1/2, url=https://wm.m.sm.cn/s?hidden=1, error=Timeout 1800ms exceeded.
+Call log:
+  - navigating to "https://wm.m.sm.cn/s?hidden=1", waiting until "domcontentloaded"
+Entry response: status=200, url=https://wm.m.sm.cn/s?hidden=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry navigation temporarily failed: attempt=2/2, url=https://wm.m.sm.cn/s?hidden=1, error=Timeout 1800ms exceeded.
+Call log:
+  - navigating to "https://wm.m.sm.cn/s?hidden=1", waiting until "domcontentloaded"
+Hidden search ad did not trigger early readiness: elapsedMs=4558
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

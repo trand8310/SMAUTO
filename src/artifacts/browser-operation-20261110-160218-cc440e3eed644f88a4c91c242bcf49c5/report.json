@@ -1,0 +1,27 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Build\\publish\\File\\chrome-win\\125.0.6422.136\\chrome.exe",
+  "KernelVersion": "125.0.6422.136",
+  "IsHiddenMode": false,
+  "Incognito": true,
+  "Proxy": false,
+  "ActualUrl": "",
+  "Reports": [
+    {
+      "Round": 1,
+      "Model": "24129RT7CC",
+      "Stage": "AI site no-result visibility",
+      "Outcome": "failed",
+      "ElapsedMs": 6769,
+      "Error": "System.Exception: Hidden no-result text was mistaken for visible content\r\n   at StartupDiagnostics.VerifyAiSiteNoResultAsync(IPage page, CancellationToken token, Action\u00601 log) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 275\r\n   at StartupDiagnostics.RunAsync(String[] args) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 110",
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 1,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[17744:34600:1110/160219.849:ERROR:external_registry_loader_win.cc(158)] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:50977/devtools/browser/7e4ca94e-4121-400a-b675-a2dabc91c25e"
+      }
+    }
+  ]
+}

@@ -48,15 +48,25 @@ public static class CdpTouchRuntime
         if (page.IsClosed) throw new InvalidOperationException("The page is closed.");
         state.Page = page;
         if (state.Initialized) return;
-        await session.SendAsync("Input.setIgnoreInputEvents", new Dictionary<string, object> { ["ignore"] = false }).WaitAsync(TimeSpan.FromSeconds(5));
-        await session.SendAsync("Emulation.setTouchEmulationEnabled", new Dictionary<string, object>
+        try
         {
-            ["enabled"] = true, ["maxTouchPoints"] = Math.Clamp(maxTouchPoints, 1, 16)
-        }).WaitAsync(TimeSpan.FromSeconds(5));
+            await session.SendAsync("Input.setIgnoreInputEvents", new Dictionary<string, object> { ["ignore"] = false }).WaitAsync(TimeSpan.FromSeconds(5), token);
+            await session.SendAsync("Emulation.setTouchEmulationEnabled", new Dictionary<string, object>
+            {
+                ["enabled"] = true, ["maxTouchPoints"] = Math.Clamp(maxTouchPoints, 1, 16)
+            }).WaitAsync(TimeSpan.FromSeconds(5), token);
+        }
+        catch (TimeoutException ex)
+        {
+            Invalidate(session);
+            throw new InvalidOperationException("Touch initialization timed out; session state is unknown.", ex);
+        }
+        catch (OperationCanceledException) { Invalidate(session); throw; }
         state.Initialized = true;
     }
 
     public static void Invalidate(ICDPSession session) => States.GetValue(session, _ => new State()).Closed = true;
+    public static bool IsInvalid(ICDPSession session) => States.GetValue(session, _ => new State()).Closed;
 
     public static async Task<Lease> StopAsync(ICDPSession session)
     {

@@ -1,0 +1,29 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=100000&q=%E5%A1%91%E6%96%99, content-type=text/html;charset=utf-8, content-disposition=, location=
+Swipe: input queue=1ms
+Prepare: 301ms
+Reading/Up (231,649)->(228,399) duration=454ms release=70px/s
+Swipe observation: MovedAndSettled
+Swipe dispatched: scroll verified=True, points=39
+Actual page swipe verified=True
+Tap: input queue=0ms
+Tap[1] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[1] stage: initialize touch, elapsed=43ms, budget=5000ms
+Tap[1] stage: wait for touch session lock, elapsed=44ms, budget=5000ms
+Tap[1] stage: prepare action rhythm, elapsed=44ms, budget=5000ms
+Prepare: 6ms
+Tap[1] stage: check visibility and enabled state, elapsed=65ms, budget=5000ms
+Tap[1] stage: read bounding box, elapsed=372ms, budget=5000ms
+Tap[1] stage: read viewport, elapsed=381ms, budget=5000ms
+Tap: input queue=0ms
+Tap[2] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[2] stage: initialize touch, elapsed=10ms, budget=5000ms
+Tap[2] stage: wait for touch session lock, elapsed=10ms, budget=5000ms
+Tap[2] stage: prepare action rhythm, elapsed=10ms, budget=5000ms
+Tap[2] stage: check visibility and enabled state, elapsed=10ms, budget=5000ms
+Tap[2] stage: read bounding box, elapsed=30ms, budget=5000ms
+Tap[2] stage: read viewport, elapsed=34ms, budget=5000ms
+Actual search page input touched=False, candidates=2
+ROUND 1 FAIL stage=actual page touch input: No search input received a touch
+ROUND 1: failed, stage=actual page touch input, exitedBeforeCleanup=False, connectedBeforeCleanup=True

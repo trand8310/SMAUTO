@@ -1,0 +1,44 @@
+{
+  "Executable": "D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\Build\\publish\\File\\chrome-win\\125.0.6422.136\\chrome.exe",
+  "KernelVersion": "125.0.6422.136",
+  "IsHiddenMode": false,
+  "Incognito": true,
+  "Proxy": false,
+  "ActualUrl": "",
+  "Reports": [
+    {
+      "Round": 1,
+      "Model": "24129RT7CC",
+      "Stage": "read DOM after tap",
+      "Outcome": "failed",
+      "ElapsedMs": 5543,
+      "Error": "System.Exception: Touch did not trigger click: 0\r\n   at StartupDiagnostics.RunAsync(String[] args) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 111",
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 1,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[26152:16440:1110/150219.287:ERROR:external_registry_loader_win.cc(158)] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:52425/devtools/browser/8b576229-10ec-424e-9332-c2bf9b5b08ae"
+      }
+    },
+    {
+      "Round": 2,
+      "Model": "24069RA21C",
+      "Stage": "read DOM after tap",
+      "Outcome": "failed",
+      "ElapsedMs": 4330,
+      "Error": "System.Exception: Touch did not trigger click: 0\r\n   at StartupDiagnostics.RunAsync(String[] args) in D:\\workhome\\SVNRoot\\WUQIXIU_PROJECT\\SMAUTO\\src\\tests\\CdpInput.RegressionTests\\StartupDiagnostics.cs:line 111",
+      "ExitedBeforeCleanup": false,
+      "ConnectedBeforeCleanup": true,
+      "Reclaim": {
+        "Reason": 1,
+        "ExitConfirmed": true,
+        "Forced": true,
+        "ExitCode": -1,
+        "DiagnosticTail": "[31400:26864:1110/150223.980:ERROR:external_registry_loader_win.cc(158)] File C:\\Users\\Administrator\\AppData\\Local\\Programs\\quark-cloud-drive\\resources\\assets\\extensions\\win32\\main.crx for key Software\\Google\\Chrome\\Extensions\\golbdgciocipijcnkhfjbljaepchclbc does not exist or is not readable.\r\nDevTools listening on ws://127.0.0.1:58750/devtools/browser/09bc0048-db06-47dc-a426-6cff2731c22b"
+      }
+    }
+  ]
+}

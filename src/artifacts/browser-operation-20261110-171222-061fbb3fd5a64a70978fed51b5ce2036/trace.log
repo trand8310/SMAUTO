@@ -1,0 +1,63 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry attempt start: attempt=1/2, timeoutMs=10000
+Entry response: status=200, url=https://wm.m.sm.cn/s?q=fixture, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry readiness check accepted: elapsedMs=580, candidates=1, visible=1, stableSamples=2
+Entry search result ready: visible advertisement confirmed before DOMContentLoaded, elapsedMs=581
+Entry attempt end: attempt=1/2, elapsedMs=582, responseMs=73, commitMs=78, domContentLoadedMs=-1, status=200, closed=False
+Visible search ad accepted early: elapsedMs=588
+Entry attempt start: attempt=1/2, timeoutMs=1800
+Entry response: status=200, url=https://wm.m.sm.cn/s?hidden=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry readiness check ended: elapsedMs=1811, probe=ok, candidates=1, visible=0, stableSamples=0
+Entry navigation temporarily failed: attempt=1/2, url=https://wm.m.sm.cn/s?hidden=1, error=Timeout 1800ms exceeded.
+Call log:
+  - navigating to "https://wm.m.sm.cn/s?hidden=1", waiting until "domcontentloaded"
+Entry attempt end: attempt=1/2, elapsedMs=1818, responseMs=17, commitMs=27, domContentLoadedMs=-1, status=200, closed=False
+Entry attempt start: attempt=2/2, timeoutMs=1800
+Entry response: status=200, url=https://wm.m.sm.cn/s?hidden=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry readiness check ended: elapsedMs=1804, probe=ok, candidates=1, visible=0, stableSamples=0
+Entry navigation temporarily failed: attempt=2/2, url=https://wm.m.sm.cn/s?hidden=1, error=Timeout 1800ms exceeded.
+Call log:
+  - navigating to "https://wm.m.sm.cn/s?hidden=1", waiting until "domcontentloaded"
+Entry attempt end: attempt=2/2, elapsedMs=1808, responseMs=8, commitMs=19, domContentLoadedMs=-1, status=200, closed=False
+hidden search ad did not trigger early readiness: elapsedMs=4711
+Entry attempt start: attempt=1/2, timeoutMs=1800
+Entry response: status=200, url=https://wm.m.sm.cn/s?opacity=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry readiness check ended: elapsedMs=1802, probe=ok, candidates=1, visible=0, stableSamples=0
+Entry navigation timed out but main document has visible content: status=200, url=https://wm.m.sm.cn/s?opacity=1
+Entry attempt end: attempt=1/2, elapsedMs=1805, responseMs=21, commitMs=33, domContentLoadedMs=-1, status=200, closed=False
+opacity search ad did not trigger early readiness: elapsedMs=1808
+Entry attempt start: attempt=1/2, timeoutMs=1800
+Entry response: status=200, url=https://wm.m.sm.cn/s?clipped=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry readiness check ended: elapsedMs=1806, probe=ok, candidates=1, visible=0, stableSamples=0
+Entry navigation timed out but main document has visible content: status=200, url=https://wm.m.sm.cn/s?clipped=1
+Entry attempt end: attempt=1/2, elapsedMs=1811, responseMs=19, commitMs=34, domContentLoadedMs=-1, status=200, closed=False
+clipped search ad did not trigger early readiness: elapsedMs=1813
+Entry attempt start: attempt=1/2, timeoutMs=1800
+Main document HTTP 503: https://wm.m.sm.cn/s?error=1
+Entry response: status=503, url=https://wm.m.sm.cn/s?error=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry readiness check ended: elapsedMs=1814, probe=not_checked, candidates=-1, visible=-1, stableSamples=0
+Entry attempt end: attempt=1/2, elapsedMs=1814, responseMs=26, commitMs=26, domContentLoadedMs=-1, status=503, closed=False
+error search ad did not trigger early readiness: elapsedMs=1815
+Entry attempt start: attempt=1/2, timeoutMs=5500
+Entry response: status=200, url=https://wm.m.sm.cn/s?hidden=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry wait: elapsedMs=5006, responseStatus=200, committed=True, urlMatch=True, download=False, probe=ok, candidates=1, visible=0, stableSamples=0, waiting=DOMContentLoaded_or_visible_ad
+Entry readiness check ended: elapsedMs=5503, probe=ok, candidates=1, visible=0, stableSamples=0
+Entry navigation temporarily failed: attempt=1/2, url=https://wm.m.sm.cn/s?hidden=1, error=Timeout 5500ms exceeded.
+Call log:
+  - navigating to "https://wm.m.sm.cn/s?hidden=1", waiting until "domcontentloaded"
+Entry attempt end: attempt=1/2, elapsedMs=5507, responseMs=12, commitMs=20, domContentLoadedMs=-1, status=200, closed=False
+Entry attempt start: attempt=2/2, timeoutMs=5500
+Entry response: status=200, url=https://wm.m.sm.cn/s?hidden=1, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry wait: elapsedMs=5037, responseStatus=200, committed=True, urlMatch=True, download=False, probe=ok, candidates=1, visible=0, stableSamples=0, waiting=DOMContentLoaded_or_visible_ad
+Entry readiness check ended: elapsedMs=5504, probe=ok, candidates=1, visible=0, stableSamples=0
+Entry navigation temporarily failed: attempt=2/2, url=https://wm.m.sm.cn/s?hidden=1, error=Timeout 5500ms exceeded.
+Call log:
+  - navigating to "https://wm.m.sm.cn/s?hidden=1", waiting until "domcontentloaded"
+Entry attempt end: attempt=2/2, elapsedMs=5508, responseMs=7, commitMs=15, domContentLoadedMs=-1, status=200, closed=False
+Entry scroll fixture short: scrollSpace=False
+Entry scroll fixture long: scrollSpace=True
+Entry scroll fixture nested: scrollSpace=True
+Entry scroll fixture hidden: scrollSpace=False
+Entry scroll fixture iframe: scrollSpace=unknown
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

@@ -1,0 +1,6 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=http://127.0.0.1:62785/partial, content-type=text/html; charset=utf-8, content-disposition=, location=
+Entry navigation timed out but main document has visible content: status=200, url=http://127.0.0.1:62785/partial
+Partial document accepted after navigation timeout with verified visible content
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

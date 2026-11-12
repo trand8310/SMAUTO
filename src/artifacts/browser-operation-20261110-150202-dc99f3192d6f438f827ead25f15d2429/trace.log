@@ -1,0 +1,24 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=100000&q=%E5%A1%91%E6%96%99, content-type=text/html;charset=utf-8, content-disposition=, location=
+Tap: input queue=0ms
+Tap[1] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[1] stage: initialize touch, elapsed=75ms, budget=5000ms
+Tap[1] stage: wait for touch session lock, elapsed=75ms, budget=5000ms
+Tap[1] stage: prepare action rhythm, elapsed=75ms, budget=5000ms
+Prepare: 313ms
+Tap[1] stage: check visibility and enabled state, elapsed=393ms, budget=5000ms
+Tap[1] stage: read bounding box, elapsed=410ms, budget=5000ms
+Tap[1] stage: read viewport, elapsed=415ms, budget=5000ms
+Tap[1] stage: target hit test, elapsed=424ms, budget=5000ms
+Tap[1] stage: check target stability, elapsed=443ms, budget=5000ms
+Tap[1] stage: dispatch touch, elapsed=548ms, budget=5000ms
+Tap: (187.5,43.1), planned=65ms, actual=102ms, force=0.49
+Actual search page input touched=True, candidates=2
+Swipe: input queue=0ms
+Prepare: 171ms
+Reading/Up (257,637)->(254,474) duration=363ms release=66px/s
+Swipe observation: MovedAndSettled
+Swipe dispatched: scroll verified=True, points=26
+Actual page swipe verified=True
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

@@ -42,17 +42,21 @@ namespace HumanTouchP3.Input
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            using var queue = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            queue.CancelAfter(TimeSpan.FromSeconds(30));
+            var queueClock = System.Diagnostics.Stopwatch.StartNew();
+            using var input = await HumanInputCoordinator.AcquireAsync(Session, queue.Token);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(10000);
             cancellationToken = deadline.Token;
-            using var input = await HumanInputCoordinator.AcquireAsync(Session, cancellationToken);
             request ??= new HumanTouchRequest();
+            request.Log?.Invoke($"Swipe: input queue={queueClock.ElapsedMilliseconds}ms");
             Validate(page, cdp);
             if (!IsCurrentBinding(page, cdp)) return null;
             var viewport = await GetEffectiveViewportAsync(page).WaitAsync(cancellationToken);
             if (viewport.Width <= 0 || viewport.Height <= 0) return null;
 
-            await _dispatcher.EnableAsync(page, cdp, Session.DeviceProfile);
+            await CdpTouchRuntime.InitializeAsync(page, cdp, Session.DeviceProfile.MaxTouchPoints, cancellationToken);
             using var inputLease = await CdpTouchRuntime.AcquireAsync(cdp, cancellationToken);
             await Rhythm.PrepareAsync(Session, request.Log, cancellationToken);
 
@@ -95,15 +99,23 @@ namespace HumanTouchP3.Input
             var executionClock = System.Diagnostics.Stopwatch.StartNew();
             cancellationToken.ThrowIfCancellationRequested();
             if (page.IsClosed || !IsCurrentBinding(page, cdp)) return null;
-            await _dispatcher.DispatchWithinLeaseAsync(cdp, samples, plan, Session.DeviceProfile, cancellationToken,
-                () => !page.IsClosed && IsCurrentBinding(page, cdp));
+            bool dispatched = await _dispatcher.DispatchWithinLeaseAsync(cdp, samples, plan, Session.DeviceProfile, cancellationToken,
+                () => !page.IsClosed && IsCurrentBinding(page, cdp), async ct =>
+                {
+                    if (page.IsClosed || !IsCurrentBinding(page, cdp)) return false;
+                    var value = await page.EvaluateAsync<int>("() => 1").WaitAsync(TimeSpan.FromSeconds(2), ct);
+                    return value == 1 && !page.IsClosed && IsCurrentBinding(page, cdp);
+                }, message => LogTouchDiagnostic(request.Log, message));
+            if (!dispatched) { Session.RecordGesture(null); return null; }
             var actualDuration = executionClock.Elapsed.TotalMilliseconds;
 
             bool moved = true;
             if (request.VerifyScrollChanged && before != null && docBefore != null)
             {
-                moved = await _scrollResolver.DidScrollAsync(
-                    page, before, docBefore, plan.Start.X, plan.Start.Y, plan.Direction, request.ScrollChangedMinDelta, cancellationToken);
+                var verification = await _scrollResolver.VerifyScrollAsync(
+                    page, before, plan.Direction, request.ScrollChangedMinDelta, cancellationToken);
+                moved = verification == ScrollVerificationStatus.MovedAndSettled;
+                request.Log?.Invoke($"Swipe observation: {verification}");
             }
 
             var trace = BuildTrace(plan, samples, moved, request.FlingStrength);

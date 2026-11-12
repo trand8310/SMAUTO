@@ -12,8 +12,22 @@ internal static class PageActionChecks
         var worker = new QTP.Plugins.SMAdTask(null!, null!, null!, null!, null!, new QTP.Common.Infrastructure.AppSettings());
         var empty = new WorkerRunContext(new() { LinkedCts = new(), TotalPV = 0 });
         empty.AdHit = true;
+        empty.EntryAdObserved = true;
+        empty.PageAdsCount = 3;
         empty.ResetPerPvState();
-        check(empty.AdHit && !empty.PageTriggerClick, "广告命中跨 PV 保留，页面状态独立重置");
+        check(empty.AdHit && !empty.PageTriggerClick && !empty.EntryAdObserved && empty.PageAdsCount == 0, "广告命中跨 PV 保留，广告检测状态独立重置");
+        var probeRace = typeof(EntryPageNavigator).GetMethod("WaitForProbeOrNavigationAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
+        Task<bool> Race(Task probe, Task nav, CancellationToken ct) => (Task<bool>)probeRace.Invoke(null, new object[] { probe, nav, ct })!;
+        var stalledProbe = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        check(!await Race(stalledProbe.Task, Task.CompletedTask, default).WaitAsync(TimeSpan.FromSeconds(1)), "导航完成时不等待未完成的广告探测");
+        var pendingEntryNavigation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        check(await Race(Task.CompletedTask, pendingEntryNavigation.Task, default), "广告探测先完成时可继续判断提前就绪");
+        using (var canceled = new CancellationTokenSource())
+        {
+            canceled.Cancel();
+            try { await Race(stalledProbe.Task, pendingEntryNavigation.Task, canceled.Token); throw new Exception("Cancellation was swallowed"); }
+            catch (OperationCanceledException) { check(true, "广告探测竞争保留任务取消"); }
+        }
         var mainFlow = typeof(QTP.Plugins.SMAdTask).GetMethod("RunMainFlowAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var completed = await (Task<bool>)mainFlow.Invoke(worker, new object[] { empty, CancellationToken.None })!;
         check(!completed && empty.LastFailureReason != null, "未执行任何页面轮次不能返回任务成功");
@@ -174,13 +188,36 @@ internal static class PageActionChecks
         catch (TimeoutException) { disconnectPropagated = true; }
         check(disconnectPropagated, "浏览器断开时不将超时视为可恢复");
         recoveryCtx.Browser = null;
-        using (await HumanInputCoordinator.AcquireAsync(recoveryCtx.human.Session, default))
+        var countMethod = typeof(SMAd.LandingPolicy.AiSiteLandingPageStrategy).GetMethod("TryCountAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var imageLocator = ActionStub.Create<ILocator>();
+        var imageState = ActionStub.Of(imageLocator);
+        var countLogs = new List<string>();
+        Task<int?> CountImages(CancellationToken ct) => (Task<int?>)countMethod.Invoke(null, new object[] { recoveryCtx, imageLocator, ct, (Action<string>)countLogs.Add })!;
+        imageState.CountValue = 0;
+        check(await CountImages(default) == 0 && countLogs.Any(x => x.Contains("匹配数=0")),
+            "AI站点没有动画图片时记录零匹配并继续");
+        imageState.CountValue = 2;
+        check(await CountImages(default) == 2, "AI站点动画图片计数只读取一次并保留匹配数");
+        imageState.CountError = new PlaywrightException("Execution context was destroyed during navigation");
+        check(await CountImages(default) == null && countLogs.Any(x => x.Contains("Execution context was destroyed")),
+            "AI站点查找遇到可恢复页面异常时记录原因并跳过动画步骤");
+        imageState.CountError = null;
+        using (var canceledCount = new CancellationTokenSource())
         {
-            var directTap = await SMAd.SmAdTouch.TapAsync(page, recoveryCtx.CdpSession!,
-                Stub.Create<IElementHandle>(), timeout: 40);
-            check(!directTap && !recoveryCtx.Config.LinkedCts.IsCancellationRequested,
-                "直接触屏点击等待输入锁局部超时返回false，不结束访问");
+            canceledCount.Cancel();
+            bool canceled = false;
+            try { await CountImages(canceledCount.Token); } catch (OperationCanceledException) { canceled = true; }
+            check(canceled, "AI站点动画查找传播任务取消");
         }
+        var healthySession = recoveryCtx.CdpSession!;
+        var uncertainSession = Stub.Create<ICDPSession>();
+        recoveryCtx.SetActivePage(page, uncertainSession);
+        HumanTouchP3.Input.CdpTouchRuntime.Invalidate(uncertainSession);
+        bool invalidSessionPropagated = false;
+        try { await OptionalPageOperation.RunAsync(recoveryCtx, "Unknown input", () => Task.FromException(new OperationCanceledException()), default, _ => { }); }
+        catch (OperationCanceledException) { invalidSessionPropagated = true; }
+        check(invalidSessionPropagated, "输入状态未知的会话不能按局部超时继续");
+        recoveryCtx.SetActivePage(page, healthySession);
         recoveryCtx.JumpClick = true;
         recoveryCtx.ClickRequested = true;
         recoveryCtx.CurrentVisitReady = true;
@@ -227,6 +264,36 @@ internal static class PageActionChecks
         entryResult = await EntryPageNavigator.NavigateAsync(entryPage, "https://example.test/search", 5000, default, _ => { });
         check(!entryResult.Opened && entryAttempts == 2 && entryResult.FailureKind == QTP.Common.BrowserStopKind.OperationTimedOut,
             "反复入口超时只重试一次并返回明确超时结果");
+        var partialFrame = ActionStub.Create<IFrame>();
+        var partialRequest = ActionStub.Create<IRequest>();
+        ActionStub.Of(partialRequest).Frame = partialFrame;
+        ActionStub.Of(partialRequest).NavigationRequest = true;
+        var partialResponse = ActionStub.Create<IResponse>();
+        var partialResponseState = ActionStub.Of(partialResponse);
+        partialResponseState.Request = partialRequest;
+        partialResponseState.Url = "https://example.test/search";
+        partialResponseState.Status = 200;
+        entryState.Frame = partialFrame;
+        entryState.Url = partialResponseState.Url;
+        entryState.Evaluate = () => true;
+        entryAttempts = 0;
+        entryState.Navigate = () => { entryAttempts++; entryState.Raise("Response", partialResponse); entryState.Raise("FrameNavigated", partialFrame); return Task.FromException<IResponse?>(new TimeoutException("Navigation timed out")); };
+        entryResult = await EntryPageNavigator.NavigateAsync(entryPage, entryState.Url, 5000, default, _ => { });
+        check(entryResult.Opened && entryAttempts == 1 && entryResult.HttpStatus == 200,
+            "入口超时但成功主文档已有可见内容时直接继续");
+        partialResponseState.Status = 503;
+        entryAttempts = 0;
+        entryResult = await EntryPageNavigator.NavigateAsync(entryPage, entryState.Url, 5000, default, _ => { });
+        check(!entryResult.Opened && entryResult.HttpStatus == 503 && entryAttempts == 1,
+            "入口超时即使有内容也不能接受 HTTP 错误页");
+        partialResponseState.Status = 200;
+        entryState.Evaluate = () => false;
+        entryAttempts = 0;
+        entryResult = await EntryPageNavigator.NavigateAsync(entryPage, entryState.Url, 5000, default, _ => { });
+        check(!entryResult.Opened && entryAttempts == 2, "空页面超时仍有界重试并失败");
+        entryState.Evaluate = null;
+        entryState.Frame = null;
+        entryState.Url = "about:blank";
         entryAttempts = 0;
         entryState.Navigate = () => { entryAttempts++; return Task.FromException<IResponse?>(new PlaywrightException("net::ERR_PROXY_CONNECTION_FAILED")); };
         bool proxyPropagated = false;
@@ -337,6 +404,8 @@ public class ActionStub : DispatchProxy
     public string? Failure;
     public object? Box;
     public Func<object>? Evaluate;
+    public int CountValue;
+    public Exception? CountError;
     private readonly Dictionary<string, Delegate?> _events = new();
     public static T Create<T>() where T : class => Create<T, ActionStub>();
     public static ActionStub Of(object value) => (ActionStub)value;
@@ -355,6 +424,7 @@ public class ActionStub : DispatchProxy
         if (name == "get_Url") return Url;
         if (name == "get_Status") return Status;
         if (name == "get_Request") return Request;
+        if (name == "get_Headers") return new Dictionary<string, string>();
         if (name == "get_Frame") { if (FrameError != null) throw FrameError; return Frame; }
         if (name == "get_Page") return Page;
         if (name == "get_IsNavigationRequest") return NavigationRequest;
@@ -365,6 +435,7 @@ public class ActionStub : DispatchProxy
         if (name == "get_First") return this;
         if (name == "Locator") return Locator;
         if (name == "GotoAsync" && Navigate != null) return Navigate();
+        if (name == "CountAsync") return CountError == null ? Task.FromResult(CountValue) : Task.FromException<int>(CountError);
         if (name == "WaitForLoadStateAsync" && ReadyError) return Task.FromException(new TimeoutException("Not ready"));
         if (method.ReturnType == typeof(Task)) return Task.CompletedTask;
         if (method.ReturnType.IsGenericType && method.ReturnType.GetGenericTypeDefinition() == typeof(Task<>))

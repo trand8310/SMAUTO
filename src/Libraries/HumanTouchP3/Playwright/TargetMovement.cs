@@ -58,7 +58,7 @@ public sealed partial class HumanTouchEngine
                         return !!h && (h===el || el.contains(h));
                     }").WaitAsync(ct);
                 double centerY = rect.Y + rect.Height * .5;
-                if (actionable && centerY >= viewport.Height * .22 && centerY <= viewport.Height * .72)
+                if (actionable && (i == maxSwipes || centerY >= viewport.Height * .22 && centerY <= viewport.Height * .72))
                 {
                     await Task.Delay(80, ct);
                     var after = await element.BoundingBoxAsync().WaitAsync(ct);
@@ -67,7 +67,7 @@ public sealed partial class HumanTouchEngine
                         return new(TargetMovementStatus.Ready, traces);
                     continue;
                 }
-                if (i == maxSwipes) return new(actionable ? TargetMovementStatus.Ready : TargetMovementStatus.NoProgress, traces, "Swipe limit reached");
+                if (i == maxSwipes) return new(TargetMovementStatus.NoProgress, traces, "Swipe limit reached");
                 // Use the target's nearest scrolling ancestor instead of an arbitrary viewport point.
                 await using var ancestor = await element.EvaluateHandleAsync(@"el => {
                     for(let p=el.parentElement;p;p=p.parentElement) {
@@ -103,7 +103,7 @@ public sealed partial class HumanTouchEngine
                 var trace = await SwipeInsideRectAsync(page, cdp,
                     new ElementRect { X = left, Y = top, Width = right - left, Height = bottom - top },
                     new HumanTouchRequest { Direction = direction, Intent = SwipeIntent.MicroAdjust, DistancePx = distance, VerifyScrollChanged = true, ScrollChangedMinDelta = 2 }, ct);
-                if (trace == null) return new(actionable ? TargetMovementStatus.Ready : TargetMovementStatus.NoProgress, traces, "Container reached boundary or did not settle");
+                if (trace == null) return new(TargetMovementStatus.NoProgress, traces, "Container reached boundary or did not settle");
                 traces.Add(trace);
             }
             return new(TargetMovementStatus.NoProgress, traces, "Swipe limit reached");

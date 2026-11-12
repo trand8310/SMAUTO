@@ -11,26 +11,23 @@ public sealed partial class HumanTouchEngine
     public async Task<bool> TapAsync(IPage page, ICDPSession session, ILocator target, int dir = 0,
         int timeout = 5000, Action<string>? log = null, CancellationToken cancellationToken = default)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
-        using var diagnostics = new TapCancellationDiagnostics(log, cancellationToken, deadline.Token, timeout);
-        cancellationToken = deadline.Token;
         cancellationToken.ThrowIfCancellationRequested();
-        diagnostics.EnterStage("resolve locator");
         await using var handle = await target.ElementHandleAsync(new() { Timeout = timeout }).WaitAsync(cancellationToken);
-        diagnostics.EnterStage("tap resolved element");
         return handle != null && await TapAsync(page, session, handle, dir, timeout, log, cancellationToken);
     }
 
     public async Task<bool> TapAsync(IPage page, ICDPSession session, IElementHandle target, int dir = 0,
         int timeout = 5000, Action<string>? log = null, CancellationToken cancellationToken = default)
     {
+        using var queue = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        queue.CancelAfter(TimeSpan.FromSeconds(30));
+        var queueClock = Stopwatch.StartNew();
+        using var input = await HumanInputCoordinator.AcquireAsync(Session, queue.Token);
+        log?.Invoke($"Tap: input queue={queueClock.ElapsedMilliseconds}ms");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout);
         using var diagnostics = new TapCancellationDiagnostics(log, cancellationToken, deadline.Token, timeout);
         cancellationToken = deadline.Token;
-        diagnostics.EnterStage("wait for input lock");
-        using var input = await HumanInputCoordinator.AcquireAsync(Session, cancellationToken);
         Validate(page, session);
         if (!IsCurrentBinding(page, session)) return false;
         diagnostics.EnterStage("resolve owner frame");
@@ -59,12 +56,14 @@ public sealed partial class HumanTouchEngine
         double y = top + (bottom - top) * Math.Clamp(ratio + (Session.Random.NextDouble() - 0.5) * 0.2, 0.1, 0.9);
         // Evaluate in the target's frame; bounding boxes are in main-frame coordinates.
         diagnostics.EnterStage("target hit test");
+        async Task<bool> HitAsync(double px, double py)
+        {
         bool hit = await target.EvaluateAsync<bool>(@"(el,p) => {
             const r=el.getBoundingClientRect();
             const h=el.ownerDocument.elementFromPoint(r.left+r.width*p.rx,r.top+r.height*p.ry);
             return !!h && (h===el || el.contains(h));
-        }", new { rx = (x - box.X) / box.Width, ry = (y - box.Y) / box.Height }).WaitAsync(cancellationToken);
-        if (!hit) { log?.Invoke("Tap: target is covered"); return false; }
+        }", new { rx = (px - box.X) / box.Width, ry = (py - box.Y) / box.Height }).WaitAsync(cancellationToken);
+        if (!hit) return false;
         // Also check iframe ancestors; an overlay outside the frame can cover its target.
         for (var frame = owner; frame.ParentFrame != null; frame = frame.ParentFrame)
         {
@@ -76,14 +75,33 @@ public sealed partial class HumanTouchEngine
                 const r=el.getBoundingClientRect();
                 const h=el.ownerDocument.elementFromPoint(r.left+r.width*p.rx,r.top+r.height*p.ry);
                 return !!h && (h===el || el.contains(h));
-            }", new { rx = (x - frameBox.X) / frameBox.Width, ry = (y - frameBox.Y) / frameBox.Height }).WaitAsync(cancellationToken);
+            }", new { rx = (px - frameBox.X) / frameBox.Width, ry = (py - frameBox.Y) / frameBox.Height }).WaitAsync(cancellationToken);
             if (!frameHit) return false;
         }
+        return true;
+        }
+        if (!await HitAsync(x, y))
+        {
+            bool found = false;
+            foreach (var point in new[] { (.25, .25), (.75, .25), (.25, .75), (.75, .75), (.5, .5) })
+            {
+                double candidateX = left + (right - left) * point.Item1;
+                double candidateY = top + (bottom - top) * point.Item2;
+                if (!await HitAsync(candidateX, candidateY)) continue;
+                x = candidateX; y = candidateY; found = true; break;
+            }
+            if (!found) { log?.Invoke("Tap: no unobstructed point in visible target"); return false; }
+        }
         diagnostics.EnterStage("check target stability");
-        await Task.Delay(32, cancellationToken);
-        var latest = await target.BoundingBoxAsync().WaitAsync(cancellationToken);
-        if (latest == null || Math.Abs(latest.X - box.X) > 1 || Math.Abs(latest.Y - box.Y) > 1 ||
-            Math.Abs(latest.Width - box.Width) > 1 || Math.Abs(latest.Height - box.Height) > 1) return false;
+        for (int sample = 0; sample < 2; sample++)
+        {
+            await Task.Delay(32, cancellationToken);
+            var latest = await target.BoundingBoxAsync().WaitAsync(cancellationToken);
+            if (latest == null || Math.Abs(latest.X - box.X) > 1 || Math.Abs(latest.Y - box.Y) > 1 ||
+                Math.Abs(latest.Width - box.Width) > 1 || Math.Abs(latest.Height - box.Height) > 1)
+            { log?.Invoke("Tap: target changed during stability check"); return false; }
+        }
+        if (!await HitAsync(x, y)) { log?.Invoke("Tap: target became covered"); return false; }
         diagnostics.EnterStage("dispatch touch");
         if (page.IsClosed || !IsCurrentBinding(page, session)) return false;
         await TapWithinLeaseAsync(page, session, x, y, log, cancellationToken);
@@ -94,10 +112,12 @@ public sealed partial class HumanTouchEngine
     public async Task<bool> TapAtAsync(IPage page, ICDPSession session, double x, double y,
         CancellationToken cancellationToken = default)
     {
+        using var queue = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        queue.CancelAfter(TimeSpan.FromSeconds(30));
+        using var input = await HumanInputCoordinator.AcquireAsync(Session, queue.Token);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(5000);
         cancellationToken = deadline.Token;
-        using var input = await HumanInputCoordinator.AcquireAsync(Session, cancellationToken);
         Validate(page, session);
         if (!IsCurrentBinding(page, session)) return false;
         await CdpTouchRuntime.InitializeAsync(page, session, Session.DeviceProfile.MaxTouchPoints, cancellationToken);
@@ -117,7 +137,7 @@ public sealed partial class HumanTouchEngine
         var plan = new HumanTapPlanner().Plan(Session, x, y);
         var elapsed = Stopwatch.StartNew();
         await _dispatcher.DispatchWithinLeaseAsync(session, plan.Samples, plan.Gesture, Session.DeviceProfile, token,
-            () => !page.IsClosed && IsCurrentBinding(page, session));
+            () => !page.IsClosed && IsCurrentBinding(page, session), log: message => LogTouchDiagnostic(log, message));
         Session.RecordTap();
         LastTapTrace = new HumanTapTrace
         {

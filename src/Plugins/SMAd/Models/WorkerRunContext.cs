@@ -93,6 +93,7 @@ namespace SMAd.Models
         public void EnableBusinessDownloads() => Volatile.Write(ref _businessDownloadsEnabled, 1);
         public void DisableBusinessDownloads() => Volatile.Write(ref _businessDownloadsEnabled, 0);
         public int PageAdsCount { get; set; }
+        public bool EntryAdObserved { get; set; }
         public bool PageTriggerClick { get; set; }
         // Persists across PV resets for the lifetime of this UV execution.
         public bool AdHit { get; set; }
@@ -132,6 +133,8 @@ namespace SMAd.Models
         {
             DisableBusinessDownloads();
             CurrentVisitReady = false;
+            EntryAdObserved = false;
+            PageAdsCount = 0;
             _currentVisitCompleted = false;
 
             Interlocked.Exchange(ref TriggerDownloadSign, 0);

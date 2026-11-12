@@ -1,0 +1,18 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Tap: input queue=1ms
+Tap[1] stage: resolve owner frame, elapsed=0ms, budget=5000ms
+Tap[1] stage: initialize touch, elapsed=16ms, budget=5000ms
+Tap[1] stage: wait for touch session lock, elapsed=16ms, budget=5000ms
+Tap[1] stage: prepare action rhythm, elapsed=16ms, budget=5000ms
+Prepare: 207ms
+Tap[1] stage: check visibility and enabled state, elapsed=244ms, budget=5000ms
+Tap[1] stage: read bounding box, elapsed=263ms, budget=5000ms
+Tap[1] stage: read viewport, elapsed=268ms, budget=5000ms
+Tap[1] stage: target hit test, elapsed=311ms, budget=5000ms
+Tap[1] stage: check target stability, elapsed=328ms, budget=5000ms
+Tap[1] stage: dispatch touch, elapsed=421ms, budget=5000ms
+CDP gesture timing: commands=3, p95Ms=8, maxMs=8
+Tap: (63.9,51.4), planned=73ms, actual=107ms, force=0.53
+ROUND 1 FAIL stage=local touch timing: Tap 1 did not navigate to its fragment
+ROUND 1: failed, stage=local touch timing, exitedBeforeCleanup=False, connectedBeforeCleanup=True

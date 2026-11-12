@@ -1,0 +1,7 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=https://wm.m.sm.cn/s?from=wm90000&q=%E5%85%A8%E5%9B%BD%E8%88%AA%E6%B5%B7%E9%99%A2%E6%A0%A1%E6%8E%92%E5%90%8D, content-type=text/html;charset=utf-8, content-disposition=, location=
+Entry navigation ready: elapsedMs=1058
+LIVE ENTRY readiness=complete, reason=DOMContentLoaded, navigationMs=1125, adMarkers=2, configuredPostLoadDelayMs=11523
+LIVE ENTRY markers after configured delay: [{"visible":true,"inViewport":true,"adDot":true,"wolong":true,"containsMarkers":[],"rect":{"top":85,"height":361},"text":"采购化学专业考研院校，上百度爱采购，全程无忧 发现独特化学专业考研院校,就在这里！想要选购化学专业考研院校？立即前往爱采购，发现海量选择，满足你的... 【从科化工】专业销售各类工业化工原料 沈阳化工"},{"visible":true,"inViewport":true,"adDot":true,"wolong":true,"containsMarkers":[],"rect":{"top":474,"height":361},"text":"采购化学专业考研院校，上百度爱采购，全程无忧 发现独特化学专业考研院校,就在这里！想要选购化学专业考研院校？立即前往爱采购，发现海量选择，满足你的... 【从科化工】专业销售各类工业化工原料 沈阳化工"}]
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

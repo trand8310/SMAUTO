@@ -1,0 +1,91 @@
+神马搜索:ExecuteWorker:Start
+Browser connected: executionId=full-flow-616204cf4c9d45e68a83d23711f20ef1, pid=18360, kernel=125.0.6422.136, lifetime=180s, headless=False, proxy=False
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+神马搜索:Touch posture=RightHandOneHanded
+神马搜索:pv：1/1
+Entry response: status=200, url=https://search.fixture.invalid/entry, content-type=text/html;charset=utf-8, content-disposition=, location=
+神马搜索:ExecuteWorker: 8.90
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Prepare: 225ms
+神马搜索:Touch Preview/Up (248,784)->(338,384) duration=351ms release=108px/s
+神马搜索:Touch CDP gesture timing: commands=30, p95Ms=33, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=30
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Preview/Up (313,648)->(378,361) duration=309ms release=218px/s
+神马搜索:Touch CDP gesture timing: commands=21, p95Ms=34, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=21
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch FastScan/Up (306,742)->(368,521) duration=108ms release=5074px/s
+神马搜索:Touch CDP gesture timing: commands=8, p95Ms=34, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=8
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Reading/Up (237,737)->(299,497) duration=716ms release=86px/s
+神马搜索:Touch CDP gesture timing: commands=56, p95Ms=33, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=56
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch MicroAdjust/Up (244,773)->(269,667) duration=220ms release=15px/s
+神马搜索:Touch CDP gesture timing: commands=19, p95Ms=33, maxMs=33
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=19
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Preview/Up (311,785)->(384,358) duration=507ms release=98px/s
+神马搜索:Touch CDP gesture timing: commands=40, p95Ms=33, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=40
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch FastScan/Up (309,767)->(367,526) duration=102ms release=3823px/s
+神马搜索:Touch CDP gesture timing: commands=10, p95Ms=34, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=10
+神马搜索:Touch Swipe: input queue=0ms
+点击比率:0.00%
+神马搜索:Touch Swipe: input queue=0ms
+触发广告位:本地测试目标，点击进入落地页:(12,288,384,140)
+神马搜索:ExecuteWorker:Clickthrough (广告命中)
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Navigation ready: 587ms, observe=2274ms, url=https://b2b.baidu.com/m/aitf/list
+Navigation observation: planned=2274ms, actual=2289ms
+Action Navigate: success=True, dispatched=True, 2879ms, 
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 浏览滑动=Up，实际滚动=True
+百度爱采购: 当前可点候选=5，随机选择[18]，直接触屏点击
+Navigation ready: 397ms, observe=2593ms, url=https://detail.fixture.invalid/item?id=18
+Navigation observation: planned=2593ms, actual=2608ms
+Action Navigate: success=True, dispatched=True, 3007ms, 
+百度爱采购: 候选[18]点击结果=Navigated, 原因=
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Reading/Up (205,765)->(266,559) duration=537ms release=26px/s
+神马搜索:Touch CDP gesture timing: commands=39, p95Ms=34, maxMs=35
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=39
+延时停留
+滑动操作
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Prepare: 183ms
+神马搜索:Touch Reading/Up (216,787)->(279,576) duration=968ms release=8px/s
+神马搜索:Touch CDP gesture timing: commands=61, p95Ms=33, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=61
+滑动操作
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch Fling/Up (222,801)->(278,570) duration=154ms release=1644px/s
+神马搜索:Touch CDP gesture timing: commands=12, p95Ms=34, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=12
+滑动操作
+神马搜索:Touch Swipe: input queue=0ms
+神马搜索:Touch MicroAdjust/Up (280,696)->(311,638) duration=169ms release=18px/s
+神马搜索:Touch CDP gesture timing: commands=13, p95Ms=34, maxMs=34
+神马搜索:Touch Swipe observation: MovedAndSettled
+神马搜索:Touch Swipe dispatched: scroll verified=True, points=13
+动作完成
+神马搜索:ExecuteWorker:Complete
+Browser execution ending: executionId=full-flow-616204cf4c9d45e68a83d23711f20ef1, stage=page visit, elapsed=76781ms, reason=Completed, detail=

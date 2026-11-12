@@ -1,0 +1,6 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=https://aisite.wejianzhan.com/site/wjzsorv8/8fde5eff-530e-43ad-a8be-37ab96c77d4b?q=%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E5%9F%B9%E8%AE%AD&pm_key=207474788&multi_key=5_211328668_70005&page_scene=71&bword=%E4%B8%AD%E5%9B%BD%E8%88%9E%E5%8D%8F%E8%88%9E%E8%B9%88%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E8%AF%81%E6%8A%A5%E5%90%8D&intent=%E7%BA%A7%E8%88%9E%E8%B9%88%E8%AF%81-1&adGroupId=125143692&campaignId=1582416093&planname=20261021_%E7%A5%9E%E9%A9%AC_ocpc_%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E5%9F%B9%E8%AE%AD_wise&kid=80825999574&ip=42.87.7.76&clickid=1752839128842375554&uctrackid=czo2ODcwMzE2ODkxMzI0Mzc1ODQ7YzoxMTY0MzYxNzE4ODtkOmRtcF8tMjk0OTIzMjk3NjQ5MTM5NzcwMztwOnds&flowfrom=shenma&wid=0d6e9b4c1827401fa167630af24b77fa_0_0, content-type=text/html, content-disposition=, location=
+AI站点: 弹窗容器已关闭
+AI site close result=Closed
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True

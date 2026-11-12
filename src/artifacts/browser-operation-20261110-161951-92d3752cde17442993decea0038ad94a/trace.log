@@ -1,0 +1,35 @@
+CONFIG kernel=125.0.6422.136, headless=False, incognito=True, lifetime=180s, proxy=false, rounds=1
+Display: screen=424x943, available=424x863, viewportTarget=424x839, DPR=2.875, window(DIP)={"bounds":{"left":0,"top":0,"width":424,"height":943,"windowState":"normal"}}
+Entry response: status=200, url=https://aisite.wejianzhan.com/site/wjzsorv8/8fde5eff-530e-43ad-a8be-37ab96c77d4b?q=%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E5%9F%B9%E8%AE%AD&pm_key=207474788&multi_key=5_211328668_70005&page_scene=71&bword=%E4%B8%AD%E5%9B%BD%E8%88%9E%E5%8D%8F%E8%88%9E%E8%B9%88%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E8%AF%81%E6%8A%A5%E5%90%8D&intent=%E7%BA%A7%E8%88%9E%E8%B9%88%E8%AF%81-1&adGroupId=125143692&campaignId=1582416093&planname=20261021_%E7%A5%9E%E9%A9%AC_ocpc_%E6%95%99%E5%B8%88%E8%B5%84%E6%A0%BC%E5%9F%B9%E8%AE%AD_wise&kid=80825999574&ip=42.87.7.76&clickid=1752839128842375554&uctrackid=czo2ODcwMzE2ODkxMzI0Mzc1ODQ7YzoxMTY0MzYxNzE4ODtkOmRtcF8tMjk0OTIzMjk3NjQ5MTM5NzcwMztwOnds&flowfrom=shenma&wid=0d6e9b4c1827401fa167630af24b77fa_0_0, content-type=text/html, content-disposition=, location=
+AI站点: 弹窗容器已关闭
+Swipe: input queue=0ms
+Prepare: 193ms
+Preview/Up (271,666)->(273,344) duration=314ms release=110px/s
+CDP gesture timing: commands=27, p95Ms=33, maxMs=38
+Swipe observation: MovedAndSettled
+Swipe dispatched: scroll verified=True, points=27
+Swipe: input queue=0ms
+FastScan/Up (200,566)->(197,148) duration=141ms release=3770px/s
+CDP gesture timing: commands=12, p95Ms=34, maxMs=34
+Swipe observation: MovedAndSettled
+Swipe dispatched: scroll verified=True, points=12
+Swipe: input queue=0ms
+Fling/Up (237,673)->(232,223) duration=180ms release=2889px/s
+CDP gesture timing: commands=15, p95Ms=35, maxMs=35
+Swipe observation: MovedAndSettled
+Swipe dispatched: scroll verified=True, points=15
+Swipe: input queue=0ms
+Reading/Up (241,674)->(238,470) duration=576ms release=64px/s
+CDP gesture timing: commands=41, p95Ms=33, maxMs=35
+Swipe observation: MovedAndSettled
+Swipe dispatched: scroll verified=True, points=41
+Swipe: input queue=0ms
+Reading/Up (226,531)->(215,351) duration=427ms release=81px/s
+CDP gesture timing: commands=37, p95Ms=34, maxMs=34
+Swipe observation: MovedAndSettled
+Swipe dispatched: scroll verified=True, points=37
+Navigation ready: 1044ms, observe=2051ms, url=https://aisite.wejianzhan.com/site/wjzyl53rc/19a4791e-772d-48a4-bc12-a5c6ce361477?bd_vid=nHT4Pjc4rjT4PjcsP1b3rH63n7tznjf3g1Dsg1Dsn7tYg1DYrjnsnWm3nHfkPf&fid=nHT4Pjc4rjT4PjcsP1b3rH63n7tznjf3g1Ds&ch=4&bd_bxst=EiaKXPaV2HS94960a0CD00-cQ6N11nmF00000KjyYQMl18Bq1nJhdJikJn5e0000000000000c9VygnN_tdF0s000DIN93TB0000pNRA57sK000N0Fc0joLnzJUyGPHdseikJn5e2ULnzJUyGPHdseikJn5eEe12dnJkEril1UACsOE2_U1bcQLmdohLCo2t000005OOOOOOOOOOeo9Cp0
+Navigation observation: planned=2051ms, actual=2052ms
+Action Navigate: success=True, dispatched=True, 3105ms, 
+AI site production strategy returned
+ROUND 1: success, stage=completed, exitedBeforeCleanup=False, connectedBeforeCleanup=True
